@@ -1,0 +1,217 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+.p-2 {
+    width: 100%;
+}
+.maincol-top {
+    height: calc(100vh - 250px);
+    overflow-y: scroll;
+    margin-bottom: 10px;
+    border: solid 0px blue;
+}
+.maincol-bottom {
+    margin-bottom: auto;
+}
+.chat-container {
+    /*padding: 10px;*/
+}
+.message {
+    margin: 0px 0 0px 0;
+    padding: 10px;
+    /*border-radius: 10px;*/
+}
+.assistant-message {
+    background-color: #f0f0f0;
+    border-bottom: solid 1px #ddd;
+}
+.user-message {
+    background-color: #fbfbfb;
+}
+#username {
+    margin-right: 10px; /* add some space to the right */
+    white-space: nowrap;
+}
+.header {
+    height: 60px;
+    background-color: #f8f9fa; /* Light gray background */
+    border: solid 1px lightgray;
+}
+.logo {
+    max-width: 180px;
+    width: 90%;
+    margin: 10px;
+    margin-right: 20px;
+}
+.header h1 {
+    font-size: 18pt;
+    margin: 0; /* remove margin to prevent overflow on small screens */
+    text-align: center;
+    margin: 15px 0px;
+}
+.header p {
+    margin: 0; /* remove margin to prevent overflow on small screens */
+    text-align: right;
+    margin: 15px 0px;
+}
+.navbar {
+    display: none; /* Hide by default */
+}
+.main-content {
+    /*height: calc(100vh - 140px);*/
+    display: flex;
+}
+.menu {
+    overflow: hidden;
+    background-color: #343a40;
+    color: white;
+    padding: 15px;
+}
+.menu a {
+    display: inline-block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 165px;
+    color: white;
+    text-decoration: none;
+}
+.menu a:hover {
+    text-decoration: underline;
+}
+.menu p {
+    min-width: 230px;
+}
+.maincolumn {
+    width: 100%;
+}
+.form-control {
+    width: 99%;
+    margin: 5px auto;
+}
+.waiting-indicator {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 9999;
+    background-color: rgba(255, 255, 255, 0.7); /* Optional: semi-transparent background */
+ 
+}
+.openai-icon {
+    width: 30px;
+    height: 30px;
+    margin: 0px 6px;
+    margin-right: 9px;
+}
+.user-icon {
+    width: 40px;
+    height: 40px;
+    margin: 0px;
+    margin-right: 6px;
+}
+.newchat {
+    border: solid gray 1px;
+    border-radius: 5px;
+    padding: 10px;
+    margin-top: 10px; 
+    min-width: 230px;
+}
+.chat-item {
+    position: relative;
+    width: 100%;
+    padding: 10px 10px;
+    border-radius: 5px;
+}
+
+.chat-icon {
+    position: absolute;
+    right: 0;
+    visibility: hidden;
+}
+
+.edit-icon {
+    right: 30px;
+}
+
+.delete-icon {
+    right: 0px;
+}
+
+.edit-confirm-icon {
+    margin-left: 10px;
+}
+
+.chat-title {
+    display: inline-block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 300px;
+}
+
+.edit-field {
+    width: 70%;
+}
+
+.current-chat {
+    background-color: #545a60;
+    min-width: 230px;
+}
+
+.logout-link {
+    margin-left: 10px;
+    background-color: #007bff;
+    color: #fff;
+    padding: 5px 10px;
+    border-radius: 5px;
+    text-decoration: none;
+    font-size: 14px;
+    display: inline-block;
+    transition: background-color 0.3s;
+}
+
+.logout-link:hover {
+    background-color: #0056b3;
+}
+/* Show the navbar with the hamburger menu on small screens */
+@media (max-width: 767.98px) { 
+    .navbar {
+        display: flex;
+        background-color: #000; /* Or any color you prefer */
+    }
+    .menu {
+        display: none !important;
+
+    }
+    .greeting {
+        display: none;
+    }
+    .header h1 {
+        font-size: 14px;
+    }
+    .text-center {
+        display: none;
+    }
+    .maincol-top {
+        height: calc(100vh - 320px); /* Fill the height minus header */
+    }
+    .menu.active {
+        display: block !important; /* Show menu when active */
+        position: fixed; /* Fixed position */
+        width: 100%; /* Full width */
+        height: 100%; /* Full height */
+        top: 60px; /* Below the header */
+        left: 0;
+        z-index: 1000; /* On top of other content */
+        overflow: scroll;
+    }
+}
+
+/* Show the navbar with the hamburger menu on small screens */
+@media (max-width: 538px) { 
+    .maincol-top {
+        height: calc(100vh - 360px); /* Fill the height minus header */
+    }
+}
+
