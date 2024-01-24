@@ -281,8 +281,10 @@ function get_chat_thread($message, $chat_id, $user)
     // Add the last 5 exchanges from the recent chat history to the messages array
     $recent_messages = get_recent_messages($chat_id, $user);
     #print_r($recent_messages);
-    $tokenLimit = $context_limit; // Set your token limit here
-    $currentTokens = str_word_count($message);
+    $tokenLimit = $context_limit ; // Set your token limit here
+    #$currentTokens = str_word_count($message);
+	$currentTokens = approximateTokenCountByChars($message);
+
 
     if (!empty($recent_messages)) {
         $formatted_messages = [];
@@ -292,7 +294,8 @@ function get_chat_thread($message, $chat_id, $user)
 
             #print_r($message);
             $messageContent = $message['prompt'] . $message['reply'];
-            $tokens = str_word_count($str) + 2; // +2 for role and content keys
+			$tokens = approximateTokenCountByChars($messageContent);
+            #$tokens = str_word_count($str) + 2; // +2 for role and content keys // old version
             if ($currentTokens + $tokens <= $tokenLimit) {
                 $formatted_messages[] = [
                     'role' => 'assistant', 
@@ -306,7 +309,7 @@ function get_chat_thread($message, $chat_id, $user)
             } else {
                 break;
             }
-            #echo "THIS IS THE CURRENT TOKENS: {$currentTokens}\n";
+            #echo $tokenLimit . " - " . $currentTokens . " - STARTING HERE =----- " . print_r($formatted_messages,1) . " - THIS IS THE CURRENT TOKENS: {$currentTokens}\n";
         }
         $messages = array_merge(array_reverse($formatted_messages), $messages);
     }
@@ -314,3 +317,9 @@ function get_chat_thread($message, $chat_id, $user)
     #print_r($messages);
     return $messages;
 }
+
+function approximateTokenCountByChars($text) {
+    $charCount = strlen($text);
+    return ceil($charCount / 4); // Rough approximation: 4 characters per token
+}
+

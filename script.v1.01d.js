@@ -1,6 +1,33 @@
 
 var chatContainer;
 
+// Modify the event listener for DOMContentLoaded
+document.addEventListener('DOMContentLoaded', (event) => {
+    console.log("DOMContentLoaded - Current chat ID: ", chatId);
+    var savedMessage = localStorage.getItem('chatDraft_' + chatId);
+    if (savedMessage) {
+        document.getElementById('userMessage').value = savedMessage;
+        console.log("Loaded saved message for chat ID " + chatId + ": ", savedMessage);
+    } else {
+        document.getElementById('userMessage').value = "";
+        console.log("No saved message found for chat ID " + chatId);
+    }
+});
+
+// Modify the event listener for the userMessage input
+document.getElementById('userMessage').addEventListener('input', (event) => {
+    console.log("Input event for chat ID " + chatId);
+    localStorage.setItem('chatDraft_' + chatId, event.target.value);
+    console.log("Saved draft message for chat ID " + chatId + ": ", event.target.value);
+});
+
+$('#messageForm').submit(function(e) {
+    console.log("Form submission for chat ID " + chatId);
+    // Rest of the code...
+    localStorage.removeItem('chatDraft_' + chatId);
+    console.log("Cleared draft message for chat ID " + chatId);
+});
+
 function sanitizeString(str) {
     var div = document.createElement('div');
     div.appendChild(document.createTextNode(str));
@@ -131,6 +158,7 @@ $(document).ready(function(){
         data: { chat_id: chatId, user: user },
         dataType: 'json',
         success: function(chatMessages) {
+
             // Display messages from the selected chat
             chatMessages.forEach(function (message) {
                 // Sanitize the received data
@@ -205,9 +233,16 @@ $(document).ready(function(){
         }
 
         var messageContent = base64EncodeUnicode(sanitizedMessageContent); // Encode in Base64 UTF-8
-        //var messageContent = btoa(userMessage.val().trim()); // Encode in Base64
-        //var messageContent = userMessage.val().trim();
-        //console.log(messageContent);
+
+
+
+    // Clear the textarea and localStorage right after form submission
+    userMessage.val("");
+    localStorage.removeItem('chatDraft_' + chatId);
+    console.log("Form submitted and message cleared for chat ID " + chatId);
+
+
+
 
         if (messageContent !== "") {
             userMessage.val("");

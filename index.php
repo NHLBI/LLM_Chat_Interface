@@ -154,7 +154,7 @@ foreach(array_keys($models) as $m) {
     <script src="script.v1.01d.js"></script>
 <script>
 // When the page is loaded, check if there's a saved userMessage and display it
-document.addEventListener('DOMContentLoaded', (event) => {
+/*document.addEventListener('DOMContentLoaded', (event) => {
 var savedMessage = localStorage.getItem('userMessage');
 if (savedMessage) {
 document.getElementById('userMessage').value = savedMessage;
@@ -170,6 +170,7 @@ localStorage.setItem('userMessage', event.target.value);
 document.getElementById('messageForm').addEventListener('submit', function() {
 localStorage.removeItem('userMessage');
 });
+ */
 </script>
 
 </body>
