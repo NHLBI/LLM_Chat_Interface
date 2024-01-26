@@ -66,7 +66,12 @@ body {
     background-color: #343a40;
     color: white;
     padding: 15px;
+    /*
+    width: 275px !important;
+    flex: none !important; /* This prevents the column from growing or shrinking */
+    */
 }
+
 .menu a {
     display: inline-block;
     white-space: nowrap;
@@ -174,6 +179,14 @@ body {
 .logout-link:hover {
     background-color: #0056b3;
 }
+
+.print-title {
+    display: none;
+}
+
+#printButton {
+}
+
 /* Show the navbar with the hamburger menu on small screens */
 @media (max-width: 767.98px) { 
     .navbar {
@@ -213,5 +226,28 @@ body {
     .maincol-top {
         height: calc(100vh - 360px); /* Fill the height minus header */
     }
+}
+
+@media print {
+/* Hide elements not required in print view */
+form, #printButton, .header, .navbar, .menu, .maincol-bottom  {
+display: none !Important;
+}
+/* Adjust chat content to fill page */
+.main-content {
+width: 100%;
+margin: 0;
+padding: 0;
+}
+.maincol-top {
+display: block !important;
+overflow: visible !important;
+
+}
+    
+.print-title {
+    display: block;
+    font-size: 14pt;
+}
 }
 

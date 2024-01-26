@@ -67,6 +67,7 @@ foreach(array_keys($models) as $m) {
                     $class= '';
                     if (!empty($chat_id) && $chat['id'] == $chat_id) {
                         $class = 'current-chat';  // This is the currently active chat
+                        $chatTitle = htmlspecialchars($chat['title']);
                     }
                     echo '<div class="chat-item '.$class.'" id="chat-' . htmlspecialchars($chat['id']) . '">';
 
@@ -95,6 +96,7 @@ foreach(array_keys($models) as $m) {
         </div> <!-- End the menu column -->
 
         <div class="col-12 col-md-10 d-flex align-items-start flex-column main-content">
+            <h1 class="print-title"><?php echo $chatTitle;?></h1>
 
 
 
@@ -130,6 +132,10 @@ foreach(array_keys($models) as $m) {
                         <input type="file" name="pdfDocument" accept=".pdf,.docx,.pptx,.txt,.md,.json,.xml" style="width:15em;" required onchange="this.form.submit()" />
                         <!--<button type="submit" name="uploadPdf">Upload PDF</button>-->
                     <?php endif; ?>
+
+                </form>
+                <form style="display: inline-block; float: right; margin-top: 15px; margin-right: 30px;">
+                    <button onclick="printChat()" id="printButton">Print</button>
                 </form>
             </div><!-- End Chat body bottom -->
         </div> <!-- End the main-content column -->
@@ -153,6 +159,10 @@ foreach(array_keys($models) as $m) {
     </script>
     <script src="script.v1.01d.js"></script>
 <script>
+function printChat() {
+window.print();
+}
+
 // When the page is loaded, check if there's a saved userMessage and display it
 /*document.addEventListener('DOMContentLoaded', (event) => {
 var savedMessage = localStorage.getItem('userMessage');
