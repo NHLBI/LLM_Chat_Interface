@@ -108,7 +108,7 @@ function editChat(chatId) {
     var chatLink = chatItem.find(".chat-link");
 
     // Replace the chat link with an input field and a submit button
-    chatLink.replaceWith('<input class="edit-field" id="edit-input-' + chatId + '" type="text" value="' + chatLink.text() + '"><img class="edit-confirm-icon" src="images/chat_check.png" alt="Check mark to confirm chat name edit">');
+    chatLink.replaceWith('<input class="edit-field" id="edit-input-' + chatId + '" type="text" aria-label="Chat title edit link" value="' + chatLink.text() + '"><img class="edit-confirm-icon" src="images/chat_check.png" alt="Check mark to confirm chat name edit">');
 
     // Add event listener for 'Enter' key on the input
     $("#edit-input-" + chatId).keypress(function(e) {
@@ -146,12 +146,13 @@ $(document).ready(function(){
     // Set focus on the message input
     userMessage.focus();
 
+    /*
     $('#username').hover(function() {
         $('.logout-link').show();
     }, function() {
         $('.logout-link').hide();
     });
-
+    */
     console.log(chatId)
     $.ajax({
         url: "get_messages.php",

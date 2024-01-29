@@ -38,6 +38,7 @@ foreach(array_keys($models) as $m) {
 </nav>
 
 <div class="container-fluid"> <!-- start the Container-fluid -->
+    <a href="#main-content" class="skip-link">Skip to main content</a>
     
 
     <div class="row header d-flex align-items-center"> <!-- Header Row -->
@@ -48,7 +49,7 @@ foreach(array_keys($models) as $m) {
             <h1><?php echo $config['app']['app_title']; ?></h1>
         </div>
         <div class="col d-flex justify-content-end">
-            <p id="username"><span class="greeting">Hello </span><span class="user-name"><?php echo $username; ?></span> <a href="logout.php" class="logout-link" style="display: none;">Logout</a></p>
+            <p id="username"><span class="greeting">Hello </span><span class="user-name"><?php echo $username; ?></span> <a title="Log out of the chat interface" href="logout.php" class="logout-link" style="display:inline-block;">Logout</a></p>
         </div>
     </div> <!-- End Header Row -->
 
@@ -56,11 +57,11 @@ foreach(array_keys($models) as $m) {
 
     <div class="row flex-grow-1"> <!-- Begin the Content Row -->
 
-        <div class="col-12 col-md-2 d-flex align-items-start flex-column menu">
+        <nav class="col-12 col-md-2 d-flex align-items-start flex-column menu">
 
             <!-- Menu content here -->
             <div class="p-2 "><!-- Start Menu top content -->
-                <p class="newchat"><a href="javascript:void(0);" onclick="startNewChat()">+&nbsp;&nbsp;New Chat</a></p>
+                <p class="newchat"><a title="Create new chat" href="javascript:void(0);" onclick="startNewChat()">+&nbsp;&nbsp;New Chat</a></p>
                 <?php
                 $path = get_path();
                 foreach ($all_chats as $chat) {
@@ -71,9 +72,9 @@ foreach(array_keys($models) as $m) {
                     }
                     echo '<div class="chat-item '.$class.'" id="chat-' . htmlspecialchars($chat['id']) . '">';
 
-                    echo '<a class="chat-link chat-title" href="/'.$application_path.'/' . htmlspecialchars($chat['id']) . '">' . htmlspecialchars($chat['title']) . '</a>';
-                    echo '<img class="chat-icon edit-icon" src="images/chat_edit.png" alt="Edit this chat">';
-                    echo '<img class="chat-icon delete-icon" src="images/chat_delete.png" alt="Delete this chat">';
+                    echo '<a class="chat-link chat-title" title="Load chat into context window" href="/'.$application_path.'/' . htmlspecialchars($chat['id']) . '">' . htmlspecialchars($chat['title']) . '</a>';
+                    echo '<img class="chat-icon edit-icon" src="images/chat_edit.png" alt="Edit this chat" title="Edit this chat">';
+                    echo '<img class="chat-icon delete-icon" src="images/chat_delete.png" alt="Delete this chat" title="Delete this chat">';
                     echo '</div>';
                 }
                 ?>
@@ -86,16 +87,16 @@ foreach(array_keys($models) as $m) {
                 <p class="feedback "><?php echo $config['app']['feedback_text']; ?>
                 </br>
                 </br>
-                <a href="<?php echo $config['app']['teams_link']; ?>" target="_blank">Connect in Teams</a></p>
-                <p class=""><a href="<?php echo $config['app']['feedback_link']; ?>" target="_blank">Submit Feedback</a></p>
-                <p class=""><a href="<?php echo $config['app']['video_link']; ?>" target="_blank">Training Video</a></p>
-                <p><a href="<?php echo $config['app']['disclosure_link']; ?>" target="_Blank">Vulnerability Disclosure</a></p>
+                <a title="Open a link to the Teams interface" href="<?php echo $config['app']['teams_link']; ?>" target="_blank">Connect in Teams</a></p>
+                <p class=""><a title="Open a new window to submit feedback" href="<?php echo $config['app']['feedback_link']; ?>" target="_blank">Submit Feedback</a></p>
+                <p class=""><a title="Open the training video in a new window" href="<?php echo $config['app']['video_link']; ?>" target="_blank">Training Video</a></p>
+                <p><a title="Open the disclosure information in a new window" href="<?php echo $config['app']['disclosure_link']; ?>" target="_Blank">Vulnerability Disclosure</a></p>
             </div><!-- End Menu bottom content -->
 
 
-        </div> <!-- End the menu column -->
+        </nav> <!-- End the menu column -->
 
-        <div class="col-12 col-md-10 d-flex align-items-start flex-column main-content">
+        <main id="main-content" class="col-12 col-md-10 d-flex align-items-start flex-column main-content">
             <h1 class="print-title"><?php echo $chatTitle;?></h1>
 
 
@@ -107,11 +108,11 @@ foreach(array_keys($models) as $m) {
 
             <div class="maincolumn maincol-bottom"><!-- Chat body bottom -->
                 <form id="messageForm">
-                    <textarea class="form-control" id="userMessage" placeholder="Type your message..." rows="4" ></textarea>
+                    <textarea class="form-control" id="userMessage" aria-label="Main chat textarea" placeholder="Type your message..." rows="4" ></textarea>
                 </form>
 
                 <form onsubmit="saveMessage()" id="model_select" action="" method="post" onsubmit="saveMessage()" style="display: inline-block; margin-left: 20px; margin-right: 10px; margin-top: 15px; border-top: 1px solid white; ">
-                    Select Model: <select name="model" onchange="document.getElementById('model_select').submit();">
+                    <label for="model">Select Model</label>: <select title="Choose between available chat models" name="model" onchange="document.getElementById('model_select').submit();">
                         <?php
                         foreach ($models as $m => $label) {
                             $sel = ($m == $_SESSION['deployment']) ? 'selected="selected"' : '';
@@ -122,23 +123,22 @@ foreach(array_keys($models) as $m) {
                 </form>
                 <form onSubmit="saveMessage();" method="post" action="upload.php" id="document-uploader" enctype="multipart/form-data" style="display: inline-block; margin-top: 15px; margin-left: 30px;">
                     <!-- Hidden input for chat_id -->
-                    <input type="hidden" name="chat_id" value="<?php echo htmlspecialchars($_GET['chat_id']); ?>">
+                    <input type="hidden" name="chat_id" aria-label="Hidden field with Chat ID" value="<?php echo htmlspecialchars($_GET['chat_id']); ?>">
 
                     <?php if (!empty($_SESSION['document_name'])): ?>
                         <p>Uploaded file: <span style="color: salmon;"><?php echo htmlspecialchars($_SESSION['document_name']); ?></span>
                             <a href="upload.php?remove=1&chat_id=<?php echo htmlspecialchars($_GET['chat_id']); ?>" style="color: blue">Remove</a>
                         </p>
                     <?php else: ?>
-                        <input type="file" name="pdfDocument" accept=".pdf,.docx,.pptx,.txt,.md,.json,.xml" style="width:15em;" required onchange="this.form.submit()" />
-                        <!--<button type="submit" name="uploadPdf">Upload PDF</button>-->
+                        <input type="file" name="pdfDocument" aria-label="File upload button" accept=".pdf,.docx,.pptx,.txt,.md,.json,.xml" style="width:15em;" required onchange="this.form.submit()" />
                     <?php endif; ?>
 
                 </form>
                 <form style="display: inline-block; float: right; margin-top: 15px; margin-right: 30px;">
-                    <button onclick="printChat()" id="printButton">Print</button>
+                    <button title="Print the existing chat session" aria-label="Print button" onClick="printChat()" id="printButton">Print</button>
                 </form>
             </div><!-- End Chat body bottom -->
-        </div> <!-- End the main-content column -->
+        </main> <!-- End the main-content column -->
 
     </div> <!-- end the Content Row -->
 </div> <!-- end the Container-fluid -->

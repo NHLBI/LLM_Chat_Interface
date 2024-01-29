@@ -53,13 +53,13 @@ echo $config['app']['disclaimer_text'];
 
 ?>                    
 
-                    <p class=""><a href="<?php echo $config['app']['video_link']; ?>" target="_blank">Training Video</a></p>
+                    <p class=""><a title="Open the training video in a new window" href="<?php echo $config['app']['video_link']; ?>" target="_blank">Training Video</a></p>
                     <p class="newchat" style="text-align: center;">
-                    <a href="index.php">Proceed</a></p>
+                    <a title="Click here to go to authentication" href="index.php">Proceed</a></p>
                     <!-- Chat messages will be added here -->
                 </div>
-                <div class="footer" title="Vulnerability Disclosure">
-                    <p><a href="<?php echo $config['app']['disclosure_link']; ?>" target="_Blank">Vulnerability Disclosure</a></p>
+                <div class="footer">
+                    <p><a title="Open the disclosure information in a new window" href="<?php echo $config['app']['disclosure_link']; ?>" target="_Blank" title="Vulnerability Disclosure">Vulnerability Disclosure</a></p>
                 </div>
             </div>
             <div class="col-md-2 columns">

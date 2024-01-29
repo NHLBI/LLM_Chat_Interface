@@ -16,6 +16,20 @@ body {
 .chat-container {
     /*padding: 10px;*/
 }
+.skip-link {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    background: #000;
+    color: #fff;
+    padding: 8px;
+    z-index: 100;
+}
+
+.skip-link:focus {
+    top: 0;
+}
+
 .message {
     margin: 0px 0 0px 0;
     padding: 10px;
@@ -33,7 +47,7 @@ body {
     white-space: nowrap;
 }
 .header {
-    height: 60px;
+    /*text-decoration: underline;*/
     background-color: #f8f9fa; /* Light gray background */
     border: solid 1px lightgray;
 }
@@ -79,7 +93,7 @@ body {
     text-overflow: ellipsis;
     max-width: 165px;
     color: white;
-    text-decoration: none;
+    /*text-decoration: none;*/
 }
 .menu a:hover {
     text-decoration: underline;
@@ -166,20 +180,20 @@ body {
 
 .logout-link {
     margin-left: 10px;
-    background-color: #007bff;
-    color: #fff;
+    /*background-color: #007bff;*/
+    /*color: #fff;*/
     padding: 5px 10px;
     border-radius: 5px;
-    text-decoration: none;
+    /*text-decoration: none;*/
     font-size: 14px;
     display: inline-block;
     transition: background-color 0.3s;
 }
-
+/*
 .logout-link:hover {
     background-color: #0056b3;
 }
-
+*/
 .print-title {
     display: none;
 }
