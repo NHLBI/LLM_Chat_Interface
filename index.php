@@ -19,7 +19,7 @@ foreach(array_keys($models) as $m) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo $config['app']['app_title']; ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="style.v1.01b.css" rel="stylesheet">
+    <link href="style.v1.02.css" rel="stylesheet">
     <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.4.0/styles/default.min.css">
     <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.4.0/highlight.min.js"></script>
     <script>
@@ -157,7 +157,7 @@ foreach(array_keys($models) as $m) {
         var chatId = <?php echo json_encode(isset($_GET['chat_id']) ? $_GET['chat_id'] : null); ?>;
         var user = <?php echo json_encode($user); ?>;
     </script>
-    <script src="script.v1.01d.js"></script>
+    <script src="script.v1.02.js"></script>
 <script>
 function printChat() {
 window.print();

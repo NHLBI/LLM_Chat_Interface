@@ -93,7 +93,7 @@ body {
     text-overflow: ellipsis;
     max-width: 165px;
     color: white;
-    /*text-decoration: none;*/
+    text-decoration: none;
 }
 .menu a:hover {
     text-decoration: underline;
