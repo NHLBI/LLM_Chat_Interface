@@ -2,25 +2,43 @@
 
 ## Overview
 
-Web Chat 1 is a chat front-end interface designed to provide NHLBI staff with a secured, chat-like experience for their day-to-day work, through calls to Microsoft Azure's OpenAI API. This application mimics public tooling like ChatGPT and Google Bard, leveraging the Azure OpenAI API for basic chat functionalities and file uploads. It operates within an NHLBI STRIDES environment to ensure secure and compliant use of generative AI technologies.
+Web Chat 1 is a chat front-end interface designed to provide staff with a secured, chat-like experience for their day-to-day work, through calls to Microsoft Azure's OpenAI API. This application mimics public tooling like ChatGPT and Google Bard, leveraging the Azure OpenAI API for basic chat functionalities and file uploads. 
 
 ## Features
 
 - Basic chat interface similar to popular AI chat tools.
 - File upload capability for document analysis. Accepted file formats include .pdf,.docx,.pptx,.txt,.md,.json, and .xml.
 - Uses Azure OpenAI API for generating responses.
-- Designed to meet NIH OCIO AI Cybersecurity Guidance.
 
 ## Building and Launching
 
 To build and host the Web Chat 1 application:
 
 1. Clone the repository to your local or server environment.
-2. Ensure you have the necessary dependencies installed (as specified in a separate dependencies document or section).
+2. Ensure you have the necessary dependencies installed (as specified in the Code Dependencies section below).
 3. Copy the `example_chat_config.ini` to your PHP include location. Note that we use the include path, '/etc/apps/chat_config.ini'.
 4. Configure the application settings in the `chat_config.ini` file.
-5. Utilize the `osi_chat.sql` to set up the database schema.
+5. Utilize the `chat_db.sql` to set up the database schema.
 6. Follow deployment instructions to get the web server running (e.g., Apache, Nginx).
+
+## Code Dependencies
+
+The application relies on the following code dependencies:
+
+- PHP: Your web server should have PHP installed and configured (we use PHP 8.0.30).
+
+- MariaDB or MySQL: You need a database to store chat-related data (we use Server version: 10.5.22-MariaDB MariaDB Server).
+
+- Python: The application uses Python for text extraction from various file formats (we use Python 3.9.18).
+
+- Libraries for Python:
+  - `docx` (for parsing .docx files)
+  - `pdfminer` (for parsing .pdf files)
+  - `python-pptx` (for parsing .pptx files)
+
+- JavaScript Libraries: The application uses JavaScript libraries that are loaded from external sources:
+  - Bootstrap
+  - Highlight.js
 
 ## Azure API Configuration
 
@@ -87,20 +105,6 @@ Before launching the application, you need to make the following changes to the 
 
 Note that the provided `example_chat_config.ini` serves as a template and must be filled with your specific details.
 
-## Out-of-the-box Limitations
-
-The application is configured for use within the NHLBI STRIDES environment and may require adjustments for:
-
-- Different Azure API plans or versions.
-- Alternative authentication methods if not using OpenID or LDAP.
-- Institutional policies on data handling and AI usage.
-
-## Additional Information
-
-- **PII Policy**: Adhere strictly to the policy of not sharing Personally Identifiable Information (PII).
-- **Decision-Making Policy**: Do not base critical decision-making or policymaking solely on data from AI services.
-- **Feedback**: Feedback on the tool is encouraged to improve functionality and user experience.
-
 ## Contribute
 
 We welcome contributions, whether they are for bug fixes, feature additions, or improvements in documentation. For major changes, please open an issue first to discuss what you would like to change.
@@ -109,6 +113,4 @@ Please make sure to update tests as appropriate.
 
 ## License
 
-[Specify License Here]
-
-
+This project is placed in the public domain, which means that it is free for anyone to use, modify, and distribute without any restrictions.
