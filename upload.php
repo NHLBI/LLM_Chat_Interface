@@ -32,15 +32,9 @@ if (isset($_FILES['pdfDocument'])) {
     #echo "<pre>".print_r($_FILES,1)."</pre>"; die("got here");
 
     // Ensure that your script is executable and has the correct shebang line
-    #$command = __DIR__."/pdf_parser.ocr.py ".$file['tmp_name'];
-    #$command = __DIR__."/pdf_parser.py ".$file['tmp_name'];
-    #$command = __DIR__."/parser_multi.py ".$file['tmp_name']." ".basename($file['name']);
-
     #$command = __DIR__."/pdf_parser.py \"".$file['tmp_name']."\"";
     $command = __DIR__."/parser_multi.py \"".$file['tmp_name']."\" \"".basename($file['name'])."\"";
 
-
-    #echo $command . "<br><br><br>\n\n\n\n";
     $output = shell_exec($command);
     #echo "<pre>".print_r($output,1)."</pre>"; die("got here");
 
