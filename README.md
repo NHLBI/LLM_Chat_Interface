@@ -1,8 +1,8 @@
-# Web Chat 1
+# LLM Chat Interface
 
 ## Overview
 
-Web Chat 1 is a chat front-end interface designed to provide staff with a secured, chat-like experience for their day-to-day work, through calls to Microsoft Azure's OpenAI API. This application mimics public tooling like ChatGPT and Google Bard, leveraging the Azure OpenAI API for basic chat functionalities and file uploads. 
+LLM Chat Interface is a chat front-end interface designed to provide staff with a secured, chat-like experience for their day-to-day work, through calls to Microsoft Azure's OpenAI API. This application mimics public tooling like ChatGPT and Google Bard, leveraging the Azure OpenAI API for basic chat functionalities and file uploads. 
 
 ## Features
 
@@ -12,7 +12,7 @@ Web Chat 1 is a chat front-end interface designed to provide staff with a secure
 
 ## Building and Launching
 
-To build and host the Web Chat 1 application:
+To build and host the LLM Chat Interface application:
 
 1. Clone the repository to your local or server environment.
 2. Ensure you have the necessary dependencies installed (as specified in the Code Dependencies section below).
