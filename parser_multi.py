@@ -47,11 +47,13 @@ Output: text (string) - the contents of the file
 '''
 def parse_pdf(file, filename):   
 
+
     # Check if file is a pdf
     if not filename.endswith('.pdf'):
         raise ValueError('File type not supported')
 
     output = extract_text(file)    
+    return output
     if output == "":
         return "The file returned no content"
     else: 

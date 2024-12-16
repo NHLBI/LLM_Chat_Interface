@@ -2,7 +2,7 @@
 
 session_start();
 
-$config = parse_ini_file('/etc/apps/chat_config.ini',true);
+require_once '../get_config.php';
 
 require_once __DIR__ . '/auth.php';
 

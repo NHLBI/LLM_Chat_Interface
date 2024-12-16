@@ -5,7 +5,8 @@ and so the connection could not bind. The solution was to edit the file /etc/ope
 `TLS_CACERT /etc/pki/tls/certs/ca-bundle.crt`
 */
 
-$config = parse_ini_file('/etc/apps/chat_config.ini',true);
+// Determine the environment dynamically
+require_once '../get_config.php';
 
 
 function authorize($user)

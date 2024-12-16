@@ -11,7 +11,7 @@ require_once 'db.php';
 $chat_id = filter_input(INPUT_GET, 'chat_id', FILTER_SANITIZE_STRING);
 
 if (!$chat_id) {
-    die("Invalid input");
+    die(json_encode([]));
 }
 
 if (!verify_user_chat($user, $chat_id)) {
