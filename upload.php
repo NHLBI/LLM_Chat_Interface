@@ -28,14 +28,6 @@ if (isset($_GET['remove']) && $_GET['remove'] == '1') {
     exit;
 }
 
-<<<<<<< HEAD
-    // Ensure that your script is executable and has the correct shebang line
-    #$command = __DIR__."/pdf_parser.py \"".$file['tmp_name']."\"";
-    $command = __DIR__."/parser_multi.py \"".$file['tmp_name']."\" \"".basename($file['name'])."\"";
-
-    $output = shell_exec($command);
-    #echo "<pre>".print_r($output,1)."</pre>"; die("got here");
-=======
 if (isset($_FILES['uploadDocument'])) {
     $file = $_FILES['uploadDocument'];
     $mimeType = mime_content_type($file['tmp_name']);
@@ -55,7 +47,6 @@ if (isset($_FILES['uploadDocument'])) {
         // Handle document uploads via Python script
         $command = __DIR__ . "/parser_multi.py \"" . $file['tmp_name'] . "\" \"" . basename($file['name']) . "\" 2>&1";
         $output = shell_exec($command);
->>>>>>> personal/main
 
         if (strpos($output, 'ValueError') === false) {
             // Store the text and the original filename in session variables

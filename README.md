@@ -1,8 +1,8 @@
-# LLM Chat Interface
+# Web Chat 1
 
 ## Overview
 
-LLM Chat Interface is a chat front-end interface designed to provide staff with a secured, chat-like experience for their day-to-day work, through calls to Microsoft Azure's OpenAI API. This application mimics public tooling like ChatGPT and Google Bard, leveraging the Azure OpenAI API for basic chat functionalities and file uploads. 
+Web Chat 1 is a chat front-end interface designed to provide staff with a secured, chat-like experience for their day-to-day work, through calls to Microsoft Azure's OpenAI API. This application mimics public tooling like ChatGPT and Google Bard, leveraging the Azure OpenAI API for basic chat functionalities and file uploads. 
 
 ## Features
 
@@ -12,7 +12,7 @@ LLM Chat Interface is a chat front-end interface designed to provide staff with 
 
 ## Building and Launching
 
-To build and host the LLM Chat Interface application:
+To build and host the Web Chat 1 application:
 
 1. Clone the repository to your local or server environment.
 2. Ensure you have the necessary dependencies installed (as specified in the Code Dependencies section below).
@@ -66,18 +66,13 @@ The MariaDB schema for this chat interface is very simple, just two tables: `cha
 CREATE TABLE `chat` (
   `id` varchar(32) NOT NULL,
   `user` varchar(255) DEFAULT NULL,
-  `title` varchar(255) DEFAULT NULL,
+  `title` varchar(128) DEFAULT NULL,
   `summary` text DEFAULT NULL,
   `deployment` varchar(64) DEFAULT NULL,
-  `temperature` decimal(2,1) DEFAULT NULL,
-  `document_name` varchar(255) DEFAULT NULL,
-  `document_type` varchar(124) DEFAULT NULL,
+  `document_name` varchar(128) DEFAULT NULL,
   `document_text` longtext DEFAULT NULL,
-  `new_title` tinyint(1) NOT NULL DEFAULT 1,
   `deleted` tinyint(4) DEFAULT 0,
-  `sort_order` int(16) NOT NULL DEFAULT 0,
-  `timestamp` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-  `date_created` timestamp NOT NULL DEFAULT current_timestamp(),
+  `timestamp` timestamp NULL DEFAULT NULL,
   UNIQUE KEY `id` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -89,22 +84,15 @@ CREATE TABLE `exchange` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `chat_id` varchar(32) NOT NULL,
   `user` varchar(255) DEFAULT NULL,
-  `prompt` longtext DEFAULT NULL,
+  `prompt` text DEFAULT NULL,
   `reply` text DEFAULT NULL,
-  `document_name` varchar(128) DEFAULT NULL,
-  `document_type` varchar(124) DEFAULT NULL,
-  `document_text` longtext DEFAULT NULL,
   `deployment` varchar(64) DEFAULT NULL,
-  `api_key` varchar(64) DEFAULT NULL,
-  `temperature` decimal(2,1) DEFAULT NULL,
-  `uri` varchar(256) DEFAULT NULL,
-  `api_endpoint` varchar(255) DEFAULT NULL,
   `deleted` tinyint(4) DEFAULT 0,
   `timestamp` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `fk_exchange_chat` (`chat_id`),
   CONSTRAINT `fk_exchange_chat` FOREIGN KEY (`chat_id`) REFERENCES `chat` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;p
 
 ## Configuration Changes
 

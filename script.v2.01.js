@@ -119,7 +119,6 @@ $(document).ready(function() {
                 success: function(response) {
                     $('.waiting-indicator').hide();
 
-                    fetchAndUpdateChatTitles(search_term,0);
                     var jsonResponse = JSON.parse(response);
                     var gpt_response = jsonResponse['gpt_response'];
 
@@ -152,6 +151,7 @@ $(document).ready(function() {
                         window.location.href = path;
                         return;
                     }
+                    fetchAndUpdateChatTitles(search_term,0);
 
                     // Check if the deployment configuration exists
                     if (deployments[deployment]) {

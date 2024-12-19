@@ -27,7 +27,7 @@ function adjustChatTitlesHeight() {
     const menuBottomContent = document.querySelector('.mt-auto.p-2');
 
     // Calculate available height
-    const viewportHeight = window.innerHeight - 120;
+    const viewportHeight = window.innerHeight - 130;
     const menuBottomHeight = menuBottomContent.offsetHeight + 60;
 
     //console.log(viewportHeight)
