@@ -40,3 +40,16 @@ function adjustChatTitlesHeight() {
     const newHeight = Math.max(viewportHeight - menuBottomHeight - paddingOffset, 360);
     chatTitlesContainer.style.height = `${newHeight}px`;
 }
+function updatePlaceholder() {
+  const userMessageInput = document.getElementById('userMessage');
+
+  // Priority: Dall-e > Document > Default
+  if (deployment === 'azure-dall-e-3') {
+    userMessageInput.placeholder = "Type a detailed description of your image to create... (Note: does not use previous prompts or images.)";
+  } else if (document_name) {
+    userMessageInput.placeholder = "Type your questions about your uploaded file... (Note: does not use previous prompts or replies.)";
+  } else {
+    userMessageInput.placeholder = "Type your message...";
+  }
+}
+

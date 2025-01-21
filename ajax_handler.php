@@ -6,12 +6,17 @@ require_once 'db.php';
 #define('HARDCODED_DEPLOYMENT','azure-gpt35');
 define('HARDCODED_DEPLOYMENT','azure-gpt3-16k');
 
+$user = $_SESSION['user_data']['userid'] ?? null; // Assuming you have a session variable for username
+
 // Check if the request method is POST
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Get the user's message from the POST data
     $user_message = base64_decode($_POST['message']); // Decode from Base64
     //$user_message = filter_input(INPUT_POST, 'message', FILTER_SANITIZE_STRING);
+
+    $deployment = isset($_POST['deployment']) ? $_POST['deployment'] : 'default_deployment'; // Provide a default if needed
+
 
     // Retrieve the chat ID from the POST data
     $chat_id = filter_input(INPUT_POST, 'chat_id', FILTER_SANITIZE_STRING);
@@ -20,8 +25,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $new_chat_id = '';
     $document_name = $_SESSION['document_name'] ?? ''; // Use null coalescing operator for default values
     $document_text = $_SESSION['document_text'] ?? '';
-    #$document_name = (empty($_SESSION['document_name'])) ? '' : $_SESSION['document_name'];
-    #$document_text = (empty($_SESSION['document_text'])) ? '' : $_SESSION['document_text'];
 
     // Create a new chat session if no chat ID is provided
     if (empty($chat_id)) {
@@ -35,7 +38,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $id = $chat_id;
     }
 
-
     /*
     echo "THIS IS THE deployment: " . $deployment . "\n";
     echo "THIS IS THE config: " . print_r($config,1) . "\n";
@@ -45,8 +47,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     */
 
     // Get the GPT response to the user's message using the get_gpt_response() function
-    $gpt_response = get_gpt_response($user_message, $id, $user);
-    #echo "THIS IS THE GPT Response: " . print_r($gpt_response,1); die();
+    $gpt_response = get_gpt_response($user_message, $id, $user, $deployment);
+    #echo "THIS IS THE GPT Response: <pre>" . print_r($gpt_response,1)."</pre>"; die();
 
     if (!empty($gpt_response['error']) && $gpt_response['error'] == 1) {
         $gpt_response['message'] = preg_replace('/Please go here.*/','',$gpt_response['message']);
@@ -65,12 +67,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Prepare the response data to send back to the client
     $response = [
-        'deployment' => $gpt_response['deployment'] ?? null, 
+        'eid' => $gpt_response['eid'] ?? null,
+        'deployment' => $deployment ?? null, 
         'error' => $gpt_response['error'] ?? null,
-        'gpt_response' => $gpt_response['message'] ?? null, 
+        'gpt_response' => $gpt_response['message'] ?? null,
         'chat_id' => $chat_id,
-        'new_chat_id' => $new_chat_id
+        'new_chat_id' => $new_chat_id,
+        'image_gen_name' => $gpt_response['image_gen_name'] ?? null // Include image filename
     ];
+
     #echo "THIS IS THE GPT Response: " . print_r($response,1); die();
 
     // Send the JSON-encoded response and exit the script

@@ -32,7 +32,7 @@ CREATE TABLE `auto_title` (
   PRIMARY KEY (`id`),
   KEY `fk_exchange_chat` (`chat_id`),
   CONSTRAINT `fk_auto_title` FOREIGN KEY (`chat_id`) REFERENCES `chat` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=40553 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=40648 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -62,6 +62,27 @@ CREATE TABLE `chat` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `documents`
+--
+
+DROP TABLE IF EXISTS `documents`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `documents` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `chat_id` varchar(32) NOT NULL,
+  `name` varchar(255) NOT NULL,
+  `type` varchar(124) NOT NULL,
+  `content` longtext NOT NULL,
+  `deleted` tinyint(1) DEFAULT 0,
+  `timestamp` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `fk_exchange_chat_docs` (`chat_id`),
+  CONSTRAINT `fk_exchange_chat_docs` FOREIGN KEY (`chat_id`) REFERENCES `chat` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `exchange`
 --
 
@@ -73,10 +94,14 @@ CREATE TABLE `exchange` (
   `chat_id` varchar(32) NOT NULL,
   `user` varchar(255) DEFAULT NULL,
   `prompt` longtext DEFAULT NULL,
+  `prompt_token_length` int(11) DEFAULT NULL,
   `reply` text DEFAULT NULL,
+  `reply_token_length` int(11) DEFAULT NULL,
   `document_name` varchar(128) DEFAULT NULL,
   `document_type` varchar(124) DEFAULT NULL,
   `document_text` longtext DEFAULT NULL,
+  `document_source` varchar(10) DEFAULT NULL,
+  `image_gen_name` varchar(255) DEFAULT NULL,
   `deployment` varchar(64) DEFAULT NULL,
   `api_key` varchar(64) DEFAULT NULL,
   `temperature` decimal(2,1) DEFAULT NULL,
@@ -87,7 +112,7 @@ CREATE TABLE `exchange` (
   PRIMARY KEY (`id`),
   KEY `fk_exchange_chat` (`chat_id`),
   CONSTRAINT `fk_exchange_chat` FOREIGN KEY (`chat_id`) REFERENCES `chat` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=50659 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=60482 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -99,4 +124,4 @@ CREATE TABLE `exchange` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2024-12-16 14:46:41
+-- Dump completed on 2025-01-21 11:40:46

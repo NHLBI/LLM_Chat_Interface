@@ -51,62 +51,122 @@ function create_chat($user, $title, $summary, $deployment, $document_name, $docu
     #return $pdo->lastInsertId();
 }
 
-// Create a new exchange in the database with the given chat ID, prompt, and reply
-function create_exchange($chat_id, $prompt, $reply) {
-    global $pdo;
-    $deployment = $_SESSION['deployment'] ?? null;
-    $temperature = $_SESSION['temperature'] ?? null;
-    $api_endpoint = $_SESSION['api_endpoint'] ?? null;
-    $uri = $_SERVER['HTTP_REFERER'];
-    
-    // Retrieve document information from the chat table
-    $document_status = get_uploaded_image_status($chat_id);
-    #error_log('Database test: ' . print_r($document_status,1));
-    
-    // Initialize document details
-    $document_name = null;
-    $document_type = null;
-    $document_text = null;
+// Function to get token count using token_counter.py
+function get_token_count($text, $encoding_name = "cl100k_base") {
+    // Define a maximum chunk size to avoid issues with very large strings
+    $max_chunk_size = 100000; // Adjust this based on your environment
 
-    // Check if the document is an image
-    if (is_array($document_status) && isset($document_status['document_type'])) {
-        $mime_type = $document_status['document_type'];
-        $allowed_mime_types = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'image/tiff'];
-
-        if (in_array($mime_type, $allowed_mime_types)) {
-            $document_name = $document_status['document_name'] ?? null;
-            $document_type = $document_status['document_type'] ?? null;
-            $document_text = $document_status['document_text'] ?? null;
-        }
+    // If the text is smaller than the max chunk size, process it directly
+    if (strlen($text) <= $max_chunk_size) {
+        return call_token_counter($text, $encoding_name);
     }
 
-    // Prepare the INSERT statement with placeholders for document details
+    // Split the text into chunks and process each chunk separately
+    $chunks = str_split($text, $max_chunk_size);
+    $total_tokens = 0;
+
+    foreach ($chunks as $chunk) {
+        $total_tokens += call_token_counter($chunk, $encoding_name);
+    }
+
+    return $total_tokens;
+}
+
+// Helper function to call the token_counter.py script
+function call_token_counter($text, $encoding_name) {
+    // Escape arguments to prevent command injection
+    $escaped_text = escapeshellarg($text);
+    $escaped_encoding = escapeshellarg($encoding_name);
+
+    $command = "python3 token_counter.py text $escaped_encoding $escaped_text";
+    $output = shell_exec($command);
+
+    // Remove any whitespace or newlines from the output
+    $token_count = intval(trim($output));
+
+    return $token_count;
+}
+
+/**
+ * Create a new exchange in the database with the given chat ID, prompt, and reply.
+ *
+ * Optionally pass document metadata and image generation filename.
+ */
+function create_exchange(
+    $chat_id,
+    $prompt,
+    $reply,
+    $document_name = null,
+    $document_type = null,
+    $document_text = null,
+    $image_gen_name = null
+) {
+    global $pdo;
+
+    $deployment   = $_SESSION['deployment'] ?? null;
+    $temperature  = $_SESSION['temperature'] ?? null;
+    $api_endpoint = $_SESSION['api_endpoint'] ?? null;
+    $uri          = $_SERVER['HTTP_REFERER'] ?? '';
+    $user         = $_SESSION['user_data']['userid'] ?? null;
+
+    // Step 1: Calculate token lengths
+    $prompt_token_length = get_token_count($prompt);
+    $reply_token_length  = get_token_count($reply);
+
+    // Step 2: Insert record
     $stmt = $pdo->prepare("
-        INSERT INTO exchange (chat_id, deployment, api_endpoint, temperature, uri, prompt, reply, document_name, document_type, document_text, timestamp)
-        VALUES (:chat_id, :deployment, :api_endpoint, :temperature, :uri, :prompt, :reply, :document_name, :document_type, :document_text, NOW())
+        INSERT INTO exchange 
+        (
+            chat_id, user, deployment, api_endpoint, temperature, uri,
+            prompt, prompt_token_length, 
+            reply, reply_token_length, 
+            document_name, document_type, document_text, image_gen_name,
+            timestamp
+        )
+        VALUES 
+        (
+            :chat_id, :user, :deployment, :api_endpoint, :temperature, :uri,
+            :prompt, :prompt_token_length,
+            :reply, :reply_token_length,
+            :document_name, :document_type, :document_text, :image_gen_name,
+            NOW()
+        )
     ");
-    
-    // Bind the parameters
+
     $stmt->execute([
-        'chat_id' => $chat_id,
-        'deployment' => $deployment,
-        'api_endpoint' => $api_endpoint,
-        'temperature' => $temperature,
-        'uri' => $uri,
-        'prompt' => $prompt,
-        'reply' => $reply,
-        'document_name' => $document_name,
-        'document_type' => $document_type,
-        'document_text' => $document_text
+        'chat_id'             => $chat_id,
+        'user'                => $user,
+        'deployment'          => $deployment,
+        'api_endpoint'        => $api_endpoint,
+        'temperature'         => $temperature,
+        'uri'                 => $uri,
+        'prompt'              => $prompt,
+        'prompt_token_length' => $prompt_token_length,
+        'reply'               => $reply,
+        'reply_token_length'  => $reply_token_length,
+        'document_name'       => $document_name,
+        'document_type'       => $document_type,
+        'document_text'       => $document_text,
+        'image_gen_name'      => $image_gen_name
     ]);
-    
+
     $insert_id = $pdo->lastInsertId();
 
+    // Update chat timestamp
     $stmt = $pdo->prepare("UPDATE chat SET timestamp = NOW() WHERE id = :id");
     $stmt->execute(['id' => $chat_id]);
 
     return $insert_id;
+}
 
+function get_image_data($eid) {
+    global $pdo;
+    if (empty($eid)) return false;
+    
+    $stmt = $pdo->prepare("SELECT image_lg FROM exchange WHERE id = :id");
+    $stmt->execute(['id' => $eid]);
+    $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    return $result[0]['image_lg'];
 }
 
 function get_uploaded_image_status($chat_id) {

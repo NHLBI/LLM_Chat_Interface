@@ -69,18 +69,3 @@ if (isset($_FILES['uploadDocument'])) {
 // Prevent accidental output by stopping the script here
 exit;
 
-// Function to convert a local image to a base64 data URL
-function local_image_to_data_url($image_path, $mimeType)
-{
-    // Fallback to application/octet-stream if MIME type is not set
-    if ($mimeType === null) {
-        $mimeType = "application/octet-stream";
-    }
-
-    // Open the image file in binary mode and encode it to base64
-    $base64_encoded_data = base64_encode(file_get_contents($image_path));
-
-    // Return the data URL with the appropriate MIME type
-    return "data:$mimeType;base64,$base64_encoded_data";
-}
-
