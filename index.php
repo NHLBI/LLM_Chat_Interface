@@ -32,6 +32,19 @@ foreach(array_keys($models) as $m) {
     <!-- Include marked.js for Markdown parsing -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
+  <!-- MathJax configuration -->
+    <script>
+    window.MathJax = {
+        tex: {
+            inlineMath: [['$', '$'], ['\\(', '\\)']],
+            displayMath: [['$$', '$$'], ['\\[', '\\]']]
+        },
+        svg: { fontCache: 'global' }
+    };
+    </script>
+    <!-- Load MathJax -->
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>
+
     <!-- Initialize Highlight.js -->
     <script>
         document.addEventListener('DOMContentLoaded', (event) => {
@@ -336,7 +349,7 @@ foreach(array_keys($models) as $m) {
 <script src="scripts/popup.js"></script>
 <script src="scripts/ui.js"></script>
 <script src="scripts/listeners.js"></script>
-<script src="script.v2.02.js"></script>
+<script src="script.v2.03.js"></script>
 <script>
 function printChat() {
     // Prevent the default form submission behavior

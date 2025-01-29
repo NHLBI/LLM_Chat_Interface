@@ -13,6 +13,16 @@ code {
     text-overflow: ellipsis; /* This will add "..." at the end if text overflows */
 }
 
+.math-block {
+    display: block;
+    margin: 1em 0;
+    text-align: center;
+}
+
+.math-inline {
+    display: inline-block;
+    vertical-align: middle;
+}
 .p-2 {
     width: 100%;
 }
