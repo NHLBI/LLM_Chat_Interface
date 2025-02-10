@@ -665,7 +665,7 @@ code {
 #printButton {
 }
 
-.aboutChat {
+.aboutChat, .aboutModels {
     background: gray;
     border: solid gray 1px;
     border-radius: 5px;
@@ -674,7 +674,7 @@ code {
     min-width: 230px;
 }
 
-.aboutChatWindow {
+.aboutChatWindow, .aboutModelsWindow {
     display: none;  /* Hide by default */
     position: fixed;
     top: 10%;  /* Start from a slightly lower point */
@@ -694,7 +694,7 @@ code {
     overflow-y: auto;  /* Allow scrolling if content is too tall */
 }
 
-.aboutChatWindow.show {
+.aboutChatWindow.show, .aboutModelsWindow.show {
     display: block;
     opacity: 1;  /* Make visible */
     transform: translate(-50%, 0) scale(1);

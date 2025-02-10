@@ -21,6 +21,18 @@ function closeAboutUs() {
     var userMessage = document.getElementById('userMessage'); // Assuming 'userMessage' is the ID of your input
     userMessage.focus();  // Set focus back to the message input
 }
+function showAboutModels() {
+    var aboutWindow = document.querySelector('.aboutModelsWindow');
+    var aboutCloser = document.querySelector('.closeAbout');
+    aboutWindow.classList.add('show');  // Add the 'show' class to make it visible
+    aboutCloser.focus();  // Give focus to the close button
+}
+function closeAboutModels() {
+    var aboutWindow = document.querySelector('.aboutModelsWindow');
+    aboutWindow.classList.remove('show');  // Remove the 'show' class to hide it
+    var userMessage = document.getElementById('userMessage'); // Assuming 'userMessage' is the ID of your input
+    userMessage.focus();  // Set focus back to the message input
+}
 function adjustChatTitlesHeight() {
     // Select the chat-titles-container and the menu bottom content
     const chatTitlesContainer = document.querySelector('.chat-titles-container');

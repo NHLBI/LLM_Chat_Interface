@@ -60,7 +60,7 @@ foreach ($models_a as $m) {
 // Define temperature options
 $temperatures = [];
 $i = 0;
-while ($i < 1) {
+while ($i < 2.1) {
     $temperatures[] = round($i, 1);
     $i += 0.1;
 }
@@ -253,13 +253,14 @@ function call_azure_api($active_config, $msg) {
     } else {
         // Chat Completion Endpoint
         $url = $active_config['base_url'] . "/openai/deployments/" . $active_config['deployment_name'] . "/chat/completions?api-version=" . $active_config['api_version'];
+        $top_p = (preg_match('/o1|o3/',$_SESSION['deployment'])) ? 1 : 0.95;
         
         $payload = [
             'messages' => $msg,
             "temperature" => (float)$_SESSION['temperature'],
             "frequency_penalty" => 0,
             "presence_penalty" => 0,
-            "top_p" => 1
+            "top_p" => $top_p
         ];
         if (!empty($active_config['max_tokens'])) {
             $payload['max_tokens'] = $active_config['max_tokens'];
@@ -777,5 +778,21 @@ function substringWords($text, $numWords) {
     $subString = implode(' ', $selectedWords);
     
     return $subString;
+}
+
+function get_tool_tips() {
+    global $config;
+    $output = "<ul>\n";
+    $deployments = explode(',',$config['azure']['deployments']);
+    foreach($deployments as $pair) {
+        $a = explode(':',$pair);
+        $deployment = $config[$a[0]];
+        if ($deployment['enabled'] > 0) {
+            #echo '<pre>'.print_r($config[$a[0]],1).'</pre>';
+            $output .= '<li><strong>'.$a[1].'</strong>: '.$deployment['tooltip']."</li>\n";
+        }
+    }
+    $output .= "</ul>\n";
+    return $output;
 }
 

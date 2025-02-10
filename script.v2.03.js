@@ -157,6 +157,15 @@ $(document).ready(function() {
                         return;
                     }
 
+			        console.log(jsonResponse);
+                    const path = "/" + application_path + "/" + jsonResponse.new_chat_id;
+                    console.log("this is the application path: " + path);
+
+                    if (jsonResponse.new_chat_id) {
+                        window.location.href = path;
+                        return;
+                    }
+
                     var assistantMessageElement = $('<div class="message assistant-message" style="margin-bottom: 30px;"></div>');
 
                     // Prepend the assistant's icon

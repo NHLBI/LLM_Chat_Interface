@@ -60,15 +60,12 @@ if (!empty($user)) echo '<p id="username">Hello '.$user.'</p>'."\n";
 
 if (!empty($error)) echo '<span style="color:red">'.$error.'</span></p>'."\n";
 
-if (!empty($config['app']['notification_center'])) {
+require_once 'staticpages/model_text.html';
 
-    echo '<div class="notification_center"><strong>Notification Center:</strong> <br><br>'.$config['app']['notification_center'].'</div>'."\n";
-}
-
-echo $config['app']['disclaimer_text'];
+require_once 'staticpages/disclaimer_text.html';
 
 ?>                    
-
+                    <div style="border: solid 1px lightgray; padding: 20px;"><h3>Active models: </h3><?php echo get_tool_tips(); ?></div>
                     <p class="newchat" style="text-align: center;">
                     <a title="Click here to go to authentication" href="auth_redirect.php">Proceed</a></p>
                     <!-- Chat messages will be added here -->
