@@ -312,7 +312,7 @@ function process_api_response($response, $active_config, $chat_id, $message, $ms
             $unique_dir = $matches[1] ?? uniqid();
             $image_gen_name = $chat_id . '-' . $unique_dir . '.png';
 
-            $image_gen_dir = __DIR__ . '/image_gen';
+            $image_gen_dir = dirname(__DIR__) . '/image_gen';
             $fullsize_dir = $image_gen_dir . '/fullsize';
             $small_dir = $image_gen_dir . '/small';
 

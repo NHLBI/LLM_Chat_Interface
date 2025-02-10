@@ -177,7 +177,7 @@ $(document).ready(function() {
                     if (image_gen_name) {
                         var imgElement = $('<img>')
                             .attr('class', 'image-message')
-                            .attr('src', './image_gen/small/' + image_gen_name)
+                            .attr('src', '../image_gen/small/' + image_gen_name)
                             .attr('alt', 'Generated Image')
                             .on('load', function () {
                                 // Scroll to the bottom only after the image is loaded
@@ -187,7 +187,7 @@ $(document).ready(function() {
                         assistantMessageElement.append(imgElement);
 
                         // Add the download button for the full-size image
-                        addDownloadButton(assistantMessageElement, './image_gen/fullsize/' + image_gen_name);
+                        addDownloadButton(assistantMessageElement, '../image_gen/fullsize/' + image_gen_name);
 
                     // Otherwise, display text
                     } else if (gpt_response) {
@@ -354,7 +354,7 @@ $(document).ready(function() {
             if (message.image_gen_name) {
                 var genImg = $('<img>')
                     .attr('class', 'image-message')
-                    .attr('src', './image_gen/small/' + message.image_gen_name)
+                    .attr('src', '../image_gen/small/' + message.image_gen_name)
                     .attr('alt', 'Generated Image')
                     .on('load', function () {
                         //scrollToBottom(); // Scroll after the image loads
@@ -363,11 +363,11 @@ $(document).ready(function() {
 
                 if (assistantMessageElement) {
                     assistantMessageElement.append(genImg);
-                    addDownloadButton(assistantMessageElement, './image_gen/fullsize/' + message.image_gen_name);
+                    addDownloadButton(assistantMessageElement, '../image_gen/fullsize/' + message.image_gen_name);
                 } else {
                     var imageContainer = $('<div class="message assistant-message"></div>');
                     imageContainer.append(genImg);
-                    addDownloadButton(imageContainer, './image_gen/fullsize/' + message.image_gen_name);
+                    addDownloadButton(imageContainer, '../image_gen/fullsize/' + message.image_gen_name);
                     chatContainer.append(imageContainer);
                 }
             }
