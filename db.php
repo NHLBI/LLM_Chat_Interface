@@ -4,8 +4,6 @@
 // Parse the configuration file
 require_once 'get_config.php';
 
-#print_r($config);
-
 // Get the database configuration from the config array
 $host = $config['database']['host'];
 $dbname = $config['database']['dbname'];
@@ -183,6 +181,25 @@ function get_uploaded_image_status($chat_id) {
     return $result[0];
 }
 
+// Update the last_viewed field for a given chat ID
+function update_last_viewed($chat_id) {
+    global $pdo;
+    
+    $sql = "UPDATE `chat` 
+            SET `last_viewed` = CURRENT_TIMESTAMP, 
+                `timestamp` = `timestamp`
+            WHERE `id` = :chat_id";
+    
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute(['chat_id' => $chat_id]);
+    
+    if ($stmt->rowCount() > 0) {
+        return true; // Indicates that the update was successful
+    } else {
+        return false; // Indicates that no rows were updated
+    }
+}
+
 // Get all exchanges for a given chat ID from the database, ordered by timestamp
 function get_all_exchanges($chat_id, $user) {
     #echo "in get_all_exchanges\n";
@@ -323,4 +340,71 @@ function update_chat_document($user, $chat_id, $document_name, $document_type, $
     $stmt->execute(['document_name' => $document_name, 'document_type' => $document_type, 'document_text' => $document_text, 'id' => $chat_id]);
 }
 
+// Delete all chats where last_viewed is 6 months old or more and deleted = 1
+function delete_old_chats($months = 6) {
+    global $pdo;
+    
+    // Calculate the date that is $months months ago
+    $date_threshold = (new DateTime())->modify("-{$months} months")->format('Y-m-d H:i:s');
+    
+    $sql = "DELETE FROM `chat` 
+            WHERE `timestamp` <= :date_threshold
+            AND `user` = 'wyrickrv'
+            AND `deleted` = 1";
+
+    #echo $sql . "\n";
+    #echo $date_threshold . "\n";
+
+    try {
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute(['date_threshold' => $date_threshold]);
+        
+        // Check how many rows were deleted
+        $rowCount = $stmt->rowCount();
+        
+        if ($rowCount > 0) {
+            return $rowCount; // Return the number of deleted rows
+        } else {
+            return 0; // No rows were deleted
+        }
+    } catch (PDOException $e) {
+        error_log("Failed to delete old chats: " . $e->getMessage(), 0);
+        return false;
+    }
+}
+
+// Delete all chats where last_viewed is 6 months old or more and deleted = 1
+function soft_delete_old_chats($months = 6) {
+    global $pdo;
+    
+    // Calculate the date that is $months months ago
+    $date_threshold = (new DateTime())->modify("-{$months} months")->format('Y-m-d H:i:s');
+    
+    $sql = "UPDATE `chat`
+            SET `deleted` = 1,
+                `timestamp` = `timestamp`
+            WHERE `last_viewed` <= :date_threshold
+            AND `user` = 'wyrickrv'
+            AND `deleted` = 0";
+
+    #echo $sql . "\n";
+    #echo $date_threshold . "\n";
+
+    try {
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute(['date_threshold' => $date_threshold]);
+        
+        // Check how many rows were deleted
+        $rowCount = $stmt->rowCount();
+        
+        if ($rowCount > 0) {
+            return $rowCount; // Return the number of deleted rows
+        } else {
+            return 0; // No rows were deleted
+        }
+    } catch (PDOException $e) {
+        error_log("Failed to delete old chats: " . $e->getMessage(), 0);
+        return false;
+    }
+}
 
