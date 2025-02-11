@@ -92,6 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
  * @return string|null The generated chat title or null if an error occurs.
  */
 function generate_chat_title($user_message, $gpt_response, $config_key) {
+    global $chat_id;
     // Prepare the message for generating a chat title
     $msg = [
         ["role" => "system", "content" => "You are an AI assistant that creates concise, friently, title summaries for chats. Use no more than 5 words. Never include code or punctuation. Never include mathematical notation. Only use words and if needed, numbers."],
@@ -99,11 +100,11 @@ function generate_chat_title($user_message, $gpt_response, $config_key) {
         ["role" => "assistant", "content" => substringWords($gpt_response,300)],
         ["role" => "user", "content" => "Pleae create a concise, friently, title, summarizing this chat. Use no more than 5 words. Never include code or punctuation. Never include mathematical notation. Only use words and if needed, numbers."],
     ];
-    $active_config = load_configuration($config_key);
-    #die(print_r($msg,1));
+    $active_config = load_configuration($config_key, true);
+    #die(print_r($active_config,1));
 
     // Call Azure API to generate the chat title
-    $title_response = call_azure_api($active_config, $msg);
+    $title_response = call_azure_api($active_config, $chat_id, $msg);
     $title_response_data = json_decode($title_response, true);
     #die(print_r($title_response_data,1));
 

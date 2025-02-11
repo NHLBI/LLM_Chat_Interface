@@ -147,7 +147,7 @@ function get_gpt_response($message, $chat_id, $user, $deployment) {
     if ($active_config['host'] == "Mocha") {
         $response = call_mocha_api($active_config['base_url'], $msg);
     } else {
-        $response = call_azure_api($active_config, $msg);
+        $response = call_azure_api($active_config, $chat_id, $msg);
     }
     #echo "<pre>Step get_gpt_response()\n".print_r($response,1)."</pre>"; die();
 
@@ -160,8 +160,13 @@ function get_gpt_response($message, $chat_id, $user, $deployment) {
  * @param string $deployment The deployment identifier.
  * @return array|null The configuration array or null if not found.
  */
-function load_configuration($deployment) {
+function load_configuration($deployment, $hardcoded = false) {
     global $config;
+
+    if ($hardcoded) {
+        $config[$deployment]['enabled'] = true;
+    }
+
     // Check if the deployment is enabled
     if (!isset($config[$deployment]['enabled']) || $config[$deployment]['enabled'] == false || $config[$deployment]['enabled'] === 'false') {
         // Reassign deployment to default if not enabled
@@ -236,7 +241,7 @@ function call_mocha_api($base_url, $msg) {
  * @param mixed $msg The message payload.
  * @return string The API response.
  */
-function call_azure_api($active_config, $msg) {
+function call_azure_api($active_config, $chat_id, $msg) {
     $is_dalle = ($active_config['host'] === 'Dall-e');
 
     if ($is_dalle) {
@@ -277,7 +282,7 @@ function call_azure_api($active_config, $msg) {
         'Content-Type: application/json',
         'api-key: ' . $active_config['api_key']
     ];
-    $response = execute_api_call($url, $payload, $headers);
+    $response = execute_api_call($url, $payload, $headers, $chat_id);
     return $response;
 }
 
@@ -397,14 +402,20 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
  * @param array $headers The HTTP headers.
  * @return string The API response.
  */
-function execute_api_call($url, $payload, $headers) {
-    // Uncomment for debugging
-    /*
-    print($url."\n");
-    print_r($headers);
-    print_r($payload);
-    die();
-    */
+function execute_api_call($url, $payload, $headers, $chat_id = '') {
+    // Logging for debugging
+    $date = new DateTime();
+    $timezone = new DateTimeZone('America/New_York');
+    $date->setTimezone($timezone);
+    $log = 
+    $date->format('Y-m-d H:i:s')."\n". 
+    "Chat ID: ".$chat_id."\n".
+    "URL: ".$url."\n".
+    "Headers: ".$headers[1]."\n".
+    "Prompt: ".substr($payload['messages'][count($payload['messages'])-1]['content'],0,100)."\n\n";
+    #die($log);
+    file_put_contents("mylog.log", $log, FILE_APPEND);
+    
     $_SESSION['api_endpoint'] = $url;
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $url);
