@@ -200,8 +200,8 @@ function load_configuration($deployment, $hardcoded = false) {
  */
 function get_chat_thread($message, $chat_id, $user, $active_config) {
 
-    if ($active_config['host'] === 'Dall-e') {
-        return array('prompt'=>$message); // Handle DALL-E Image Generation Requests
+    if ($active_config['host'] === 'dall-e') {
+        return array('prompt'=>$message); // Handle dall-E Image Generation Requests
         
     } else {
         // Handle Chat Completion Requests
@@ -242,10 +242,10 @@ function call_mocha_api($base_url, $msg) {
  * @return string The API response.
  */
 function call_azure_api($active_config, $chat_id, $msg) {
-    $is_dalle = ($active_config['host'] === 'Dall-e');
+    $is_dalle = ($active_config['host'] === 'dall-e');
 
     if ($is_dalle) {
-        // DALL-E Image Generation Endpoint
+        // dall-E Image Generation Endpoint
         $url = $active_config['base_url'] . "/openai/deployments/" . $active_config['deployment_name'] . "/images/generations?api-version=" . $active_config['api_version'];
         
         $payload = [
@@ -309,7 +309,7 @@ function process_api_response($response, $active_config, $chat_id, $message, $ms
         ];
     }
 
-    if ($active_config['host'] === 'Dall-e') {
+    if ($active_config['host'] === 'dall-e') {
         $image_url = $response_data['data'][0]['url'] ?? null;
 
         if ($image_url) {
@@ -404,6 +404,7 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
  */
 function execute_api_call($url, $payload, $headers, $chat_id = '') {
     // Logging for debugging
+    /*
     $date = new DateTime();
     $timezone = new DateTimeZone('America/New_York');
     $date->setTimezone($timezone);
@@ -415,6 +416,7 @@ function execute_api_call($url, $payload, $headers, $chat_id = '') {
     "Prompt: ".substr($payload['messages'][count($payload['messages'])-1]['content'],0,100)."\n\n";
     #die($log);
     file_put_contents("mylog.log", $log, FILE_APPEND);
+    */
     
     $_SESSION['api_endpoint'] = $url;
     $ch = curl_init();
@@ -546,7 +548,7 @@ function handle_document_content($message, $active_config) {
 /**
  * Fetches a remote image, saves it temporarily, and returns a base64 data URL.
  *
- * @param string $remote_url The remote image URL from DALL-E.
+ * @param string $remote_url The remote image URL from dall-E.
  * @return array|null Returns ['data_url' => ..., 'mime_type' => ..., 'filename' => ...]
  *                    or null on failure.
  */

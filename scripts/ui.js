@@ -55,7 +55,7 @@ function adjustChatTitlesHeight() {
 function updatePlaceholder() {
   const userMessageInput = document.getElementById('userMessage');
 
-  // Priority: Dall-e > Document > Default
+  // Priority: dall-e > Document > Default
   if (deployment === 'azure-dall-e-3') {
     userMessageInput.placeholder = "Type a detailed description of your image to create... (Note: does not use previous prompts or images.)";
   } else if (document_name) {

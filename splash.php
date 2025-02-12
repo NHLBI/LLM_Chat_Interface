@@ -64,7 +64,7 @@ require_once 'staticpages/notification_center.html';
 
 require_once 'staticpages/disclaimer_text.html';
 
-require_once 'staticpages/model_text.html';
+# require_once 'staticpages/model_text.html';
 
 ?>                    
                     <p class="newchat" style="text-align: center;">

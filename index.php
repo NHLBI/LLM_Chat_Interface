@@ -220,7 +220,7 @@ foreach(array_keys($models) as $m) {
 
             <div class="aboutModelsWindow">
                 <button class="closeAbout" onclick="closeAboutModels()" aria-label="Close About Models"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 50 50" width="20px" height="20px"><path d="M 25 2 C 12.309534 2 2 12.309534 2 25 C 2 37.690466 12.309534 48 25 48 C 37.690466 48 48 37.690466 48 25 C 48 12.309534 37.690466 2 25 2 z M 25 4 C 36.609534 4 46 13.390466 46 25 C 46 36.609534 36.609534 46 25 46 C 13.390466 46 4 36.609534 4 25 C 4 13.390466 13.390466 4 25 4 z M 32.990234 15.986328 A 1.0001 1.0001 0 0 0 32.292969 16.292969 L 25 23.585938 L 17.707031 16.292969 A 1.0001 1.0001 0 0 0 16.990234 15.990234 A 1.0001 1.0001 0 0 0 16.292969 17.707031 L 23.585938 25 L 16.292969 32.292969 A 1.0001 1.0001 0 1 0 17.707031 33.707031 L 25 26.414062 L 32.292969 33.707031 A 1.0001 1.0001 0 1 0 33.707031 32.292969 L 26.414062 25 L 33.707031 17.707031 A 1.0001 1.0001 0 0 0 32.990234 15.986328 z" fill="#222222"/></svg></button>
-                <h4>About Large Language Models</h4>
+                <h4>Active Models in NHLBI Chat</h4>
 
                     <div class="" style="margin-top: 20px;margin-right: 30px;"><?php require_once 'staticpages/model_text.html'; ?></div> 
 
@@ -266,7 +266,7 @@ foreach(array_keys($models) as $m) {
                     </select>
                 </form>
 
-<?php if ($config[$deployment]['host'] !== 'Dall-e' && $deployment !== 'azure-o1-preview') { ?>
+<?php if ($config[$deployment]['host'] !== 'dall-e' && $deployment !== 'azure-o1-preview') { ?>
 
                 <form onsubmit="saveMessage()" id="temperature_select" action="" method="post" style="display: inline-block; margin-left: 20px; margin-right: 10px; margin-top: 15px; border-top: 1px solid white; ">
                     <label for="temperature">Temperature</label>: <select title="Choose a temperature setting between 0 and 2. A temperature of 0 means the responses will be very deterministic (meaning you almost always get the same response to a given prompt). A temperature of 2 means the responses can vary substantially." name="temperature" onchange="document.getElementById('temperature_select').submit();">
@@ -280,7 +280,7 @@ foreach(array_keys($models) as $m) {
                 </form>
 
 <?php } ?>
-<?php if ($config[$deployment]['host'] !== 'Dall-e') { ?>
+<?php if ($config[$deployment]['host'] !== 'dall-e') { ?>
 
                 <!-- File Upload Form -->
                 <form onSubmit="saveMessage();" method="post" action="upload.php" id="document-uploader" enctype="multipart/form-data" style="display: inline-block; margin-top: 10px;">
