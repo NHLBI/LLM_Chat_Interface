@@ -176,7 +176,7 @@ foreach(array_keys($models) as $m) {
 
         <main id="main-content" class="col-12 col-md-10 d-flex align-items-start flex-column main-content">
 
-            <?php require_once 'staticpages/disclaimer_text.php'; ?>                                                                                        
+            <?php require_once 'staticpages/disclaimer_popup.php'; ?>                                                                                        
             <?php require_once 'staticpages/model_text.php'; ?> 
             <?php require_once 'staticpages/document_uploader.php'; ?> 
 
@@ -285,12 +285,12 @@ foreach(array_keys($models) as $m) {
     <script src="session_handler.js"></script>
 
 <!-- Include application-specific scripts -->
-<script src="scripts/utilities.js"></script>
-<script src="scripts/manage_chats.js"></script>
-<script src="scripts/popup.js"></script>
-<script src="scripts/ui.js"></script>
-<script src="scripts/listeners.js"></script>
-<script src="script.v2.03.js"></script>
+<script src="scripts.v2.04/utilities.js"></script>
+<script src="scripts.v2.04/manage_chats.js"></script>
+<script src="scripts.v2.04/popup.js"></script>
+<script src="scripts.v2.04/ui.js"></script>
+<script src="scripts.v2.04/listeners.js"></script>
+<script src="script.v2.04.js"></script>
 <script>
 function printChat() {
     // Prevent the default form submission behavior

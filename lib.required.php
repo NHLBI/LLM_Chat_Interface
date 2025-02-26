@@ -12,8 +12,8 @@ require_once 'db.php';
 // If not, let’s give it a chance to appear.
 if (!waitForUserSession()) {
     // If after waiting the session is still missing the user id, load the splash page.
-    #require_once 'splash.php';
-    #exit;
+    require_once 'splash.php';
+    exit;
 }
 
 // Handle the splash screen

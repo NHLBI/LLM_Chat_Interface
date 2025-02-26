@@ -62,7 +62,7 @@ if (!empty($error)) echo '<span style="color:red">'.$error.'</span></p>'."\n";
 
 require_once 'staticpages/notification_center.html';
 
-require_once 'staticpages/disclaimer_text.html';
+require_once 'staticpages/disclaimer_text.php';
 
 # require_once 'staticpages/model_text.html';
 
