@@ -9,17 +9,21 @@ function showIcons(chatItem) {
 function hideIcons(chatItem) {
     $(chatItem).find('.chat-icon').css('visibility', 'hidden');
 }
+
 function showAboutUs() {
-    var aboutWindow = document.querySelector('.aboutChatWindow');
-    var aboutCloser = document.querySelector('.closeAbout');
-    aboutWindow.classList.add('show');  // Add the 'show' class to make it visible
-    aboutCloser.focus();  // Give focus to the close button
+  const disclaimer = document.querySelector('.disclaimerWindow');
+  disclaimer.classList.add('show');
+  const closeBtn = disclaimer.querySelector('.closeDisclaimer');
+  if (closeBtn) closeBtn.focus();
 }
 function closeAboutUs() {
-    var aboutWindow = document.querySelector('.aboutChatWindow');
-    aboutWindow.classList.remove('show');  // Remove the 'show' class to hide it
-    var userMessage = document.getElementById('userMessage'); // Assuming 'userMessage' is the ID of your input
-    userMessage.focus();  // Set focus back to the message input
+  const disclaimer = document.querySelector('.disclaimerWindow');
+  disclaimer.classList.remove('show');
+  // Return focus if you wish:
+  const userMessage = document.getElementById('userMessage');
+  if (userMessage) {
+    userMessage.focus();
+  }
 }
 function showAboutModels() {
     var aboutWindow = document.querySelector('.aboutModelsWindow');

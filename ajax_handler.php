@@ -23,15 +23,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Initialize variables for new chat creation
     $new_chat_id = '';
-    $document_name = $_SESSION['document_name'] ?? ''; // Use null coalescing operator for default values
-    $document_text = $_SESSION['document_text'] ?? '';
 
     // Create a new chat session if no chat ID is provided
     if (empty($chat_id)) {
         $need_title = true;
 
         // The $new_chat_id will tell Javascript to reload the page to show the new title. 
-        $id = $new_chat_id = create_chat($user, 'New auto-generated Chat', '', $_SESSION['deployment'], $document_name, $document_text);
+        $id = $new_chat_id = create_chat($user, 'New auto-generated Chat', '', $_SESSION['deployment']);
     } else {
         $need_title = (get_new_title_status($user, $chat_id)) ? true : false;
   

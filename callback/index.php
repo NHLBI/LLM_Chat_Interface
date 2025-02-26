@@ -1,7 +1,6 @@
 <?php 
 
-session_start();
-
+require_once '../session_init.php';
 require_once '../get_config.php';
 
 require_once __DIR__ . '/auth.php';

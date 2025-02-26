@@ -1,3 +1,17 @@
+const TRASH_SVG = `
+<svg fill="#ffffff" height="18px" width="18px" version="1.1" xmlns="http://www.w3.org/2000/svg" 
+     viewBox="0 0 60.167 60.167" xml:space="preserve">
+  <path d="M54.5,11.667H39.88V3.91c0-2.156-1.754-3.91-3.91-3.91H24.196c-2.156,0-3.91,1.754-3.91,3.91v7.756H5.667
+      c-0.552,0-1,0.448-1,1s0.448,1,1,1h2.042v40.5c0,3.309,2.691,6,6,6h32.75c3.309,0,6-2.691,6-6v-40.5H54.5
+      c0.552,0,1-0.448,1-1S55.052,11.667,54.5,11.667z M22.286,3.91c0-1.053,0.857-1.91,1.91-1.91H35.97c1.053,0,1.91,0.857,1.91,1.91
+      v7.756H22.286V3.91z M50.458,54.167c0,2.206-1.794,4-4,4h-32.75c-2.206,0-4-1.794-4-4v-40.5h40.75V54.167z M38.255,46.153V22.847
+      c0-0.552,0.448-1,1-1s1,0.448,1,1v23.306c0,0.552-0.448,1-1,1S38.255,46.706,38.255,46.153z M29.083,46.153V22.847
+      c0-0.552,0.448-1,1-1s1,0.448,1,1v23.306c0,0.552-0.448,1-1,1S29.083,46.706,29.083,46.153z M19.911,46.153V22.847
+      c0-0.552,0.448-1,1-1s1,0.448,1,1v23.306c0,0.552-0.448,1-1,1S19.911,46.706,19.911,46.153z"
+      stroke="#ffffff" stroke-width="1"/>
+</svg>
+`;
+
 function fetchAndUpdateChatTitles(searchString, clearSearch) {
 
     // Check if searchingIndicator exists
@@ -7,7 +21,7 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
     }
 
     if (search_term !== '') {
-        console.log(search_term)
+        console.log(search_term);
         const openSearchButton = document.getElementById('open-search');
         const cancelSearchButton = document.getElementById('cancel-search');
         const searchInput = document.getElementById('search-input');
@@ -18,7 +32,6 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
         openSearchButton.style.display = 'none';
         searchInput.focus();
     }
-
 
     // Show the searching indicator
     searchingIndicator.style.display = 'block';
@@ -33,6 +46,7 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
             // Hide the searching indicator
             searchingIndicator.style.display = 'none';
             chatTitlesContainer.style.opacity = '1'; // Restore opacity
+            console.log(response);
 
             // Clear the current chat titles
             $('.chat-titles-container').empty();
@@ -82,15 +96,7 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                             </svg>
                         </button>
                         <button class="popup-icon delete-icon" title="Delete this chat">
-                            <svg fill="#ffffff" height="18px" width="18px" version="1.1" id="Capa_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 60.167 60.167" xml:space="preserve">
-                            <path d="M54.5,11.667H39.88V3.91c0-2.156-1.754-3.91-3.91-3.91H24.196c-2.156,0-3.91,1.754-3.91,3.91v7.756H5.667
-                                c-0.552,0-1,0.448-1,1s0.448,1,1,1h2.042v40.5c0,3.309,2.691,6,6,6h32.75c3.309,0,6-2.691,6-6v-40.5H54.5c0.552,0,1-0.448,1-1
-                                S55.052,11.667,54.5,11.667z M22.286,3.91c0-1.053,0.857-1.91,1.91-1.91H35.97c1.053,0,1.91,0.857,1.91,1.91v7.756H22.286V3.91z
-                                 M50.458,54.167c0,2.206-1.794,4-4,4h-32.75c-2.206,0-4-1.794-4-4v-40.5h40.75V54.167z M38.255,46.153V22.847c0-0.552,0.448-1,1-1
-                                s1,0.448,1,1v23.306c0,0.552-0.448,1-1,1S38.255,46.706,38.255,46.153z M29.083,46.153V22.847c0-0.552,0.448-1,1-1s1,0.448,1,1
-                                v23.306c0,0.552-0.448,1-1,1S29.083,46.706,29.083,46.153z M19.911,46.153V22.847c0-0.552,0.448-1,1-1s1,0.448,1,1v23.306
-                                c0,0.552-0.448,1-1,1S19.911,46.706,19.911,46.153z" stroke="#ffffff" stroke-width="1"/>
-                            </svg>
+                            ${TRASH_SVG}
                         </button>
                     </div>
                 </div>
@@ -105,12 +111,10 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                 if (hideTimer) {
                     clearTimeout(hideTimer);
                 }
-                
                 // Clear any existing auto-close timer
                 if (autoCloseTimer) {
                     clearTimeout(autoCloseTimer);
                 }
-                
                 // Close any existing edit forms when popup is triggered
                 $('.chat-item').each(function() {
                     const $existingEditInput = $(this).find('.edit-field');
@@ -119,26 +123,22 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                         revertEditForm(existingChatId);
                     }
                 });
-
                 // Set new auto-close timer
                 autoCloseTimer = setTimeout(() => {
                     // Fade out the popup
                     popup.css('opacity', '0');
-                    
                     // Hide the popup after fade-out completes
                     setTimeout(() => {
                         popup.hide();
-                    }, 150); // Match the transition duration
+                    }, 150);
                 }, 2000);
-                
                 popup.data('currentChatId', chatId);
                 popup.data('currentChatTitle', chatTitle);
-                
                 const ellipsisRect = e.target.getBoundingClientRect();
                 popup.css({
                     top: ellipsisRect.top + 'px',
                     display: 'block',
-                    opacity: '1' // Ensure fully visible when shown
+                    opacity: '1'
                 });
             }
 
@@ -151,7 +151,6 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                 if (autoCloseTimer) {
                     clearTimeout(autoCloseTimer);
                 }
-                
                 // Ensure popup is fully visible
                 popup.css('opacity', '1');
             }).on('mouseleave', startHideTimer);
@@ -176,10 +175,10 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                 copyTitleToClipboard(chatId, chatTitle);
             });
 
-            // Convert the response object to an array and iterate over it
+            // In your AJAX success callback, when iterating over chats:
             Object.values(response).forEach(function(chat, index) {
                 const isCurrentChat = chat.id === window.location.pathname.split('/')[2];
-                const chatItemClass = isCurrentChat ? 'chat-item current-chat' : 'chat-item';
+                const chatItemClass = isCurrentChat ? 'chat-item current-chat initial-current-chat' : 'chat-item';
 
                 const chatItem = $('<div>', {
                     class: chatItemClass,
@@ -189,7 +188,7 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                 const chatLink = $('<a>', {
                     class: 'chat-link chat-title',
                     title: chat.title,
-                    href: `/${application_path}/${chat.id}`, // Use the application_path variable here
+                    href: `/${application_path}/${chat.id}`,
                     text: chat.title,
                     'data-chat-id': chat.id,
                     'data-chat-title': chat.title
@@ -204,7 +203,62 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                     'data-chat-title': chat.title
                 });
 
-                // Add hover events to the entire chat item
+                chatItem.append(chatLink, ellipsisLink);
+
+                // Create docList outside of chatItem
+                let docList = null;
+
+                const docEntries = (chat.documents)
+                    ? Object.entries(chat.documents).filter(([key, title]) => {
+                        return title && title !== 'null'; 
+                        // i.e. keep only if the title is non-empty and not literally the string "null"
+                    })
+                    : [];
+
+                // Now docEntries is an array of [ [docKey, docTitle], ... ] for valid docs only
+
+                if (docEntries.length > 0) {
+
+                    //console.log("HERE ARE THE CURRENT CHAT DOCUMENTS");
+                    //console.log(chat.documents);
+                    //console.log("THAT WAS THEM");
+                    // We'll still create the docList, but will append it to container separately.
+                    docList = $('<ol>', {
+                        class: 'document-list',
+                        id: `doclist-${chat.id}`,
+                        style: `margin-left: 20px; display: ${isCurrentChat ? 'block' : 'none'};`
+                    });
+
+                    if (chatId == chat.id) {
+                        currentChat = chat;
+                        //console.log("THIS IS THE CURRENT CHAT EVERYONE: ");
+                        //console.log(currentChat);
+                    }
+
+                    var itemNum = 1;
+                    Object.entries(chat.documents).forEach(([docKey, docTitle]) => {
+                        const docItem = $('<li>', { class: 'document-item' });
+                        // Document title span
+                        const docTitleSpan = $('<span>', {
+                            class: 'document-title',
+                            text: `${itemNum}. ${docTitle}`
+                        });
+                        // Delete button for document (using a trash can emoji as icon)
+                        const deleteBtn = $('<button>', {
+                            class: 'delete-document-button',
+                            'data-doc-key': docKey,
+                            'data-chat-id': chat.id,
+                            title: 'Delete this document',
+                            html:TRASH_SVG
+                        });
+
+                        docItem.append(docTitleSpan, ' ', deleteBtn);
+                        docList.append(docItem);
+                        itemNum += 1;
+                    });
+                }
+
+                // Add hover events
                 chatItem.on('mouseenter', function() {
                     $(this).addClass('current-chat');
                 }).on('mouseleave', function() {
@@ -214,24 +268,65 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                     }
                 });
 
-                // Add click event to ellipsis link
+                // On click, expand documents if present
+                chatItem.on('click', function(e) {
+                    // Avoid interfering with the anchor link or ellipsis link
+                    if ($(e.target).is('a') || $(e.target).is('button')) {
+                        return;
+                    }
+                    // Hide all doc lists
+                    $('.document-list').hide();
+                    // remove current-chat from all chat items
+                    $('.chat-item').removeClass('current-chat');
+
+                    // show docList for this item only
+                    if (docList) {
+                        docList.show();
+                    }
+
+                    // mark this as current
+                    $(this).addClass('current-chat');
+                });
+
                 ellipsisLink.on('click', function(e) {
                     e.preventDefault();
                     showPopup(e, chat.id, chat.title);
                 });
 
-                // Mark the initial current chat with a special class
+                // If it's the active chat, show the docList
                 if (isCurrentChat) {
-                    chatItem.addClass('initial-current-chat');
                     printChatTitle = chat.title;
-                    //console.log("This is the printChatTitle: "+printChatTitle);
-                    // write the current chat title to the print-title element
                     document.getElementById('print-title').innerHTML = printChatTitle;
                 }
 
-                chatItem.append(chatLink, ellipsisLink);
-
+                // Append the chatItem div to the container
                 $('.chat-titles-container').append(chatItem);
+
+                // Then append the docList (if any) below it.
+                if (docList) {
+                    $('.chat-titles-container').append(docList);
+                }
+            });
+
+            // Delegated event handler for delete document
+            $('.chat-titles-container').on('click', '.delete-document-button', function(e) {
+                e.preventDefault();
+                const docKey = $(this).data('doc-key');
+                const chatId = $(this).data('chat-id');
+                // Use a confirmation popup (customize as needed)
+                if (confirm('Are you sure you want to delete this document?')) {
+                    $.ajax({
+                        url: 'delete-document.php',
+                        type: 'POST',
+                        data: { chatId: chatId, docKey: docKey },
+                        success: function(response) {
+                            fetchAndUpdateChatTitles($('#search-input').val(), false);
+                        },
+                        error: function(xhr, status, error) {
+                            console.error('Error deleting document:', error);
+                        }
+                    });
+                }
             });
         },
         error: function(xhr, status, error) {
@@ -245,7 +340,6 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
 
 function revertEditForm(existingChatId) {
     var originalLink = $('<div>').html($("#chat-" + existingChatId).find('[data-chat-title]').data('chat-title')).text();
-    
     $("#edit-input-" + existingChatId).replaceWith(`
         <a class="chat-link chat-title" 
            title="${originalLink}" 
@@ -255,7 +349,6 @@ function revertEditForm(existingChatId) {
             ${originalLink}
         </a>
     `);
-    
     $("#edit-confirm-" + existingChatId).remove();
     $("#edit-cancel-" + existingChatId).remove();
     
@@ -316,10 +409,9 @@ function startHideTimer() {
     hideTimer = setTimeout(() => {
         // Fade out the popup
         popup.css('opacity', '0');
-        
         // Hide the popup after fade-out completes
         setTimeout(() => {
             popup.hide();
-        }, 150); // Match the transition duration
+        }, 150);
     }, 250);
 }

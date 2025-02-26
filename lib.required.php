@@ -1,17 +1,19 @@
 <?php
 
-ini_set('session.cookie_lifetime', 0); // Expires when browser is closed
+require_once __DIR__ . '/session_init.php';
+require_once 'get_config.php'; // Determine the environment dynamically
+// echo '<pre>'.print_r($config,1).'</pre>';
 
 // lib.required.php
 require_once 'db.php';
 
-// Determine the environment dynamically
-require_once 'get_config.php';
-// echo '<pre>'.print_r($config,1).'</pre>';
 
-// Start the session, if not already started
-if (session_status() == PHP_SESSION_NONE) {
-    session_start();
+// Before proceeding, check if the session has the required user data.
+// If not, let’s give it a chance to appear.
+if (!waitForUserSession()) {
+    // If after waiting the session is still missing the user id, load the splash page.
+    #require_once 'splash.php';
+    #exit;
 }
 
 // Handle the splash screen
@@ -70,33 +72,28 @@ if (empty($_GET['chat_id'])) $_GET['chat_id'] = '';
 
 // Handle model selection
 if (isset($_POST['model']) && array_key_exists($_POST['model'], $models)) {
+    print_r($_POST);
     $deployment = $_SESSION['deployment'] = $_POST['model'];
+    echo "1 This is the deployment: {$deployment}<br>\n";
     if (!empty($_GET['chat_id'])) update_deployment($user, $chat_id, $deployment);
 }
 
 // Retrieve all chats for the user
 $all_chats = get_all_chats($user);
 if (!empty($chat_id) && !empty($all_chats[$chat_id])) {
+    #echo "2 This is the deployment: {$deployment}<br>\n";
     $deployment = $_SESSION['deployment'] = $all_chats[$chat_id]['deployment'];  // Currently active chat
-
+    #echo "3 This is the deployment: {$deployment}<br>\n";
     $_SESSION['temperature'] = $all_chats[$chat_id]['temperature'];
-    if (!empty($all_chats[$chat_id]['document_name'])) {
-        $doc = get_uploaded_image_status($chat_id);
-        $_SESSION['document_name'] = $doc['document_name'];
-        $_SESSION['document_type'] = $doc['document_type'];
-        $_SESSION['document_text'] = $doc['document_text'];
-    } else {
-        $_SESSION['document_name'] = '';
-        $_SESSION['document_type'] = '';
-        $_SESSION['document_text'] = '';
-    }
 }
 
 // Set default deployment if not already set
 if (empty($_SESSION['deployment'])) {
     $deployment = $_SESSION['deployment'] = $config['azure']['default'];
+    #echo "4 This is the deployment: {$deployment}<br>\n";
 } else {
     $deployment = $_SESSION['deployment'];
+    #echo "5 This is the deployment: {$deployment}<br>\n";
 }
 
 // Handle temperature selection
@@ -122,6 +119,18 @@ if (isAuthenticated()) {
 // Uncomment for debugging
 // echo "<pre>". print_r($_SESSION,1) ."</pre>";
 // echo "<pre>". print_r($_SERVER,1) ."</pre>";
+
+// Helper function to wait for critical session data
+function waitForUserSession($maxAttempts = 5, $delayMicroseconds = 500000) {
+    $attempt = 0;
+    // Check if the user_data userid is set; if not, wait and retry
+    while ($attempt < $maxAttempts && empty($_SESSION['user_data']['userid'])) {
+        usleep($delayMicroseconds);
+        $attempt++;
+        $delayMicroseconds += 500000;
+    }
+    return !empty($_SESSION['user_data']['userid']);
+}
 
 /**
  * Retrieves the GPT response by orchestrating the API call and processing the response.
@@ -375,7 +384,7 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
     $system_message = build_system_message($active_config);
     
     // Check and handle any document content first
-    $document_messages = handle_document_content($message, $active_config);
+    $document_messages = handle_document_content($chat_id, $user, $message, $active_config);
     
     if ($document_messages !== null) {
         // If a document is present, use document messages exclusively
@@ -515,34 +524,56 @@ function retrieve_context_messages($chat_id, $user, $active_config, $message) {
 /**
  * Processes document content from the session.
  *
+ * Retrieves all documents related to the given chat, constructs
+ * an LLM-ready messages array, and appends the user prompt at the end.
+ *
+ * @param string $chat_id The unique chat ID.
+ * @param string $user The user ID.
  * @param string $message The current user message.
  * @param array $active_config The active deployment configuration.
- * @return array|null The messages array if document exists, otherwise null.
+ * @return array|null The messages array if documents exist, otherwise null.
  */
-function handle_document_content($message, $active_config) {
-    if (!empty($_SESSION['document_text'])) {
-        if (strpos($_SESSION['document_type'], 'image/') === 0) {
-            // Handle image content (use image_url field with base64 encoded image)
+function handle_document_content($chat_id, $user, $message, $active_config) {
+    $docs = get_chat_documents($user, $chat_id);
+
+    if (!empty($docs)) {
+        $messages = [];
+
+        foreach ($docs as $i => $doc) {
+            // Add document metadata
             $messages[] = [
                 "role" => "user",
-                "content" => "You are a helpful assistant to analyze images."
-            ];
-            $messages[] = [
-                "role" => "user",
-                "content" => [
-                    ["type" => "text", "text" => $message],
-                    ["type" => "image_url", "image_url" => ["url" => $_SESSION['document_text']]]
-                ]
+                "content" => "This is document #" . ($i + 1) . ". Its filename is: " . $doc['document_name']
             ];
 
-        } else {
+            // Handle image documents separately
+            if (strpos($doc['document_type'], 'image/') === 0) {
+                $messages[] = [
+                    "role" => "user",
+                    "content" => [
+                        ["type" => "text", "text" => $message],
+                        ["type" => "image_url", "image_url" => ["url" => $doc['document_content']]]
+                    ]
+                ];
+            } else {
+                // Append text document content
+                $messages[] = [
+                    "role" => "user",
+                    "content" => $doc['document_content']
+                ];
+            }
+        }
 
-            $messages[] = ['role' => 'user','content' => $_SESSION['document_text']];
-            $messages[] = ['role' => 'user','content' => $message];
+        // Append the original user message after listing all documents
+        $messages[] = [
+            "role" => "user",
+            "content" => $message
+        ];
 
-        }                                                                                                                                                                      
         return $messages;
-    }   
+    }
+
+    return null; // Explicitly return null if no documents exist
 }
 
 /**
@@ -728,11 +759,6 @@ function isAuthenticated() {
  * Logs the user out by destroying the session.
  */
 function logout() {
-
-    // Uncomment to ensure the session is started
-    // if (session_status() == PHP_SESSION_NONE) {
-    //     session_start();
-    // }
 
     // Unset all session variables
     $_SESSION = array();

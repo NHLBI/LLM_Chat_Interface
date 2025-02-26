@@ -1,7 +1,7 @@
 <?php
 
+require_once __DIR__ . '/session_init.php';
 require_once 'get_config.php';
-session_start();
 
 $clientId = $config['openid']['clientId'];
 $callback = $config['openid']['callback'];

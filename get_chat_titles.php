@@ -1,14 +1,8 @@
 <?php
 header('Content-Type: application/json');
 
-// Enable error reporting for debugging (disable in production)
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-
 try {
     require_once 'lib.required.php';
-    require_once 'db.php';
 
     if (!isset($_SESSION['user_data']['userid'])) {
         throw new Exception("User not authenticated.");

@@ -124,7 +124,7 @@ $(document).ready(function() {
 
         if (messageContent !== "") {
             // **Retrieve the selected deployment (model)**
-            var deployment = $('#model_select select[name="model"]').val();
+            //var deployment = $('#model_select select[name="model"]').val();
 
             $.ajax({
                 type: "POST",
