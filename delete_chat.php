@@ -12,10 +12,6 @@ if(isset($_POST['chat_id'])) {
         die("Invalid input");
     }
 
-    if (!verify_user_chat($user, $chat_id)) {
-        die("Unauthorized");
-    }
-
     // Begin a transaction
     $pdo->beginTransaction();
 

@@ -46,7 +46,7 @@ $chat_id = filter_input(INPUT_GET, 'chat_id', FILTER_SANITIZE_STRING);
 
 if (!verify_user_chat($user, $chat_id)) {
     echo " -- " . htmlspecialchars($user) . "<br>\n";
-    die("Error: there is no chat record for the specified user and chat id. If you need assistance, please contact " . htmlspecialchars($email_help));
+    die("Error: there is no chat record for the specified user and chat id. If you need assistance, please contact " . htmlspecialchars($config['app']['emailhelp']));
 }
 
 // Parse models from configuration
@@ -72,9 +72,9 @@ if (empty($_GET['chat_id'])) $_GET['chat_id'] = '';
 
 // Handle model selection
 if (isset($_POST['model']) && array_key_exists($_POST['model'], $models)) {
-    print_r($_POST);
+    #print_r($_POST);
     $deployment = $_SESSION['deployment'] = $_POST['model'];
-    echo "1 This is the deployment: {$deployment}<br>\n";
+    #echo "1 This is the deployment: {$deployment}<br>\n";
     if (!empty($_GET['chat_id'])) update_deployment($user, $chat_id, $deployment);
 }
 
@@ -84,7 +84,7 @@ if (!empty($chat_id) && !empty($all_chats[$chat_id])) {
     #echo "2 This is the deployment: {$deployment}<br>\n";
     $deployment = $_SESSION['deployment'] = $all_chats[$chat_id]['deployment'];  // Currently active chat
     #echo "3 This is the deployment: {$deployment}<br>\n";
-    $_SESSION['temperature'] = $all_chats[$chat_id]['temperature'];
+    $_SESSION['temperature'] = (empty($all_chats[$chat_id]['temperature'])) ? '0.7' : $all_chats[$chat_id]['temperature'];
 }
 
 // Set default deployment if not already set

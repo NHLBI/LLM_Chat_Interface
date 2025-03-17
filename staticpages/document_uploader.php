@@ -88,16 +88,47 @@
 
 <script>
 let uploadedFiles = [];
-let documentsLength = 0; // Keep track of how many documents are in the current chat
+//let documentsLength = 0; // Keep track of how many documents are in the current chat
+
 
 function openUploadModal() {
+  // Update the global documentsLength variable instead of creating a local one
+  //documentsLength = currentChat && currentChat.documents
+  //    ? Object.keys(currentChat.documents).length
+  //   : 0;
+
+  console.log(`Documents Length 1: ${documentsLength}`);
+
+  // If the user already has 2 documents, do not let them upload more
+  if (documentsLength >= 2) {
+    alert(`You have ${documentsLength} documents uploaded. You cannot add more.`);
+    return; 
+  }
+
+  // Update the text message to inform the user of how many more files they can upload
+  const modalTextElement = document.querySelector('#uploadModal p');
+  if (modalTextElement) {
+    const remaining = 2 - documentsLength;
+    modalTextElement.textContent = remaining === 1 
+      ? 'You can upload 1 more document.' 
+      : 'You can upload up to 2 files.';
+  }
+
+  const modal = document.getElementById('uploadModal');
+  modal.style.display = 'flex';
+  // Reset any previous selections
+  uploadedFiles = [];
+  updatePreview();
+}
+
+function old_openUploadModal() {
   // Suppose currentChat is an object containing { documents: {...} }
   // Safely get the number of documents:
   const documentsLength = currentChat && currentChat.documents
       ? Object.keys(currentChat.documents).length
       : 0;
 
-  console.log(`Documents Length: ${documentsLength}`);
+  console.log(`Documents Length 1: ${documentsLength}`);
 
   // If the user already has 2 documents, do not let them upload more
   if (documentsLength >= 2) {
@@ -117,7 +148,6 @@ function closeUploadModal() {
   document.getElementById('uploadModal').style.display = 'none';
 }
 
-
 function handleFiles(files) {
   let fileArray = Array.from(files);
 
@@ -125,6 +155,7 @@ function handleFiles(files) {
   // documentsLength: how many are already on server
   // uploadedFiles.length: how many the user has already selected in this modal
   // fileArray.length: how many new files they're trying to add this time
+  console.log(`Documents Length 2: ${documentsLength}`);
   const newTotal = documentsLength + uploadedFiles.length + fileArray.length;
   if (newTotal > 2) {
     if (documentsLength > 0) alert(`You already have ${documentsLength} document(s). You can only upload up to ${2 - documentsLength} more.`);
@@ -135,6 +166,9 @@ function handleFiles(files) {
   // It's safe to add these files
   uploadedFiles = uploadedFiles.concat(fileArray);
   updatePreview();
+
+  document.getElementById('fileInput').value = "";
+
 }
 
 function updatePreview() {
@@ -182,18 +216,62 @@ function submitUploadForm() {
   // Send via Fetch
   fetch('upload.php', {
     method: 'POST',
-    body: formData
+    body: formData,
+    headers: {
+      'X-Requested-With': 'XMLHttpRequest' // Mark request as AJAX
+    }
   })
-  .then(response => response.text())
+  .then(response => response.json())
   .then(result => {
     console.log('Upload successful:', result);
-    closeUploadModal();
-    // Optionally refresh UI...
-    fetchAndUpdateChatTitles($('#search-input').val(), false);
+    // If a new chat was created, redirect the page to the new chat URL
+    if (result.new_chat) {
+      window.location.href = "/"+application_path+"/" + encodeURIComponent(result.chat_id);
+    } else {
+      closeUploadModal();
+      // Optionally refresh UI...
+      fetchAndUpdateChatTitles($('#search-input').val(), false);
+    }
   })
   .catch(error => {
     console.error('Upload error:', error);
   });
 }
+
+// DRAG & DROP HANDLING
+const dropZone = document.getElementById('dropZone');
+
+// Prevent default drag behaviors
+function preventDefaults(e) {
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+// Highlight drop zone when item is dragged over it
+function highlight(e) {
+  dropZone.classList.add('highlight');
+}
+
+// Remove highlight when item is dragged out or dropped
+function unhighlight(e) {
+  dropZone.classList.remove('highlight');
+}
+
+// Handle dropped files
+function handleDrop(e) {
+  let dt = e.dataTransfer;
+  let files = dt.files;
+  handleFiles(files);
+}
+
+// Set up the drag & drop event listeners
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+  dropZone.addEventListener(eventName, preventDefaults, false);
+});
+dropZone.addEventListener('dragenter', highlight, false);
+dropZone.addEventListener('dragover', highlight, false);
+dropZone.addEventListener('dragleave', unhighlight, false);
+dropZone.addEventListener('drop', unhighlight, false);
+dropZone.addEventListener('drop', handleDrop, false);
 </script>
 

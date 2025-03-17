@@ -3,7 +3,6 @@
 require_once 'lib.required.php';
 require_once 'db.php';
 
-#define('HARDCODED_DEPLOYMENT','azure-gpt35');
 define('HARDCODED_DEPLOYMENT','azure-gpt3-16k');
 
 $user = $_SESSION['user_data']['userid'] ?? null; // Assuming you have a session variable for username
@@ -13,10 +12,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Get the user's message from the POST data
     $user_message = base64_decode($_POST['message']); // Decode from Base64
-    //$user_message = filter_input(INPUT_POST, 'message', FILTER_SANITIZE_STRING);
 
-    $deployment = isset($_POST['deployment']) ? $_POST['deployment'] : 'default_deployment'; // Provide a default if needed
-
+    // Provide a default if needed
+    $deployment = isset($_POST['deployment']) ? $_POST['deployment'] : 'default_deployment'; 
 
     // Retrieve the chat ID from the POST data
     $chat_id = filter_input(INPUT_POST, 'chat_id', FILTER_SANITIZE_STRING);

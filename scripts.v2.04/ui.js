@@ -29,7 +29,7 @@ function showAboutModels() {
     var aboutWindow = document.querySelector('.aboutModelsWindow');
     var aboutCloser = document.querySelector('.closeAbout');
     aboutWindow.classList.add('show');  // Add the 'show' class to make it visible
-    aboutCloser.focus();  // Give focus to the close button
+    //aboutCloser.focus();  // Give focus to the close button
 }
 function closeAboutModels() {
     var aboutWindow = document.querySelector('.aboutModelsWindow');

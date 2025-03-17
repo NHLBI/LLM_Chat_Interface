@@ -68,6 +68,7 @@ foreach(array_keys($models) as $m) {
         var document_name = '';
         var document_type = '';
         var document_source = '';
+        var documentsLength = 0;
 
         var chatId = <?php echo json_encode(isset($_GET['chat_id']) ? $_GET['chat_id'] : null); ?>;
 
@@ -191,26 +192,42 @@ foreach(array_keys($models) as $m) {
 
             <div class="maincolumn maincol-bottom"><!-- Chat body bottom -->
 
-                <!-- Original messageForm -->
                 <form id="messageForm" class="chat-input-form">
-                    <div class="input-container">
-                        <textarea class="form-control" id="userMessage" aria-label="Main chat textarea" placeholder="Type your message..." rows="4" required></textarea>
-                        <button type="submit" class="submit-button" aria-label="Send message">
-                            <!-- Icon (paper plane) -->
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="send-icon">
-                                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-                            </svg>
-                        </button>
-                    </div>
+                  <div class="input-container">
+                    <textarea class="form-control" id="userMessage" aria-label="Main chat textarea" 
+                              placeholder="Type your message..." rows="4" required></textarea>
+                    
+<?php if ($config[$deployment]['host'] !== 'dall-e') { ?>
+                    <!-- Paperclip upload button (triggers the upload modal) -->
+                    <button type="button" class="upload-button" 
+                            onclick="openUploadModal()" 
+                            aria-label="Upload Document" 
+                            style="background: none; border: none; cursor: pointer; margin-left: 30px;">
+                      <img src="images/paperclip.svg" 
+                           alt="Upload Document" 
+                           title="Document types accepted: PDF, Word, PPT, text, markdown, images, etc." 
+                           style="height: 24px; transform: rotate(45deg);">
+                    </button>
+<?php } ?>
+
+                    <!-- Send button -->
+                    <button type="submit" class="submit-button" aria-label="Send message">
+                      <!-- Icon (paper plane) -->
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="send-icon">
+                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                      </svg>
+                    </button>
+                  </div>
                 </form>
 
 
-                <span><a title="About models" href="javascript:void(0);" onclick="showAboutModels()">Select Model</a>
-                current model: <?php echo $models[$_SESSION['deployment']]['label']; ?></span> 
+                <button style="display: inline-block; margin-top:8px;" title="Print the existing chat session" aria-label="About models button" onclick="showAboutModels()" id="printButton">Model: <?php echo $models[$_SESSION['deployment']]['label']; ?></button>
+                <!-- <span style="display: inline-block; margin-top:8px;"><a title="About models" href="javascript:void(0);" onclick="showAboutModels()">Select Model</a> -->
+                <!--current model: <?php echo $models[$_SESSION['deployment']]['label']; ?></span> -->
 
 <?php if ($config[$deployment]['host'] !== 'dall-e' && $deployment !== 'azure-o1'&& $deployment !== 'azure-o3') { ?>
 
-                <form onsubmit="saveMessage()" id="temperature_select" action="" method="post" style="display: inline-block; margin-left: 20px; margin-right: 10px; margin-top: 15px; border-top: 1px solid white; ">
+                <form onsubmit="saveMessage()" id="temperature_select" action="" method="post" style="display: inline-block; margin-left: 20px; margin-right: 10px; margin-top: 8px; border-top: 1px solid white; ">
                     <label for="temperature">Temperature</label>: <select title="Choose a temperature setting between 0 and 2. A temperature of 0 means the responses will be very deterministic (meaning you almost always get the same response to a given prompt). A temperature of 2 means the responses can vary substantially." name="temperature" onchange="document.getElementById('temperature_select').submit();">
                         <?php
                         foreach ($temperatures as $t) {
@@ -229,22 +246,6 @@ foreach(array_keys($models) as $m) {
                     <!-- Hidden input for chat_id -->
                     <input type="hidden" name="chat_id" aria-label="Hidden field with Chat ID" value="<?php echo htmlspecialchars($_GET['chat_id']); ?>">
 
-<!-- Just the clickable paperclip icon -->
-<label for="uploadTrigger" style="cursor: pointer;">
-  <img src="images/paperclip.svg" 
-       alt="Upload Document" 
-       title="Document types accepted: PDF, Word, PPT, text, markdown, images, etc."
-       style="height: 35px; transform: rotate(45deg); margin-left: 30px;">
-</label>
-
-<!-- Hidden button that calls openUploadModal() -->
-<button id="uploadTrigger" 
-        type="button" 
-        style="display: none;"
-        onclick="openUploadModal()">
-</button>
-
-
                 </form>
 <?php } ?>
 
@@ -257,7 +258,7 @@ foreach(array_keys($models) as $m) {
                     }
 ?>
 
-                <form style="display: inline-block; float: right; margin-top: 15px; margin-right: 30px;">
+                <form style="display: inline-block; float: right; margin-top:8px; margin-right: 30px;">
                     <button title="Print the existing chat session" aria-label="Print button" onclick="return printChat()" id="printButton">Print</button>
                 </form>
             </div><!-- End Chat body bottom -->
@@ -290,6 +291,7 @@ foreach(array_keys($models) as $m) {
 <script src="scripts.v2.04/popup.js"></script>
 <script src="scripts.v2.04/ui.js"></script>
 <script src="scripts.v2.04/listeners.js"></script>
+<script src="scripts.v2.04/user_images.js"></script>
 <script src="script.v2.04.js"></script>
 <script>
 function printChat() {

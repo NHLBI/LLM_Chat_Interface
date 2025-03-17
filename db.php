@@ -111,7 +111,7 @@ function create_exchange(
     $prompt_token_length = get_token_count($prompt);
     $reply_token_length  = get_token_count($reply);
 
-    // Step 2: Insert record
+    // Step 2: Insert record into exchange table
     $stmt = $pdo->prepare("
         INSERT INTO exchange 
         (
@@ -150,7 +150,25 @@ function create_exchange(
 
     $insert_id = $pdo->lastInsertId();
 
-    // Update chat timestamp
+    // Step 3: Check for associated documents (deleted = 0) for the chat_id
+    $stmt = $pdo->prepare("SELECT id FROM document WHERE chat_id = :chat_id AND deleted = 0");
+    $stmt->execute(['chat_id' => $chat_id]);
+    $documents = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if ($documents) {
+        foreach ($documents as $doc) {
+            $stmtJoin = $pdo->prepare("
+                INSERT INTO exchange_document (exchange_id, document_id)
+                VALUES (:exchange_id, :document_id)
+            ");
+            $stmtJoin->execute([
+                'exchange_id' => $insert_id,
+                'document_id' => $doc['id']
+            ]);
+        }
+    }
+
+    // Step 4: Update chat timestamp
     $stmt = $pdo->prepare("UPDATE chat SET timestamp = NOW() WHERE id = :id");
     $stmt->execute(['id' => $chat_id]);
 
@@ -186,17 +204,42 @@ function update_last_viewed($chat_id) {
     }
 }
 
+
 // Get all exchanges for a given chat ID from the database, ordered by timestamp
 function get_all_exchanges($chat_id, $user) {
     #echo "in get_all_exchanges\n";
     global $pdo;
     //*
-    $sql = "SELECT e.* FROM exchange AS e 
+    $sql = "SELECT 
+        e.id,
+        e.chat_id,
+        e.user,
+        e.prompt,
+        e.prompt_token_length,
+        e.reply,
+        e.reply_token_length,
+        e.image_gen_name,
+        e.deployment,
+        e.api_key,
+        e.temperature,
+        e.uri,
+        e.api_endpoint,
+        e.deleted,
+        e.timestamp,
+        d.id AS `document_id`,
+        d.name AS `document_name`,
+        d.type AS `document_type`,
+        d.content AS `document_text`,
+        d.source AS `document_source`
+
+        FROM exchange AS e 
         JOIN chat AS c ON c.id = e.chat_id 
+        LEFT JOIN exchange_document AS ed ON e.id = ed.exchange_id
+        LEFT JOIN document AS d ON d.id = ed.document_id
         WHERE c.user = :user AND e.chat_id = :chat_id
         AND c.deleted = 0
         AND e.deleted = 0
-        AND e.prompt IS NOT NULL
+        AND e.prompt IS NOT NULl
         AND e.reply IS NOT NULL
         ORDER BY e.timestamp ASC
         ";
@@ -204,8 +247,40 @@ function get_all_exchanges($chat_id, $user) {
     #echo $sql . "\n";
     $stmt = $pdo->prepare($sql);
     $stmt->execute(['chat_id' => $chat_id, 'user' => $user]);
-    $output = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    #echo "this is the output: " . print_r($output,1) . "\n";
+
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $output = [];
+    foreach($rows as $r) {
+        // Decode HTML entities for the title
+        $output[$r['id']]['id']                  = $r['id'];
+        $output[$r['id']]['chat_id']             = $r['chat_id'];
+        $output[$r['id']]['user']                = $r['user'];
+        $output[$r['id']]['prompt']              = $r['prompt'];
+        $output[$r['id']]['prompt_token_length'] = $r['prompt_token_length'];
+        $output[$r['id']]['reply']               = $r['reply'];
+        $output[$r['id']]['reply_token_length']  = $r['reply_token_length'];
+        $output[$r['id']]['image_gen_name']      = $r['image_gen_name'];
+        $output[$r['id']]['deployment']          = $r['deployment'];
+        $output[$r['id']]['api_key']             = $r['api_key'];
+        $output[$r['id']]['temperature']         = $r['temperature'];
+        $output[$r['id']]['uri']                 = $r['uri'];
+        $output[$r['id']]['api_endpoint']        = $r['api_endpoint'];
+        $output[$r['id']]['deleted']             = $r['deleted'];
+        $output[$r['id']]['timestamp']           = $r['timestamp'];
+        
+        if (empty($output[$r['id']]['document'])) $output[$r['id']]['document'] = array();
+
+        if (empty($output[$r['id']]['document'])) $output[$r['id']]['document'] = array();
+
+        if (strstr($r['document_type'],'image')) {
+            /**/
+            $output[$r['id']]['document'][$r['document_id']]['document_name'] = html_entity_decode($r['document_name'], ENT_QUOTES, 'UTF-8');
+            $output[$r['id']]['document'][$r['document_id']]['document_type'] = $r['document_type'];
+            $output[$r['id']]['document'][$r['document_id']]['document_text'] = $r['document_text'];
+            /**/
+        }
+    }
+    #echo '<pre>'.print_r($output,1).'<pre>'; die();
     return $output;
 }
 
@@ -216,9 +291,9 @@ function get_all_chats($user, $search = '') {
     $sql = "
     SELECT
         c.id, c.user, c.title, c.deployment, c.temperature,
-        c.new_title, d.id AS `document_id`, d.name AS `document_name`, c.deleted, c.timestamp AS latest_interaction
+        c.new_title, d.id AS `document_id`, d.name AS `document_name`, d.deleted AS `document_deleted`, c.deleted, c.timestamp AS latest_interaction
     FROM chat c
-    LEFT JOIN documents d ON c.id = d.chat_id
+    LEFT JOIN document d ON c.id = d.chat_id
     LEFT JOIN exchange e ON c.id = e.chat_id
     WHERE
         c.user = :user
@@ -242,6 +317,10 @@ function get_all_chats($user, $search = '') {
         $params['search'] = '%' . $search . '%';
     }
 
+    /*
+    NEED TO GET THE IMAGES BACK TO THE EXCHANGES
+    */
+
     $stmt->execute($params);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     #echo $sql . "<br>\n";
@@ -254,7 +333,9 @@ function get_all_chats($user, $search = '') {
         $output[$r['id']]['id'] = $r['id'];
         $output[$r['id']]['user'] = $r['user'];
         $output[$r['id']]['title'] = $r['title'];
-        $output[$r['id']]['documents'][$r['document_id']] = $r['document_name'];
+        $output[$r['id']]['deployment'] = $r['deployment'];
+        if (empty($output[$r['id']]['document'])) $output[$r['id']]['document'] = array();
+        if ($r['document_deleted'] == 0 && !empty($r['document_name'])) $output[$r['id']]['document'][$r['document_id']] = $r['document_name'];
     }
     #echo '<pre>'.print_r($output,1).'<pre>'; die();
     return $output;
@@ -263,7 +344,7 @@ function get_all_chats($user, $search = '') {
 /**
  * Retrieve all documents associated with a specific chat ID for a given user.
  *
- * This function joins the `chat` and `documents` tables to fetch all documents
+ * This function joins the `chat` and `document` tables to fetch all documents
  * related to the given chat, ensuring the chat belongs to the specified user.
  * It returns an array containing document details such as name, content, and type.
  *
@@ -276,8 +357,11 @@ function get_all_chats($user, $search = '') {
  *               - document_content (string): The full content of the document.
  *               - document_type (string) : The type of document (e.g., 'pdf', 'txt').
  */
-function get_chat_documents($user, $chat_id) {
+function get_chat_documents($user, $chat_id, $images_only = false) {
     global $pdo;
+
+    $restrict_to_images = '';
+    if ($images_only) $restrict_to_images = 'AND d.type LIKE "%image%"';
 
     $sql = "
         SELECT 
@@ -286,11 +370,13 @@ function get_chat_documents($user, $chat_id) {
             d.content  AS document_content,
             d.type     AS document_type
         FROM chat c
-        LEFT JOIN documents d 
+        LEFT JOIN document d 
                ON c.id = d.chat_id
         WHERE c.user    = :user
           AND c.id      = :chat_id
           AND c.deleted = 0
+          AND d.deleted = 0
+          {$restrict_to_images}
         ORDER BY d.id
     ";
 
@@ -299,6 +385,9 @@ function get_chat_documents($user, $chat_id) {
         'user' => $user,
         'chat_id' => $chat_id,
     ]);
+    #echo $sql . "\n";
+    #echo "User: {$user}\n";
+    #echo "Chat ID: {$chat_id}\n";
 
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
@@ -330,10 +419,6 @@ function get_new_title_status($user, $chat_id) {
 function update_deployment($user, $chat_id, $deployment) {
     global $pdo;
 
-    if (!verify_user_chat($user, $chat_id)) {
-        die("unauthorized");
-    }
-    
     // prepare a sql statement to update the deployment of a chat where the id matches the $chat_id
     $stmt = $pdo->prepare("update chat set deployment = :deployment where id = :id");
     $stmt->execute(['deployment' => $deployment, 'id' => $chat_id]);
@@ -342,10 +427,6 @@ function update_deployment($user, $chat_id, $deployment) {
 // Update the chat title in the database
 function update_chat_title($user, $chat_id, $updated_title) {
     global $pdo;
-
-    if (!verify_user_chat($user, $chat_id)) {
-        die("Unauthorized access.");
-    }
 
     // Prepare a SQL statement to update the title
     $stmt = $pdo->prepare("UPDATE chat SET title = :title, new_title = :new_title WHERE id = :id");
@@ -356,26 +437,18 @@ function update_chat_title($user, $chat_id, $updated_title) {
 function update_temperature($user, $chat_id, $temperature) {
     global $pdo;
 
-    if (!verify_user_chat($user, $chat_id)) {
-        die("unauthorized");
-    }
-    
     // prepare a sql statement to update the deployment of a chat where the id matches the $chat_id
     $stmt = $pdo->prepare("update chat set temperature = :temperature where id = :id");
     $stmt->execute(['temperature' => $temperature, 'id' => $chat_id]);
 }
 
 /**
- * Insert a document record into the documents table.
+ * Insert a document record into the document table.
  */
 function insert_document($user, $chat_id, $document_name, $document_type, $document_text) {
     global $pdo;
     
-    if (!verify_user_chat($user, $chat_id)) {
-        die("unauthorized");
-    }
-    
-    $stmt = $pdo->prepare("INSERT INTO documents (chat_id, name, type, content) VALUES (:chat_id, :name, :type, :content)");
+    $stmt = $pdo->prepare("INSERT INTO document (chat_id, name, type, content) VALUES (:chat_id, :name, :type, :content)");
     $stmt->execute([
         'chat_id' => $chat_id,
         'name'    => $document_name,
@@ -385,7 +458,7 @@ function insert_document($user, $chat_id, $document_name, $document_type, $docum
 }
 
 /**
- * Delete a document from the `documents` table,
+ * Delete a document from the `document` table,
  * ensuring that the user owns the chat in question.
  *
  * @param string $user The user ID from session
@@ -412,18 +485,18 @@ function delete_document($user, $chatId, $docId) {
         return false;
     }
 
-    // 2) Delete (or soft-delete) the row in `documents` table
+    // 2) Delete (or soft-delete) the row in `document` table
     //    either physically remove it:
-    $sql = "DELETE FROM documents
-             WHERE id = :docId
-               AND chat_id = :chatId 
-             LIMIT 1";
+    //$sql = "DELETE FROM document
+    //         WHERE id = :docId
+    //           AND chat_id = :chatId 
+    //         LIMIT 1";
     //  or if you want soft-delete:
-    //  $sql = \"UPDATE documents
-    //          SET deleted = 1
-    //          WHERE id = :docId
-    //            AND chat_id = :chatId
-    //          LIMIT 1\";
+    $sql = "UPDATE document
+              SET deleted = 1
+              WHERE id = :docId
+              AND chat_id = :chatId
+              LIMIT 1";
 
     $stmt = $pdo->prepare($sql);
     $stmt->bindValue(':docId', $docId, PDO::PARAM_INT);

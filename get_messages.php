@@ -13,15 +13,37 @@ if (!$chat_id) {
     die(json_encode([]));
 }
 
-if (!verify_user_chat($user, $chat_id)) {
-    die("Unauthorized to get user chat history");
-}
-
 // Example usage
 if (!update_last_viewed($chat_id)) {
     error_log("Failed to update last viewed time for chat ID: $chat_id", 0);
 }
 
 // Get the recent chat messages using the 'get_recent_messages()' function and encode them as a JSON object to be returned to the client
-echo json_encode(get_recent_messages($chat_id,$user));
+$output = json_encode(get_recent_messages($chat_id,$user));
 
+#echo '<pre>'.print_r($output,1).'<pre>'; die();
+    switch (json_last_error()) {
+        case JSON_ERROR_NONE:
+            //echo ' - No errors';
+        break;
+        case JSON_ERROR_DEPTH:
+            echo ' - Maximum stack depth exceeded';
+        break;
+        case JSON_ERROR_STATE_MISMATCH:
+            echo ' - Underflow or the modes mismatch';
+        break;
+        case JSON_ERROR_CTRL_CHAR:
+            echo ' - Unexpected control character found';
+        break;
+        case JSON_ERROR_SYNTAX:
+            echo ' - Syntax error, malformed JSON';
+        break;
+        case JSON_ERROR_UTF8:
+            echo ' - Malformed UTF-8 characters, possibly incorrectly encoded';
+        break;
+        default:
+            echo ' - Unknown JSON error';
+        break;
+    }
+
+echo $output;

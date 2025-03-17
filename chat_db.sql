@@ -1,8 +1,9 @@
--- MariaDB dump 10.19  Distrib 10.5.22-MariaDB, for Linux (x86_64)
+/*M!999999\- enable the sandbox mode */ 
+-- MariaDB dump 10.19  Distrib 10.5.27-MariaDB, for Linux (x86_64)
 --
 -- Host: localhost    Database: osi_chat
 -- ------------------------------------------------------
--- Server version	10.5.22-MariaDB
+-- Server version	10.5.27-MariaDB
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -14,26 +15,6 @@
 /*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
 /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
-
---
--- Table structure for table `auto_title`
---
-
-DROP TABLE IF EXISTS `auto_title`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
-CREATE TABLE `auto_title` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `chat_id` varchar(32) NOT NULL,
-  `title` varchar(255) DEFAULT NULL,
-  `uri` varchar(256) DEFAULT NULL,
-  `api_endpoint` varchar(255) DEFAULT NULL,
-  `timestamp` timestamp NULL DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  KEY `fk_exchange_chat` (`chat_id`),
-  CONSTRAINT `fk_auto_title` FOREIGN KEY (`chat_id`) REFERENCES `chat` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=40648 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Table structure for table `chat`
@@ -57,6 +38,7 @@ CREATE TABLE `chat` (
   `sort_order` int(16) NOT NULL DEFAULT 0,
   `timestamp` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `date_created` timestamp NOT NULL DEFAULT current_timestamp(),
+  `last_viewed` timestamp NULL DEFAULT NULL,
   UNIQUE KEY `id` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -79,7 +61,7 @@ CREATE TABLE `documents` (
   PRIMARY KEY (`id`),
   KEY `fk_exchange_chat_docs` (`chat_id`),
   CONSTRAINT `fk_exchange_chat_docs` FOREIGN KEY (`chat_id`) REFERENCES `chat` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=189 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -112,7 +94,7 @@ CREATE TABLE `exchange` (
   PRIMARY KEY (`id`),
   KEY `fk_exchange_chat` (`chat_id`),
   CONSTRAINT `fk_exchange_chat` FOREIGN KEY (`chat_id`) REFERENCES `chat` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=60482 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=76662 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -124,4 +106,4 @@ CREATE TABLE `exchange` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2025-01-21 11:40:46
+-- Dump completed on 2025-03-07 10:30:40

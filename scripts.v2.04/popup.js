@@ -46,7 +46,7 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
             // Hide the searching indicator
             searchingIndicator.style.display = 'none';
             chatTitlesContainer.style.opacity = '1'; // Restore opacity
-            console.log(response);
+            //console.log(response);
 
             // Clear the current chat titles
             $('.chat-titles-container').empty();
@@ -75,13 +75,18 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
             $('body').append(`
                 <div id="popup" class="popup" style="display: none; opacity: 0; transition: opacity 0.3s ease-out;">
                     <div class="popup-toolbar">
+
+
+
                         <button class="popup-icon copy-title-button" title="Copy Title">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16">
                                 <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
                             </svg>
                         </button>
                         <button class="popup-icon edit-icon" title="Edit this chat">
-                            <svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" width="17px" height="17px" viewBox="0 0 32 32" enable-background="new 0 0 32 32" xml:space="preserve">
+                            <svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" 
+                                xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" width="17px" height="17px" 
+                                viewBox="0 0 32 32" enable-background="new 0 0 32 32" xml:space="preserve">
                                 <path fill="#FFFFFF" d="M0,31.479c0,0.276,0.224,0.5,0.5,0.5h31.111c0.067,0,0.132-0.013,0.193-0.039
                                     c0.061-0.026,0.116-0.063,0.162-0.109c0.001-0.001,0.002-0.001,0.003-0.002c0.003-0.003,0.003-0.009,0.007-0.012
                                     c0.051-0.055,0.084-0.122,0.107-0.195c0.007-0.023,0.01-0.045,0.014-0.069c0.004-0.025,0.015-0.047,0.015-0.073
@@ -134,6 +139,20 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                 }, 2000);
                 popup.data('currentChatId', chatId);
                 popup.data('currentChatTitle', chatTitle);
+
+
+    // Determine the current chat based on the URL
+    const currentChatId = window.location.pathname.split('/')[2];
+
+    // Conditionally show the paperclip icon only if this chat is the current chat
+    if (chatId === currentChatId) {
+        $('#popup .paperclip-icon').show();
+    } else {
+        $('#popup .paperclip-icon').hide();
+    }
+
+
+
                 const ellipsisRect = e.target.getBoundingClientRect();
                 popup.css({
                     top: ellipsisRect.top + 'px',
@@ -208,8 +227,13 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                 // Create docList outside of chatItem
                 let docList = null;
 
-                const docEntries = (chat.documents)
-                    ? Object.entries(chat.documents).filter(([key, title]) => {
+                /*
+                console.log("getting the chat.document")
+                console.log(chat.document)
+                console.log("done with chat.document")
+                */
+                const docEntries = (chat.document)
+                    ? Object.entries(chat.document).filter(([key, title]) => {
                         return title && title !== 'null'; 
                         // i.e. keep only if the title is non-empty and not literally the string "null"
                     })
@@ -217,26 +241,66 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
 
                 // Now docEntries is an array of [ [docKey, docTitle], ... ] for valid docs only
 
-                if (docEntries.length > 0) {
+                // ... (lines 235-242 remain unchanged)
 
-                    //console.log("HERE ARE THE CURRENT CHAT DOCUMENTS");
-                    //console.log(chat.documents);
-                    //console.log("THAT WAS THEM");
-                    // We'll still create the docList, but will append it to container separately.
+                if (deployment != 'azure-dall-e-3' && docEntries.length > 0) {
+
+                    // Create the paperclip icon as a jQuery object with the onclick attribute
+                    const paperclipIcon = $('<label>', {
+                        class: 'paperclip-icon',
+                        for: 'uploadTrigger',
+                        css: {
+                            cursor: 'pointer',
+                            marginRight: '10px'
+                        },
+                        // Add the onclick attribute to trigger the upload modal
+                        onclick: 'openUploadModal()'
+                    }).append(
+                        $('<img>', {
+                            src: 'images/paperclip.white.svg',
+                            alt: 'Upload Document',
+                            title: 'Document types accepted: PDF, Word, PPT, text, markdown, images, etc.',
+                            css: {
+                                height: '20px',
+                                transform: 'rotate(45deg)',
+                                marginLeft: '10px'
+                            }
+                        })
+                    );
+
+                    // Create the "Documents" heading as before
+                    const docHeading = $('<p>', {
+                        class: 'document-heading',
+                        text: 'Documents'
+                    });
+
+                    // Create a container to hold both the paperclip icon and the heading
+                    const docHeadingContainer = $('<div>', {
+                        class: 'document-heading-container',
+                        css: {
+                            display: 'flex',
+                            alignItems: 'center'
+                        }
+                    });
+
+                    // Append the icon and heading to the container
+                    docHeadingContainer.append(paperclipIcon, docHeading);
+
+                    // Create the document list container (docList)
                     docList = $('<ol>', {
                         class: 'document-list',
                         id: `doclist-${chat.id}`,
                         style: `margin-left: 20px; display: ${isCurrentChat ? 'block' : 'none'};`
                     });
+                    // Append the container with the paperclip icon and heading
+                    docList.append(docHeadingContainer);
 
                     if (chatId == chat.id) {
                         currentChat = chat;
-                        //console.log("THIS IS THE CURRENT CHAT EVERYONE: ");
-                        //console.log(currentChat);
                     }
 
                     var itemNum = 1;
-                    Object.entries(chat.documents).forEach(([docKey, docTitle]) => {
+                    Object.entries(chat.document).forEach(([docKey, docTitle]) => {
                         const docItem = $('<li>', { class: 'document-item' });
                         // Document title span
                         const docTitleSpan = $('<span>', {
@@ -249,7 +313,7 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                             'data-doc-key': docKey,
                             'data-chat-id': chat.id,
                             title: 'Delete this document',
-                            html:TRASH_SVG
+                            html: TRASH_SVG
                         });
 
                         docItem.append(docTitleSpan, ' ', deleteBtn);
@@ -308,12 +372,22 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                 }
             });
 
-            // Delegated event handler for delete document
+            // Update global documentsLength from currentChat's documents (if any)
+            if (currentChat && currentChat.document) {
+                documentsLength = Object.keys(currentChat.document).length;
+            } else {
+                documentsLength = 0;
+            }
+            // Optionally update the upload modal text (if open)
+            //updateUploadModalText();
+
+            // Re-bind delete-document button event
+            $('.chat-titles-container').off('click', '.delete-document-button');
             $('.chat-titles-container').on('click', '.delete-document-button', function(e) {
                 e.preventDefault();
                 const docKey = $(this).data('doc-key');
                 const chatId = $(this).data('chat-id');
-                // Use a confirmation popup (customize as needed)
+                console.log(`Documents Length 4: ${documentsLength}`);
                 if (confirm('Are you sure you want to delete this document?')) {
                     $.ajax({
                         url: 'delete-document.php',
@@ -328,6 +402,7 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                     });
                 }
             });
+
         },
         error: function(xhr, status, error) {
             searchingIndicator.style.display = 'none';

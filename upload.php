@@ -9,15 +9,24 @@ require_once 'lib.required.php';
 // Get the chat_id if present
 $chat_id = isset($_REQUEST['chat_id']) ? $_REQUEST['chat_id'] : '';
 
+// Flag to indicate a new chat was created
+$new_chat_created = false;
+
 // Create a new chat session if no chat ID is provided
 if (empty($chat_id)) {
-    $chat_id = $new_chat_id = create_chat($user, 'New auto-generated Chat', '', $_SESSION['deployment']);
+    $chat_id = create_chat($user, 'New auto-generated Chat', '', $_SESSION['deployment']);
+    $new_chat_created = true;
 }
 
 // Check if there's a request to remove the uploaded document(s)
 if (isset($_GET['remove']) && $_GET['remove'] == '1') {
     // Remove all documents for this chat
     remove_chat_documents($user, $chat_id);
+    // Use JSON response if the request is AJAX
+    if (isAjaxRequest()) {
+        echo json_encode(['chat_id' => $chat_id, 'redirect' => true]);
+        exit;
+    }
     header('Location: ' . urlencode($chat_id));
     exit;
 }
@@ -47,17 +56,33 @@ if (isset($_FILES['uploadDocument'])) {
             if (strpos($output, 'ValueError') === false) {
                 insert_document($user, $chat_id, $originalName, $mimeType, $output);
             } else {
-                // Optionally log the error or notify the user (error handling code could go here)
+                // Optionally log the error or notify the user
                 continue;
             }
         }
     }
     
-    // Redirect back to the main page with the chat ID
-    header('Location: ' . urlencode($chat_id));
+    // Use JSON response for AJAX requests, else do a header redirect
+    if (isAjaxRequest()) {
+        echo json_encode(['chat_id' => $chat_id, 'new_chat' => $new_chat_created]);
+    } else {
+        header('Location: ' . urlencode($chat_id));
+    }
 } else {
-    header('Location: ' . urlencode($chat_id));
+    if (isAjaxRequest()) {
+        echo json_encode(['chat_id' => $chat_id, 'new_chat' => false]);
+    } else {
+        header('Location: ' . urlencode($chat_id));
+    }
 }
 
 exit();
+
+/**
+ * Helper function to detect AJAX requests.
+ */
+function isAjaxRequest() {
+    return !empty($_SERVER['HTTP_X_REQUESTED_WITH']) &&
+           strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+}
 

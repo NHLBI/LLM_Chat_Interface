@@ -12,10 +12,6 @@ if(isset($_POST['chat_id']) && isset($_POST['title'])) {
         die("invalid input");
     }
 
-    if (!verify_user_chat($user, $chat_id)) {
-        die("unauthorized");
-    }
-
     // Use the existing update_chat_title function
     update_chat_title($user, $chat_id, $new_title);
 }

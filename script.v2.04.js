@@ -102,6 +102,9 @@ $(document).ready(function() {
                 hljs.highlightElement(block);
             });
 
+            // AJAX IN THE IMAGES FROM THE DATABASE
+            if (deployment != 'azure-dall-e-3') fetchUserImages(chatId, userMessageElement);
+
             // Apply MathJax typesetting to the user message
             if (window.MathJax) {
                 MathJax.typesetPromise([userMessageElement[0]]).then(function () {
@@ -305,6 +308,8 @@ $(document).ready(function() {
             data: { chat_id: chatId, user: user },
             dataType: 'json',
             success: function(chatMessages) {
+                //console.log("this is chatMessages to show we're actually getting them");
+                //console.log(chatMessages);
                 displayMessages(chatMessages);
                 //scrollToBottom();
                 debounceScroll();
@@ -314,7 +319,8 @@ $(document).ready(function() {
 
     // Show older chat messages
     function displayMessages(chatMessages) {
-        chatMessages.forEach(function (message) {
+        // Since chatMessages is an object, iterate over its values
+        Object.values(chatMessages).forEach(function (message) {
 
             //------------------------------------------------
             // 1) USER PROMPT
@@ -324,7 +330,6 @@ $(document).ready(function() {
             var userMessageElement = $('<div class="message user-message"></div>').html(sanitizedPrompt);
             userMessageElement.prepend('<img src="images/user.png" class="user-icon">');
             chatContainer.append(userMessageElement);
-
 
             //------------------------------------------------
             // 2) ASSISTANT REPLY
@@ -352,6 +357,7 @@ $(document).ready(function() {
             // 3) HANDLE GENERATED IMAGE (IF PRESENT)
             //------------------------------------------------
             if (message.image_gen_name) {
+                console.log("I think I have an image gen name");
                 var genImg = $('<img>')
                     .attr('class', 'image-message')
                     .attr('src', '../image_gen/small/' + message.image_gen_name)
@@ -375,18 +381,19 @@ $(document).ready(function() {
             //------------------------------------------------
             // 4) DOCUMENTS (USER OR ASSISTANT UPLOADED)
             //------------------------------------------------
-            if (message.document_name && message.document_text && /^image\//.test(message.document_type)) {
-                var docImg = $('<img>')
-                    .attr('class', 'image-message')
-                    .attr('src', message.document_text)
-                    .attr('alt', message.document_name || '');
-
-                if (message.document_source === 'assistant' && assistantMessageElement) {
-                    assistantMessageElement.append(docImg);
-                    addDownloadButton(assistantMessageElement, message.document_text);
-                } else if (message.document_source === 'user') {
-                    userMessageElement.append(docImg);
-                }
+            if (message.document) {
+                // Iterate over each document entry in the document object
+                $.each(message.document, function(key, doc) {
+                    // Only process if the document is an image type
+                    if (doc.document_name && doc.document_text && /^image\//.test(doc.document_type)) {
+                        var docImg = $('<img>')
+                            .attr('class', 'image-message')
+                            .attr('src', doc.document_text)
+                            .attr('alt', doc.document_name || '');
+                        
+                        userMessageElement.append(docImg);
+                    }
+                });
             }
         });
 

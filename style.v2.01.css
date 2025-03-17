@@ -411,12 +411,41 @@ code {
 }
 
 
-/* Icon within the submit button */
-.send-icon {
-    width: 24px;
-    height: 24px;
-    fill: currentColor; /* Inherit color from the button */
+
+
+
+
+
+
+/* Position the paperclip upload button */
+.upload-button {
+  position: absolute;
+  right: 40px;  /* Adjust so that it's left of the send button */
+  bottom: 7px; /* Align with the send button */
+  background: none;
+  border: none;
+  cursor: pointer;
 }
+
+/* Position the send button */
+.submit-button {
+  position: absolute;
+  right: 10px;  /* This places it on the right edge */
+  bottom: 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* Icon styling */
+.send-icon,
+.upload-icon {
+  width: 24px;
+  height: 24px;
+  fill: currentColor;
+}
+
+
 
 /* Hide the button outline on focus */
 .submit-button:focus {
@@ -611,7 +640,14 @@ code {
 }
 
 
+.document-heading {
+    margin: 0px;
+    max-width: 120px;
+}
 
+.document-heading-container {
+    margin-bottom:4px;
+}
 
 .document-list {
   list-style-type: none;   /* Removes bullet points */

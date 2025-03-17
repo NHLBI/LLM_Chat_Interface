@@ -2,7 +2,7 @@
 
 ## Overview
 
-Web Chat 1 is a chat front-end interface designed to provide staff with a secured, chat-like experience for their day-to-day work, through calls to Microsoft Azure's OpenAI API. This application mimics public tooling like ChatGPT and Google Bard, leveraging the Azure OpenAI API for basic chat functionalities and file uploads. 
+NHLBI Chat is a chat front-end interface designed to provide staff with a secured, chat-like experience for their day-to-day work, through calls to Microsoft Azure's OpenAI API. This application mimics public tooling like ChatGPT and Anthropic's `Claude`, leveraging the Azure OpenAI API for basic chat functionalities and file uploads. 
 
 ## Features
 
@@ -16,7 +16,7 @@ To build and host the LLM Chat Interface application:
 
 1. Clone the repository to your local or server environment.
 2. Ensure you have the necessary dependencies installed (as specified in the Code Dependencies section below).
-3. Copy the `example_chat_config.ini` to your PHP include location. Note that we use the include path, '/etc/apps/chat_config.ini'.
+3. Copy the `example_chat_config.ini` to your PHP include location. Note that we use a hard-coded config path, '/etc/apps/chat_config.ini'.
 4. Configure the application settings in the `chat_config.ini` file.
 5. Utilize the `chat_db.sql` to set up the database schema.
 6. Follow deployment instructions to get the web server running (e.g., Apache, Nginx).
@@ -78,8 +78,9 @@ CREATE TABLE `chat` (
   `sort_order` int(16) NOT NULL DEFAULT 0,
   `timestamp` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `date_created` timestamp NOT NULL DEFAULT current_timestamp(),
+  `last_viewed` timestamp NULL DEFAULT NULL,
   UNIQUE KEY `id` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
 
 --
 -- Table structure for table `exchange`
@@ -90,10 +91,14 @@ CREATE TABLE `exchange` (
   `chat_id` varchar(32) NOT NULL,
   `user` varchar(255) DEFAULT NULL,
   `prompt` longtext DEFAULT NULL,
+  `prompt_token_length` int(11) DEFAULT NULL,
   `reply` text DEFAULT NULL,
+  `reply_token_length` int(11) DEFAULT NULL,
   `document_name` varchar(128) DEFAULT NULL,
   `document_type` varchar(124) DEFAULT NULL,
   `document_text` longtext DEFAULT NULL,
+  `document_source` varchar(10) DEFAULT NULL,
+  `image_gen_name` varchar(255) DEFAULT NULL,
   `deployment` varchar(64) DEFAULT NULL,
   `api_key` varchar(64) DEFAULT NULL,
   `temperature` decimal(2,1) DEFAULT NULL,
@@ -104,7 +109,24 @@ CREATE TABLE `exchange` (
   PRIMARY KEY (`id`),
   KEY `fk_exchange_chat` (`chat_id`),
   CONSTRAINT `fk_exchange_chat` FOREIGN KEY (`chat_id`) REFERENCES `chat` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+
+--
+-- Table structure for table `documents`
+--
+
+CREATE TABLE `documents` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `chat_id` varchar(32) NOT NULL,
+  `name` varchar(255) NOT NULL,
+  `type` varchar(124) NOT NULL,
+  `content` longtext NOT NULL,
+  `deleted` tinyint(1) DEFAULT 0,
+  `timestamp` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `fk_exchange_chat_docs` (`chat_id`),
+  CONSTRAINT `fk_exchange_chat_docs` FOREIGN KEY (`chat_id`) REFERENCES `chat` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
 
 ## Configuration Changes
 
