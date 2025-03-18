@@ -7,6 +7,8 @@ require_once 'get_config.php'; // Determine the environment dynamically
 // lib.required.php
 require_once 'db.php';
 
+$pdo = get_connection();
+
 
 // Before proceeding, check if the session has the required user data.
 // If not, let’s give it a chance to appear.
@@ -39,6 +41,18 @@ if (empty($_SESSION['user_data'])) $_SESSION['user_data'] = [];
 $user = (empty($_SESSION['user_data']['userid'])) ? '' : $_SESSION['user_data']['userid'];
 
 $application_path = $config['app']['application_path'];
+
+// Confirm authentication, redirect if false
+if (isAuthenticated()) {
+    if (empty($_SESSION['LAST_REGEN']) || (time() - $_SESSION['LAST_REGEN'] > 900)) {
+        session_regenerate_id(true);
+        $_SESSION['LAST_REGEN'] = time();
+    }
+
+} else {
+    header('Location: auth_redirect.php');
+    exit;
+}
 
 // Verify that there is a chat with this id for this user
 // If a 'chat_id' parameter was passed, store its value as a string in the session variable 'chat_id'
@@ -108,13 +122,7 @@ if (!isset($_SESSION['temperature']) || (float)$_SESSION['temperature'] < 0 || (
     $_SESSION['temperature'] = 0.7;
 }
 
-// Confirm authentication, redirect if false
-if (isAuthenticated()) {
-    session_regenerate_id(true);
-} else {
-    header('Location: auth_redirect.php');
-    exit;
-}
+
 
 // Uncomment for debugging
 // echo "<pre>". print_r($_SESSION,1) ."</pre>";
@@ -437,7 +445,7 @@ function execute_api_call($url, $payload, $headers, $chat_id = '') {
 
     $response = curl_exec($ch);
     // Uncomment for debugging
-    // print($response); die();
+    #print($response); die();
 
     if (curl_errno($ch)) {
         error_log('Curl error: ' . curl_error($ch));

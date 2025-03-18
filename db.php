@@ -1,27 +1,28 @@
 <?php
 // db.php
 
-// Parse the configuration file
-require_once 'get_config.php';
+function get_connection() {
+    global $config;
+    // Get the database configuration from the config array
+    $host = $config['database']['host'];
+    $dbname = $config['database']['dbname'];
+    $username = $config['database']['username'];
+    $password = trim($config['database']['password'], '"'); // trim the quotes around the password
 
-// Get the database configuration from the config array
-$host = $config['database']['host'];
-$dbname = $config['database']['dbname'];
-$username = $config['database']['username'];
-$password = trim($config['database']['password'], '"'); // trim the quotes around the password
+    #die( "INFO: " . $host . "\n" . $dbname . "\n" . $username . "\n" . $password . "\n\n\n");
 
-#die( "INFO: " . $host . "\n" . $dbname . "\n" . $username . "\n" . $password . "\n\n\n");
-
-try {
-    // Connect to the database using PDO (PHP Data Objects)
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username, $password);
-    
-    // Set the PDO error mode to exception to enable error handling
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-} catch (PDOException $e) {
-    // If the database connection fails, output an error message
-    error_log('Database connection failed: ' . $e->getMessage());
-    die('Database connection failed. Please contact the site administrator.');
+    try {
+        // Connect to the database using PDO (PHP Data Objects)
+        $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username, $password);
+        
+        // Set the PDO error mode to exception to enable error handling
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    } catch (PDOException $e) {
+        // If the database connection fails, output an error message
+        error_log('Database connection failed: ' . $e->getMessage());
+        die('Database connection failed. Please contact the site administrator.');
+    }
+    return $pdo;
 }
 
 function createGUID() {    

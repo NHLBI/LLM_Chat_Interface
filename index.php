@@ -3,7 +3,6 @@
 #die("<h2>NHLBI Chat is down for a very brief maintenance.</h2>");
 // Include the library functions and the database connection
 require_once 'lib.required.php'; 
-require_once 'db.php'; 
 # phpinfo();
 
 $username = $_SESSION['user_data']['name'];
@@ -283,7 +282,7 @@ foreach(array_keys($models) as $m) {
 </script>
 
     <!-- Include Session Handler JS -->
-    <script src="session_handler.js"></script>
+    <!--<script src="session_handler.js"></script>-->
 
 <!-- Include application-specific scripts -->
 <script src="scripts.v2.04/utilities.js"></script>

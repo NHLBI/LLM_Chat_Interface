@@ -11,6 +11,8 @@ var nextServerPingAt;   // Timestamp when the next server ping will occur
 
 // Function to send AJAX request to keep the session alive on the server
 function pingServerToKeepSessionAlive() {
+
+    return
     $.ajax({
         url: 'session_status.php',
         type: 'GET',
