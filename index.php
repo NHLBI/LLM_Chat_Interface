@@ -60,6 +60,7 @@ foreach(array_keys($models) as $m) {
         var sessionTimeout = <?php echo $sessionTimeout * 1000; ?>; // Convert seconds to milliseconds
         var deployment = "<?php echo $deployment; ?>";
         var host = "<?php echo $config[$deployment]['host'] ; ?>";
+        var handles_images = "<?php echo $config[$deployment]['handles_images'] ; ?>";
         var temperature = "<?php echo $_SESSION['temperature']; ?>";
         var chatContainer;
         var currentChat;
@@ -220,11 +221,11 @@ foreach(array_keys($models) as $m) {
                 </form>
 
 
-                <button style="display: inline-block; margin-top:8px;" title="Print the existing chat session" aria-label="About models button" onclick="showAboutModels()" id="printButton">Model: <?php echo $models[$_SESSION['deployment']]['label']; ?></button>
+                <button style="display: inline-block; margin-top:8px;" title="Select models from a list" aria-label="About models button" onclick="showAboutModels()" id="printButton">Model: <?php echo $models[$_SESSION['deployment']]['label']; ?></button>
                 <!-- <span style="display: inline-block; margin-top:8px;"><a title="About models" href="javascript:void(0);" onclick="showAboutModels()">Select Model</a> -->
                 <!--current model: <?php echo $models[$_SESSION['deployment']]['label']; ?></span> -->
 
-<?php if ($config[$deployment]['host'] !== 'dall-e' && $deployment !== 'azure-o1'&& $deployment !== 'azure-o3') { ?>
+<?php if ($config[$deployment]['handles_temperature']) { ?>
 
                 <form onsubmit="saveMessage()" id="temperature_select" action="" method="post" style="display: inline-block; margin-left: 20px; margin-right: 10px; margin-top: 8px; border-top: 1px solid white; ">
                     <label for="temperature">Temperature</label>: <select title="Choose a temperature setting between 0 and 2. A temperature of 0 means the responses will be very deterministic (meaning you almost always get the same response to a given prompt). A temperature of 2 means the responses can vary substantially." name="temperature" onchange="document.getElementById('temperature_select').submit();">

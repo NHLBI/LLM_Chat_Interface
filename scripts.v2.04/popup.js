@@ -141,15 +141,15 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                 popup.data('currentChatTitle', chatTitle);
 
 
-    // Determine the current chat based on the URL
-    const currentChatId = window.location.pathname.split('/')[2];
+                // Determine the current chat based on the URL
+                const currentChatId = window.location.pathname.split('/')[2];
 
-    // Conditionally show the paperclip icon only if this chat is the current chat
-    if (chatId === currentChatId) {
-        $('#popup .paperclip-icon').show();
-    } else {
-        $('#popup .paperclip-icon').hide();
-    }
+                // Conditionally show the paperclip icon only if this chat is the current chat
+                if (chatId === currentChatId) {
+                    $('#popup .paperclip-icon').show();
+                } else {
+                    $('#popup .paperclip-icon').hide();
+                }
 
 
 
@@ -299,15 +299,25 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                         currentChat = chat;
                     }
 
+                    console.log("this is the handle images: ");
+                    console.log(chat.document);
+                    //console.log("this is the handle images: " + handles_images);
+
                     var itemNum = 1;
-                    Object.entries(chat.document).forEach(([docKey, docTitle]) => {
+                    Object.entries(chat.document).forEach(([docKey, docData]) => {
+                        const docTitle = docData.name; 
+                        const isImage = docData.type.startsWith('image/');
+                        
+                        // Strikethrough only if handles_images is false AND the document is an image
+                        const displayTitle = (!handles_images && isImage) ? `<s style="color: #CCC;cursor: pointer;" title="This model does not support uploaded images">${docTitle}</s>` : docTitle;
+
                         const docItem = $('<li>', { class: 'document-item' });
-                        // Document title span
+
                         const docTitleSpan = $('<span>', {
                             class: 'document-title',
-                            text: `${itemNum}. ${docTitle}`
+                            html: `${itemNum}. ${displayTitle}`
                         });
-                        // Delete button for document (using a trash can emoji as icon)
+
                         const deleteBtn = $('<button>', {
                             class: 'delete-document-button',
                             'data-doc-key': docKey,
@@ -320,6 +330,7 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                         docList.append(docItem);
                         itemNum += 1;
                     });
+
                 }
 
                 // Add hover events

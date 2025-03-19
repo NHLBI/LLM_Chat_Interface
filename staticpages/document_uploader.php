@@ -68,11 +68,13 @@
     <div id="dropZone" tabindex="0" aria-label="Drag and drop files here or click to select files" class="dropZone">
       <p>Drag and drop files here</p>
       <p>or</p>
-      <button type="button" onclick="document.getElementById('fileInput').click()">Select Files</button>
+      <button type="button" 
+        title="Supported file types: Documents, PDFs<?php if ($config[$deployment]['handles_images']) echo ', and Images'; ?>"
+        onclick="document.getElementById('fileInput').click()">Select Files</button>
       <input id="fileInput" 
              type="file" 
              name="uploadDocument[]" 
-             accept=".pdf,.docx,.pptx,.txt,.md,.json,.xml,.png,.jpg,.jpeg,.gif" 
+             accept=".pdf,.docx,.pptx,.txt,.md,.json,.xml<?php if ($config[$deployment]['handles_images']) echo ',.png,.jpg,.jpeg,.gif'; ?>"
              multiple 
              style="display:none" 
              onchange="handleFiles(this.files)" />

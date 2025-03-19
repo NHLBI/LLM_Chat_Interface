@@ -100,7 +100,7 @@ function create_exchange(
     $document_text = null,
     $image_gen_name = null
 ) {
-    global $pdo;
+    global $pdo, $config;
 
     $deployment   = $_SESSION['deployment'] ?? null;
     $temperature  = $_SESSION['temperature'] ?? null;
@@ -151,21 +151,23 @@ function create_exchange(
 
     $insert_id = $pdo->lastInsertId();
 
-    // Step 3: Check for associated documents (deleted = 0) for the chat_id
-    $stmt = $pdo->prepare("SELECT id FROM document WHERE chat_id = :chat_id AND deleted = 0");
-    $stmt->execute(['chat_id' => $chat_id]);
-    $documents = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    if ($config[$deployment]['handles_images']) {
+        // Step 3: Check for associated documents (deleted = 0) for the chat_id
+        $stmt = $pdo->prepare("SELECT id FROM document WHERE chat_id = :chat_id AND deleted = 0");
+        $stmt->execute(['chat_id' => $chat_id]);
+        $documents = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    if ($documents) {
-        foreach ($documents as $doc) {
-            $stmtJoin = $pdo->prepare("
-                INSERT INTO exchange_document (exchange_id, document_id)
-                VALUES (:exchange_id, :document_id)
-            ");
-            $stmtJoin->execute([
-                'exchange_id' => $insert_id,
-                'document_id' => $doc['id']
-            ]);
+        if ($documents) {
+            foreach ($documents as $doc) {
+                $stmtJoin = $pdo->prepare("
+                    INSERT INTO exchange_document (exchange_id, document_id)
+                    VALUES (:exchange_id, :document_id)
+                ");
+                $stmtJoin->execute([
+                    'exchange_id' => $insert_id,
+                    'document_id' => $doc['id']
+                ]);
+            }
         }
     }
 
@@ -292,7 +294,7 @@ function get_all_chats($user, $search = '') {
     $sql = "
     SELECT
         c.id, c.user, c.title, c.deployment, c.temperature,
-        c.new_title, d.id AS `document_id`, d.name AS `document_name`, d.deleted AS `document_deleted`, c.deleted, c.timestamp AS latest_interaction
+        c.new_title, d.id AS `document_id`, d.name AS `document_name`, d.type AS `document_type`, d.deleted AS `document_deleted`, c.deleted, c.timestamp AS latest_interaction
     FROM chat c
     LEFT JOIN document d ON c.id = d.chat_id
     LEFT JOIN exchange e ON c.id = e.chat_id
@@ -336,7 +338,9 @@ function get_all_chats($user, $search = '') {
         $output[$r['id']]['title'] = $r['title'];
         $output[$r['id']]['deployment'] = $r['deployment'];
         if (empty($output[$r['id']]['document'])) $output[$r['id']]['document'] = array();
-        if ($r['document_deleted'] == 0 && !empty($r['document_name'])) $output[$r['id']]['document'][$r['document_id']] = $r['document_name'];
+        if ($r['document_deleted'] == 0 && !empty($r['document_name'])) {
+            $output[$r['id']]['document'][$r['document_id']] = array('name'=>$r['document_name'],'type'=>$r['document_type']);
+        }
     }
     #echo '<pre>'.print_r($output,1).'<pre>'; die();
     return $output;

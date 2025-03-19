@@ -2,7 +2,7 @@
 
 require_once __DIR__ . '/session_init.php';
 require_once 'get_config.php'; // Determine the environment dynamically
-// echo '<pre>'.print_r($config,1).'</pre>';
+#echo '<pre>'.print_r($config,1).'</pre>';
 
 // lib.required.php
 require_once 'db.php';
@@ -88,7 +88,6 @@ if (empty($_GET['chat_id'])) $_GET['chat_id'] = '';
 if (isset($_POST['model']) && array_key_exists($_POST['model'], $models)) {
     #print_r($_POST);
     $deployment = $_SESSION['deployment'] = $_POST['model'];
-    #echo "1 This is the deployment: {$deployment}<br>\n";
     if (!empty($_GET['chat_id'])) update_deployment($user, $chat_id, $deployment);
 }
 
@@ -109,6 +108,8 @@ if (empty($_SESSION['deployment'])) {
     $deployment = $_SESSION['deployment'];
     #echo "5 This is the deployment: {$deployment}<br>\n";
 }
+#echo "1 This is the deployment: {$deployment}<br>\n";
+#echo '<pre>'.print_r($config[$deployment],1).'</pre>';
 
 // Handle temperature selection
 if (isset($_POST['temperature'])) {
