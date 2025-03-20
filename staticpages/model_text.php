@@ -3,7 +3,8 @@
   <div class="modelsModalContent">
     
     <!-- Close button -->
-    <button class="closeButton" onclick="closeAboutModels()" aria-label="Close Model Selection">&times;</button>
+    <button class="closeAbout" onclick="closeAboutModels()" aria-label="Close Model Selection">&times;</button>
+
     
     <h4 id="modelModalTitle">Select a Model</h4>
     
@@ -12,22 +13,26 @@
         <div class="model-options">
 
         <?php
-        foreach ($models as $m => $modelconfig) {
-            if (empty($modelconfig['enabled'])) continue;
-            $label = $modelconfig['label'];
-            $tooltip = $modelconfig['tooltip'];
-            $checked = ($m == $_SESSION['deployment']) ? 'true' : 'false';
-            echo '
-                <button type="button" 
-                        class="model-option" 
-                        data-model="'.$m.'"
-                        role="radio"
-                        aria-checked="'.$checked.'">
-                    <h5>'.$label.'</h5>
-                    <p>'.$tooltip.'</p>
-                </button>
-            '."\n";
-        }
+
+foreach ($models as $m => $modelconfig) {
+    if (empty($modelconfig['enabled'])) continue;
+    $label = $modelconfig['label'];
+    $tooltip = $modelconfig['tooltip'];
+    $checked = ($m == $_SESSION['deployment']) ? 'true' : 'false';
+    $handles_images = !empty($modelconfig['handles_images']) ? 'true' : 'false';
+    echo '
+        <button type="button" 
+                class="model-option" 
+                data-model="'.$m.'"
+                data-handles-images="'.$handles_images.'"
+                role="radio"
+                aria-checked="'.$checked.'">
+            <h5>'.$label.'</h5>
+            <p>'.$tooltip.'</p>
+        </button>
+    '."\n";
+}
+
         ?>
 
         </div>
@@ -82,43 +87,73 @@
     font-size: 0.9rem;
     color: #475569;
 }
+.disabled-model {
+    opacity: 0.5;
+    pointer-events: none;
+    cursor: not-allowed;
+}
+
 </style>
 
 <script>
+
+function updateModelButtonStates() {
+    const modelOptions = document.querySelectorAll('.model-option');
+    modelOptions.forEach(option => {
+        const canHandleImages = option.dataset.handlesImages === 'true';
+        if (window.documentsLength > 0 && !canHandleImages) {
+            option.classList.add('disabled-model');
+            option.setAttribute('aria-disabled', 'true');
+        } else {
+            option.classList.remove('disabled-model');
+            option.setAttribute('aria-disabled', 'false');
+        }
+    });
+}
+
 // (unchanged from your example)
 document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('model_select');
     const modelOptions = document.querySelectorAll('.model-option');
     const hiddenInput = document.getElementById('selected_model');
-    
+
+    // Disable models that can't handle images if documents are uploaded
+    modelOptions.forEach(option => {
+        const canHandleImages = option.dataset.handlesImages === 'true';
+        if (documentsLength > 0 && !canHandleImages) {
+            option.classList.add('disabled-model');
+            option.setAttribute('aria-disabled', 'true');
+        } else {
+            option.setAttribute('aria-disabled', 'false');
+        }
+    });
+
     // Set initial state based on current model
     const currentModel = hiddenInput.value || '';
     document.querySelector(`[data-model="${currentModel}"]`)?.setAttribute('aria-checked', 'true');
-    
+
     modelOptions.forEach(option => {
-        // Handle click events
         option.addEventListener('click', () => {
+            if (option.classList.contains('disabled-model')) return;
             selectModel(option);
         });
-        
-        // Handle keyboard events
+
         option.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
+            if ((e.key === 'Enter' || e.key === ' ') && !option.classList.contains('disabled-model')) {
                 e.preventDefault();
                 selectModel(option);
             }
         });
     });
-    
+
     function selectModel(selectedOption) {
-        // Update aria-checked states
         modelOptions.forEach(opt => opt.setAttribute('aria-checked', 'false'));
         selectedOption.setAttribute('aria-checked', 'true');
-        
-        // Update hidden input and submit form
         hiddenInput.value = selectedOption.dataset.model;
         form.submit();
+
     }
 });
+
 </script>
 

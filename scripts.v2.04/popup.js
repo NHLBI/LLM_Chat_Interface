@@ -299,8 +299,8 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                         currentChat = chat;
                     }
 
-                    console.log("this is the handle images: ");
-                    console.log(chat.document);
+                    //console.log("this is the handle images: ");
+                    //console.log(chat.document);
                     //console.log("this is the handle images: " + handles_images);
 
                     var itemNum = 1;
@@ -309,7 +309,8 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                         const isImage = docData.type.startsWith('image/');
                         
                         // Strikethrough only if handles_images is false AND the document is an image
-                        const displayTitle = (!handles_images && isImage) ? `<s style="color: #CCC;cursor: pointer;" title="This model does not support uploaded images">${docTitle}</s>` : docTitle;
+                        //const displayTitle = (!handles_images && isImage) ? `<s style="color: #CCC;cursor: pointer;" title="This model does not support uploaded images">${docTitle}</s>` : docTitle;
+                        const displayTitle = docTitle;
 
                         const docItem = $('<li>', { class: 'document-item' });
 

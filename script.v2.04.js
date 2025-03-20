@@ -357,7 +357,7 @@ $(document).ready(function() {
             // 3) HANDLE GENERATED IMAGE (IF PRESENT)
             //------------------------------------------------
             if (message.image_gen_name) {
-                console.log("I think I have an image gen name");
+                //console.log("I think I have an image gen name");
                 var genImg = $('<img>')
                     .attr('class', 'image-message')
                     .attr('src', '../image_gen/small/' + message.image_gen_name)

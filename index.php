@@ -283,7 +283,7 @@ foreach(array_keys($models) as $m) {
 </script>
 
     <!-- Include Session Handler JS -->
-    <!--<script src="session_handler.js"></script>-->
+    <script src="session_handler.js"></script>
 
 <!-- Include application-specific scripts -->
 <script src="scripts.v2.04/utilities.js"></script>

@@ -27,16 +27,25 @@ function closeAboutUs() {
 }
 function showAboutModels() {
     var aboutWindow = document.querySelector('.aboutModelsWindow');
-    var aboutCloser = document.querySelector('.closeAbout');
+    var aboutCloser = document.querySelector('.closeButton'); // Updated selector
+
+    aboutWindow.style.display = 'flex';
+    updateModelButtonStates(); // <-- call this each time modal opens
+
     aboutWindow.classList.add('show');  // Add the 'show' class to make it visible
-    //aboutCloser.focus();  // Give focus to the close button
+    aboutCloser.focus();  // Give focus to the close button
 }
 function closeAboutModels() {
+    console.log("Close window clicked");
     var aboutWindow = document.querySelector('.aboutModelsWindow');
-    aboutWindow.classList.remove('show');  // Remove the 'show' class to hide it
-    var userMessage = document.getElementById('userMessage'); // Assuming 'userMessage' is the ID of your input
-    userMessage.focus();  // Set focus back to the message input
+    aboutWindow.classList.remove('show');  // Remove the 'show' class
+    aboutWindow.style.display = 'none';      // Hide the modal by setting display to 'none'
+    var userMessage = document.getElementById('userMessage');
+    if (userMessage) {
+        userMessage.focus();  // Return focus to the message input if it exists
+    }
 }
+
 function adjustChatTitlesHeight() {
     // Select the chat-titles-container and the menu bottom content
     const chatTitlesContainer = document.querySelector('.chat-titles-container');
