@@ -26,6 +26,17 @@ function closeAboutUs() {
   }
 }
 function showAboutModels() {
+    const aboutWindow = document.querySelector('.aboutModelsWindow');
+    aboutWindow.style.display = 'flex';
+    aboutWindow.classList.add('show');
+
+    loadDocumentCounts();    // <<<<< call your existing helper here
+
+    document.querySelector('.closeButton').focus();
+}
+
+
+function old_showAboutModels() {
     var aboutWindow = document.querySelector('.aboutModelsWindow');
     var aboutCloser = document.querySelector('.closeButton'); // Updated selector
 

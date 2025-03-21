@@ -20,14 +20,24 @@ foreach ($models as $m => $modelconfig) {
     $tooltip = $modelconfig['tooltip'];
     $checked = ($m == $_SESSION['deployment']) ? 'true' : 'false';
     $handles_images = !empty($modelconfig['handles_images']) ? 'true' : 'false';
+    $handles_documents = !empty($modelconfig['handles_documents']) ? 'true' : 'false';
+    if ($handles_documents == 'false') {
+        $disabled_note = '<span id="" class="model-select-note" style="font-weight:normal;"></span>';
+
+    } elseif ($handles_images == 'false') {
+        $disabled_note = '<span id="" class="model-select-note" style="font-weight:normal;"></span>';
+    } else {
+        $disabled_note = '';
+    }
     echo '
         <button type="button" 
                 class="model-option" 
                 data-model="'.$m.'"
                 data-handles-images="'.$handles_images.'"
+                data-handles-documents="'.$handles_documents.'"
                 role="radio"
                 aria-checked="'.$checked.'">
-            <h5>'.$label.'</h5>
+            <h5>'.$label.' '.$disabled_note.'</h5>
             <p>'.$tooltip.'</p>
         </button>
     '."\n";
@@ -96,48 +106,82 @@ foreach ($models as $m => $modelconfig) {
 </style>
 
 <script>
+/**
+ * Fetch all (non‑deleted) documents and split into image vs other counts.
+ */
+function loadDocumentCounts() {
+    //console.log("THIS IS THE CHAT ID IN model_text.php: "+chatId)
+    fetch(`/${application_path}/get_uploaded_images.php?chat_id=${chatId}&images_only=false`)
+        .then(res => res.json())
+        .then(docs => {
+            window.imageDocumentsCount = docs.filter(doc => doc.document_type.includes('image')).length;
+            window.documentsLength    = docs.length - window.imageDocumentsCount;
+            updateModelButtonStates();
+            console.log(`Images: ${window.imageDocumentsCount}, Other docs: ${window.documentsLength}`);
+        })
+        .catch(err => {
+            console.error('Error fetching documents:', err);
+            window.imageDocumentsCount = 0;
+            window.documentsLength    = 0;
+            updateModelButtonStates();
+        });
+}
 
 function updateModelButtonStates() {
-    const modelOptions = document.querySelectorAll('.model-option');
-    modelOptions.forEach(option => {
-        const canHandleImages = option.dataset.handlesImages === 'true';
-        if (window.documentsLength > 0 && !canHandleImages) {
-            option.classList.add('disabled-model');
-            option.setAttribute('aria-disabled', 'true');
+    document.querySelectorAll('.model-option').forEach(option => {
+        const canHandleImages    = option.dataset.handlesImages    === 'true';
+        const canHandleDocuments = option.dataset.handlesDocuments === 'true';
+
+        const hasImages = window.imageDocumentsCount > 0;
+        const hasDocs   = window.documentsLength    > 0;
+
+        const disable = (hasImages && !canHandleImages) || (hasDocs && !canHandleDocuments);
+        option.classList.toggle('disabled-model', disable);
+        option.setAttribute('aria-disabled', disable.toString());
+
+        const note = option.querySelector('.model-select-note');
+        if (!note) return;
+
+        if (disable) {
+            // PRIORITIZE document‑incompatibility over image‑incompatibility
+            if (hasDocs && !canHandleDocuments) {
+                note.textContent = '(This model cannot be selected if you have uploaded documents)';
+            } else if (hasImages && !canHandleImages) {
+                note.textContent = '(This model cannot be selected if you have uploaded images)';
+            }
+            note.style.display = 'inline';
         } else {
-            option.classList.remove('disabled-model');
-            option.setAttribute('aria-disabled', 'false');
+            note.style.display = 'none';
         }
     });
 }
 
-// (unchanged from your example)
 document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('model_select');
     const modelOptions = document.querySelectorAll('.model-option');
     const hiddenInput = document.getElementById('selected_model');
-
-    // Disable models that can't handle images if documents are uploaded
+    
+    // Use the image count from our AJAX call to disable models that cannot handle images.
     modelOptions.forEach(option => {
         const canHandleImages = option.dataset.handlesImages === 'true';
-        if (documentsLength > 0 && !canHandleImages) {
+        if (window.imageDocumentsCount > 0 && !canHandleImages) {
             option.classList.add('disabled-model');
             option.setAttribute('aria-disabled', 'true');
         } else {
             option.setAttribute('aria-disabled', 'false');
         }
     });
-
-    // Set initial state based on current model
+    
+    // Set initial state based on the current model.
     const currentModel = hiddenInput.value || '';
     document.querySelector(`[data-model="${currentModel}"]`)?.setAttribute('aria-checked', 'true');
-
+    
     modelOptions.forEach(option => {
         option.addEventListener('click', () => {
             if (option.classList.contains('disabled-model')) return;
             selectModel(option);
         });
-
+    
         option.addEventListener('keydown', (e) => {
             if ((e.key === 'Enter' || e.key === ' ') && !option.classList.contains('disabled-model')) {
                 e.preventDefault();
@@ -145,13 +189,12 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
-
+    
     function selectModel(selectedOption) {
         modelOptions.forEach(opt => opt.setAttribute('aria-checked', 'false'));
         selectedOption.setAttribute('aria-checked', 'true');
         hiddenInput.value = selectedOption.dataset.model;
         form.submit();
-
     }
 });
 

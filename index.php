@@ -61,6 +61,7 @@ foreach(array_keys($models) as $m) {
         var deployment = "<?php echo $deployment; ?>";
         var host = "<?php echo $config[$deployment]['host'] ; ?>";
         var handles_images = "<?php echo $config[$deployment]['handles_images'] ; ?>";
+        var handles_documents = "<?php echo $config[$deployment]['handles_documents'] ; ?>";
         var temperature = "<?php echo $_SESSION['temperature']; ?>";
         var chatContainer;
         var currentChat;
@@ -71,6 +72,7 @@ foreach(array_keys($models) as $m) {
         var documentsLength = 0;
 
         var chatId = <?php echo json_encode(isset($_GET['chat_id']) ? $_GET['chat_id'] : null); ?>;
+        //console.log("THIS IS THE CHAT ID IN INDEX.PHP: "+chatId)
 
         var search_term = "<?php echo isset($_SESSION['search_term']) ? htmlspecialchars($_SESSION['search_term'], ENT_QUOTES, 'UTF-8') : ''; ?>";
 
