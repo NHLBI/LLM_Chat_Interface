@@ -123,28 +123,6 @@ function openUploadModal() {
   updatePreview();
 }
 
-function old_openUploadModal() {
-  // Suppose currentChat is an object containing { documents: {...} }
-  // Safely get the number of documents:
-  const documentsLength = currentChat && currentChat.documents
-      ? Object.keys(currentChat.documents).length
-      : 0;
-
-  console.log(`Documents Length 1: ${documentsLength}`);
-
-  // If the user already has 2 documents, do not let them upload more
-  if (documentsLength >= 2) {
-    alert(`You have ${documentsLength} documents uploaded. You cannot add more.`);
-    return; 
-  }
-
-  const modal = document.getElementById('uploadModal');
-  modal.style.display = 'flex';
-  // Reset any previous selections
-  uploadedFiles = [];
-  updatePreview();
-}
-
 // Close modal
 function closeUploadModal() {
   document.getElementById('uploadModal').style.display = 'none';
@@ -192,6 +170,63 @@ function updatePreview() {
 }
 
 function submitUploadForm() {
+  // Another optional check:
+  if (documentsLength + uploadedFiles.length > 2) {
+    alert(`You can only have up to 2 documents in total.`);
+    return;
+  }
+
+  if (uploadedFiles.length === 0) {
+    alert("Please select at least one file to upload.");
+    return;
+  }
+
+  // Disable the upload button immediately to prevent duplicates
+  const uploadButton = document.querySelector('button[onclick="submitUploadForm()"]');
+  uploadButton.disabled = true;
+  uploadButton.textContent = "Uploading...";
+
+  // Build FormData
+  const formData = new FormData();
+  formData.append('chat_id', chatId);
+
+  // Add each selected file
+  uploadedFiles.forEach((file) => {
+    formData.append('uploadDocument[]', file);
+  });
+  
+  // Send via Fetch
+  fetch('upload.php', {
+    method: 'POST',
+    body: formData,
+    headers: {
+      'X-Requested-With': 'XMLHttpRequest'
+    }
+  })
+  .then(response => response.json())
+  .then(result => {
+    console.log('Upload successful:', result);
+    // Redirect if a new chat was created
+    if (result.new_chat) {
+      window.location.href = "/" + application_path + "/" + encodeURIComponent(result.chat_id);
+    } else {
+      closeUploadModal();
+      // Optionally refresh UI...
+      fetchAndUpdateChatTitles($('#search-input').val(), false);
+    }
+  })
+  .catch(error => {
+    console.error('Upload error:', error);
+    alert("There was an error uploading your document. Please try again.");
+  })
+  .finally(() => {
+    // Re-enable the upload button after processing is complete
+    uploadButton.disabled = false;
+    uploadButton.textContent = "Upload";
+  });
+}
+
+function old_submitUploadForm() {
   // Another optional check:
   // If documentsLength + uploadedFiles.length > 2, also fail 
   if (documentsLength + uploadedFiles.length > 2) {
