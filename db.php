@@ -420,6 +420,30 @@ function get_new_title_status($user, $chat_id) {
     return $result[0]['new_title'];
 }
 
+function get_all_workflows() {
+    global $pdo;
+    
+    $stmt = $pdo->prepare("
+        SELECT w.id, w.title, w.description, GROUP_CONCAT(wc.config_label) AS config_label, GROUP_CONCAT(wc.description) AS config_description
+        FROM workflow w 
+        LEFT JOIN workflow_config_join wcj ON w.id = wcj.workflow_id 
+        LEFT JOIN workflow_config wc ON wc.id = wcj.workflow_config_id 
+        WHERE deleted = 0 GROUP BY w.id ORDER BY sort_order");
+    $stmt->execute();
+    $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    return $result;
+}
+
+function get_workflow_data($workflow_id) {
+    global $pdo;
+    if (empty($workflow_id)) return false;
+    
+    $stmt = $pdo->prepare("SELECT content, prompt FROM workflow WHERE id = :workflow_id");
+    $stmt->execute(['workflow_id' => $workflow_id]);
+    $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    return $result[0];
+}
+
 // Update the deployment in the database
 function update_deployment($user, $chat_id, $deployment) {
     global $pdo;
@@ -509,6 +533,62 @@ function delete_document($user, $chatId, $docId) {
     $stmt->execute();
 
     return ($stmt->rowCount() > 0);
+}
+
+/**
+ * Delete a chat either softly (flagged) or hard (row + cascades).
+ *
+ * @param int    $id     Chat ID
+ * @param string $user   Owning user
+ * @param bool   $soft   If true, do a soft delete; if false, hard‑delete
+ * @return int|false     Number of affected chat rows, or false on error
+ */
+function delete_chat(int $id, string $user, bool $soft = true) {
+    global $pdo;
+
+    try {
+        if ($soft) {
+            // Soft delete: set deleted=1 on chat and its exchanges
+            $pdo->beginTransaction();
+
+            $stmt1 = $pdo->prepare(
+                "UPDATE chat 
+                   SET `deleted` = 1 
+                 WHERE `id` = :id 
+                   AND `user` = :user 
+                 LIMIT 1"
+            );
+            $stmt1->execute([':id' => $id, ':user' => $user]);
+
+            $stmt2 = $pdo->prepare(
+                "UPDATE exchange
+                   SET `deleted` = 1
+                 WHERE `chat_id` = :id"
+            );
+            $stmt2->execute([':id' => $id]);
+
+            $pdo->commit();
+
+            return $stmt1->rowCount();
+        } else {
+            // Hard delete: cascade removes exchanges by FK configuration
+            $stmt = $pdo->prepare(
+                "DELETE FROM chat
+                  WHERE `id` = :id
+                    AND `user` = :user
+                  LIMIT 1"
+            );
+            $stmt->execute([':id' => $id, ':user' => $user]);
+
+            return $stmt->rowCount();
+        }
+    } catch (PDOException $e) {
+        if ($soft && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log("delete_chat() failed: " . $e->getMessage());
+        return false;
+    }
 }
 
 // Delete all chats where last_viewed is 6 months old or more and deleted = 1

@@ -60,9 +60,9 @@
 
 <div id="uploadModal" class="uploadModal" role="dialog" aria-modal="true" aria-labelledby="uploadModalTitle" style="display: none;">
   <div class="modalContent">
-    <button class="closeButton" onclick="closeUploadModal()" aria-label="Close Upload Modal">&times;</button>
+    <button class="closeButton" onclick="cancelUploadModal()" aria-label="Close Upload Modal">&times;</button>
     <h2 id="uploadModalTitle">Upload Document(s)</h2>
-    <p>You can upload up to 2 files.</p>
+    <p id="uploadModalMessage">You can upload up to 2 files.</p>
     
     <!-- Drag & Drop Zone -->
     <div id="dropZone" tabindex="0" aria-label="Drag and drop files here or click to select files" class="dropZone">
@@ -84,71 +84,160 @@
     <div id="preview"></div>
     
     <!-- Upload Action -->
-    <button type="button" onclick="submitUploadForm()">Upload</button>
+    <button type="button" style="float:right;" onclick="submitUploadForm()">Upload</button>
   </div>
 </div>
 
 <script>
-let uploadedFiles = [];
-//let documentsLength = 0; // Keep track of how many documents are in the current chat
+// Global variables
+let uploadedFiles = [];  // files selected during this upload session
+// documentsLength should already be defined globally; if not, you can set a default:
+window.documentsLength = window.documentsLength || 0;
 
+const defaultMaxUploads = 2;
+let maxUploads = defaultMaxUploads; // will be updated based on workflow selection
 
+// Function to open the upload modal with dynamic configuration
 function openUploadModal() {
-  // Update the global documentsLength variable instead of creating a local one
-  //documentsLength = currentChat && currentChat.documents
-  //    ? Object.keys(currentChat.documents).length
-  //   : 0;
+  console.log("openUploadModal() triggered");
 
-  console.log(`Documents Length 1: ${documentsLength}`);
-
-  // If the user already has 2 documents, do not let them upload more
-  if (documentsLength >= 2) {
-    alert(`You have ${documentsLength} documents uploaded. You cannot add more.`);
-    return; 
-  }
-
-  // Update the text message to inform the user of how many more files they can upload
-  const modalTextElement = document.querySelector('#uploadModal p');
-  if (modalTextElement) {
-    const remaining = 2 - documentsLength;
-    modalTextElement.textContent = remaining === 1 
+  // Check for a selected workflow and inspect its config values.
+  if (window.selectedWorkflow && window.selectedWorkflow.config) {
+    console.log("Found selectedWorkflow.config:", window.selectedWorkflow.config);
+    
+    // Set the maximum number of uploads.
+    if (window.selectedWorkflow.config["single-text-fileupload"]) {
+      maxUploads = 1;
+      console.log("maxUploads set to 1 based on 'single-text-fileupload'");
+    } else {
+      maxUploads = defaultMaxUploads;
+      console.log("No specific file upload limit found; using default maxUploads =", defaultMaxUploads);
+    }
+    
+    // Update the modal title if provided.
+    if (window.selectedWorkflow.config["modal-upload-title"]) {
+      document.getElementById('uploadModalTitle').textContent = window.selectedWorkflow.config["modal-upload-title"];
+      console.log("Updated modal title to:", window.selectedWorkflow.config["modal-upload-title"]);
+    } else {
+      document.getElementById('uploadModalTitle').textContent = "Upload Document(s)";
+      console.log("Using default modal title: 'Upload Document(s)'");
+    }
+    
+    // Update the instruction message if provided.
+    if (window.selectedWorkflow.config["modal-upload-instruction"]) {
+      document.getElementById('uploadModalMessage').textContent = window.selectedWorkflow.config["modal-upload-instruction"];
+      console.log("Updated modal instruction to:", window.selectedWorkflow.config["modal-upload-instruction"]);
+    } else {
+      const remaining = maxUploads - window.documentsLength;
+      const defaultMessage = remaining === 1 
+        ? 'You can upload 1 more document.' 
+        : `You can upload up to ${remaining} file${remaining > 1 ? 's' : ''}.`;
+      document.getElementById('uploadModalMessage').textContent = defaultMessage;
+      console.log("No custom instruction; using default message:", defaultMessage);
+    }
+    
+    // Optionally update the upload button text if provided.
+    if (window.selectedWorkflow.config["modal-upload-button"]) {
+      const uploadBtn = document.querySelector('button[onclick="submitUploadForm()"]');
+      if (uploadBtn) {
+        uploadBtn.textContent = window.selectedWorkflow.config["modal-upload-button"];
+        console.log("Updated upload button text to:", window.selectedWorkflow.config["modal-upload-button"]);
+      } else {
+        console.log("Upload button not found to update text.");
+      }
+    } else {
+      console.log("No custom upload button text provided.");
+    }
+  } else {
+    // No workflow selected or no config available.
+    maxUploads = defaultMaxUploads;
+    console.log("No workflow selected; using default maxUploads =", maxUploads);
+    document.getElementById('uploadModalTitle').textContent = "Upload Document(s)";
+    const remaining = maxUploads - window.documentsLength;
+    document.getElementById('uploadModalMessage').textContent = remaining === 1 
       ? 'You can upload 1 more document.' 
-      : 'You can upload up to 2 files.';
+      : `You can upload up to ${remaining} file${remaining > 1 ? 's' : ''}.`;
+  }
+  
+  const currentDocs = window.documentsLength || 0;
+  console.log("Documents length =", currentDocs, "and maxUploads =", maxUploads);
+
+  // Prevent opening if already at max capacity.
+  if (currentDocs >= maxUploads) {
+    alert(`You have ${currentDocs} document(s) uploaded. You cannot add more.`);
+    console.log("Upload modal not opened: document limit reached.");
+    return;
   }
 
+  // Open the modal.
   const modal = document.getElementById('uploadModal');
   modal.style.display = 'flex';
-  // Reset any previous selections
+  console.log("Upload modal opened (display set to 'flex').");
+
+  // Reset file selection and update preview.
   uploadedFiles = [];
   updatePreview();
+  console.log("Reset uploadedFiles and called updatePreview().");
 }
 
-// Close modal
+/**
+ * Hides the upload modal *and* cleans up the chat if we're in a workflow.
+ * Bound only to the cancel (“×”) button.
+ */
+function cancelUploadModal() {
+  // 1) close it
+  closeUploadModal();
+
+  // 2) if we're mid-workflow, delete the chat:
+  if (window.isWorkflowFlow) {
+    const path   = window.location.pathname.replace(/\/$/, '');
+    const chatId = path.substring(path.lastIndexOf('/') + 1);
+
+    deleteChat(chatId, '', {
+      silent: true,
+      hard:   true
+    });
+
+    // clear the flag so further closes don’t kill the chat
+    window.isWorkflowFlow = false;
+  }
+}
+
+
+/**
+ * Just hides the upload modal.
+ */
 function closeUploadModal() {
-  document.getElementById('uploadModal').style.display = 'none';
+  const modal = document.getElementById('uploadModal');
+  if (modal) {
+    modal.style.display = 'none';
+  }
 }
 
 function handleFiles(files) {
   let fileArray = Array.from(files);
-
-  // Check if new total would exceed 2
-  // documentsLength: how many are already on server
-  // uploadedFiles.length: how many the user has already selected in this modal
-  // fileArray.length: how many new files they're trying to add this time
-  console.log(`Documents Length 2: ${documentsLength}`);
-  const newTotal = documentsLength + uploadedFiles.length + fileArray.length;
-  if (newTotal > 2) {
-    if (documentsLength > 0) alert(`You already have ${documentsLength} document(s). You can only upload up to ${2 - documentsLength} more.`);
-    else alert(`You can only upload up to 2 documents.`);
+  console.log("handleFiles() triggered. Incoming files:", fileArray);
+  console.log("Current documentsLength:", window.documentsLength);
+  
+  const newTotal = window.documentsLength + uploadedFiles.length + fileArray.length;
+  console.log("Calculated newTotal =", newTotal, "and maxUploads =", maxUploads);
+  if (newTotal > maxUploads) {
+    if (window.documentsLength > 0) {
+      alert(`You already have ${window.documentsLength} document(s). You can only upload up to ${maxUploads - window.documentsLength} more.`);
+      console.log("Exceeded upload limit; alerting user (existing documents > 0).");
+    } else {
+      alert(`You can only upload up to ${maxUploads} documents.`);
+      console.log("Exceeded upload limit; alerting user (no existing documents).");
+    }
     return;
   }
 
-  // It's safe to add these files
+  // Safe to add files.
   uploadedFiles = uploadedFiles.concat(fileArray);
+  console.log("Files added. Now uploadedFiles:", uploadedFiles);
   updatePreview();
 
   document.getElementById('fileInput').value = "";
-
 }
 
 function updatePreview() {
@@ -157,45 +246,93 @@ function updatePreview() {
   uploadedFiles.forEach((file, index) => {
     const fileDiv = document.createElement('div');
     fileDiv.textContent = file.name;
+    
     const removeBtn = document.createElement('button');
-    removeBtn.textContent = "Remove";
+    // Instead of using textContent "Remove", we set innerHTML to the trash icon SVG.
+    removeBtn.innerHTML = TRASH_SVG_BLACK;
     removeBtn.style.marginLeft = "10px";
+    // Optionally, you can add additional styling such as removing the button border:
+    removeBtn.style.border = "none";
+    removeBtn.style.background = "none";
+    removeBtn.style.cursor = "pointer";
+    
     removeBtn.onclick = () => {
+      console.log("Removing file at index", index, "with name:", file.name);
       uploadedFiles.splice(index, 1);
       updatePreview();
     };
+    
     fileDiv.appendChild(removeBtn);
     preview.appendChild(fileDiv);
   });
+  console.log("updatePreview() finished; preview updated.");
 }
 
 function submitUploadForm() {
-  // Another optional check:
-  if (documentsLength + uploadedFiles.length > 2) {
-    alert(`You can only have up to 2 documents in total.`);
+  console.log("--------- submitUploadForm() START ---------");
+  
+  // Check current document count.
+  const currentDocs = window.documentsLength || 0;
+  console.log("Current documentsLength:", currentDocs);
+  console.log("Uploaded files count (before adding new files):", uploadedFiles.length);
+  
+  // Check if the new upload would exceed maxUploads.
+  if (currentDocs + uploadedFiles.length > maxUploads) {
+    alert(`You can only have up to ${maxUploads} document(s) in total.`);
+    console.log("Upload aborted: Exceeds maxUploads", maxUploads, "Current + New =", currentDocs + uploadedFiles.length);
+    console.log("--------- submitUploadForm() END (exceed limit) ---------");
     return;
   }
 
+  // Check if any files are selected.
   if (uploadedFiles.length === 0) {
     alert("Please select at least one file to upload.");
+    console.log("Upload aborted: No files selected");
+    console.log("--------- submitUploadForm() END (no files selected) ---------");
     return;
   }
 
-  // Disable the upload button immediately to prevent duplicates
+  // Get the upload button.
   const uploadButton = document.querySelector('button[onclick="submitUploadForm()"]');
+  if (!uploadButton) {
+    console.error("uploadButton not found!");
+    console.log("--------- submitUploadForm() END (no upload button) ---------");
+    return;
+  }
+  
+  // Disable upload button and update its text.
   uploadButton.disabled = true;
   uploadButton.textContent = "Uploading...";
+  console.log("Upload button disabled and text changed to 'Uploading...'");
 
-  // Build FormData
+  // Build FormData.
   const formData = new FormData();
   formData.append('chat_id', chatId);
+  console.log("Appended chat_id:", chatId);
 
-  // Add each selected file
-  uploadedFiles.forEach((file) => {
+  // Append workflow info if available.
+  if (window.selectedWorkflow) {
+    const workflowData = JSON.stringify(window.selectedWorkflow);
+    formData.append('selected_workflow', workflowData);
+    console.log("Appended selected_workflow to FormData:", workflowData);
+  } else {
+    console.log("No window.selectedWorkflow found.");
+  }
+
+  // Append each file.
+  uploadedFiles.forEach((file, index) => {
     formData.append('uploadDocument[]', file);
+    console.log(`Appended file ${index}:`, file.name);
   });
-  
-  // Send via Fetch
+  console.log("FormData building complete.");
+
+  // Log the FormData keys (Note: this is for debugging; FormData cannot be stringified easily).
+  for (let key of formData.keys()) {
+    console.log("FormData key:", key);
+  }
+
+  // Send the AJAX request via fetch.
+  console.log("Initiating fetch to 'upload.php' with FormData...");
   fetch('upload.php', {
     method: 'POST',
     body: formData,
@@ -203,105 +340,100 @@ function submitUploadForm() {
       'X-Requested-With': 'XMLHttpRequest'
     }
   })
-  .then(response => response.json())
+  .then(response => {
+    console.log("Received response with status:", response.status);
+    return response.json();
+  })
   .then(result => {
-    console.log('Upload successful:', result);
-    // Redirect if a new chat was created
+    console.log("Upload successful. Received result:", result);
+
     if (result.new_chat) {
+      console.log("Result indicates new_chat. Redirecting with chat_id:", result.chat_id);
       window.location.href = "/" + application_path + "/" + encodeURIComponent(result.chat_id);
-    } else {
-      closeUploadModal();
-      // Optionally refresh UI...
-      fetchAndUpdateChatTitles($('#search-input').val(), false);
+      console.log("--------- submitUploadForm() END (redirect new_chat) ---------");
+      return;
     }
+
+    // No new chat; complete the upload workflow.
+    closeUploadModal();
+    fetchAndUpdateChatTitles($('#search-input').val(), false);
+    console.log("Upload complete; modal closed and chat titles updated.");
+
+    // Log the current exchange_type value.
+    const exchangeType = $('#exchange_type').val();
+    console.log("exchange_type value:", exchangeType);
+
+    if (exchangeType === 'workflow') {
+      console.log("Workflow mode detected. Preparing to auto-submit chat form...");
+
+      // Check if workflow prompt exists.
+      var autoChatPrompt = (window.selectedWorkflow && window.selectedWorkflow.prompt)
+                            ? window.selectedWorkflow.prompt
+                            : "";
+      console.log("Workflow prompt extracted:", autoChatPrompt);
+
+      var userMessageElem = document.getElementById('userMessage');
+      if (userMessageElem && autoChatPrompt) {
+        userMessageElem.value = autoChatPrompt;
+        console.log("Pre-filled userMessage with workflow prompt.");
+      } else {
+        if (!userMessageElem) {
+          console.error("userMessage element not found!");
+        } else {
+          console.log("No workflow prompt available to pre-fill.");
+        }
+      }
+
+      // Auto-trigger the chat form submission.
+      setTimeout(function() {
+        var $messageForm = $('#messageForm');
+        if ($messageForm.length) {
+          console.log("Found messageForm; triggering submit...");
+          $messageForm.trigger("submit");
+          console.log("Auto-triggered messageForm submission for workflow.");
+        } else {
+          console.error("messageForm not found!");
+        }
+      }, 500);
+    } else {
+      console.log("Workflow mode not active (exchange_type not 'workflow').");
+    }
+    console.log("--------- submitUploadForm() END (normal flow) ---------");
   })
   .catch(error => {
-    console.error('Upload error:', error);
+    console.error("Upload error:", error);
     alert("There was an error uploading your document. Please try again.");
+    console.log("--------- submitUploadForm() END (error) ---------");
   })
   .finally(() => {
-    // Re-enable the upload button after processing is complete
+    // Re-enable the upload button.
     uploadButton.disabled = false;
     uploadButton.textContent = "Upload";
-  });
-}
-
-function old_submitUploadForm() {
-  // Another optional check:
-  // If documentsLength + uploadedFiles.length > 2, also fail 
-  if (documentsLength + uploadedFiles.length > 2) {
-    alert(`You can only have up to 2 documents in total.`);
-    return;
-  }
-
-  if (uploadedFiles.length === 0) {
-    alert("Please select at least one file to upload.");
-    return;
-  }
-
-  // Build FormData
-  const formData = new FormData();
-
-  // Retrieve chat_id from the current chat context (or URL)
-  formData.append('chat_id', chatId);
-
-  // Add each selected file
-  uploadedFiles.forEach((file) => {
-    formData.append('uploadDocument[]', file);
-  });
-  
-  // Send via Fetch
-  fetch('upload.php', {
-    method: 'POST',
-    body: formData,
-    headers: {
-      'X-Requested-With': 'XMLHttpRequest' // Mark request as AJAX
-    }
-  })
-  .then(response => response.json())
-  .then(result => {
-    console.log('Upload successful:', result);
-    // If a new chat was created, redirect the page to the new chat URL
-    if (result.new_chat) {
-      window.location.href = "/"+application_path+"/" + encodeURIComponent(result.chat_id);
-    } else {
-      closeUploadModal();
-      // Optionally refresh UI...
-      fetchAndUpdateChatTitles($('#search-input').val(), false);
-    }
-  })
-  .catch(error => {
-    console.error('Upload error:', error);
+    console.log("Upload button re-enabled.");
   });
 }
 
 // DRAG & DROP HANDLING
 const dropZone = document.getElementById('dropZone');
-
-// Prevent default drag behaviors
 function preventDefaults(e) {
   e.preventDefault();
   e.stopPropagation();
+  console.log("preventDefaults triggered for event:", e.type);
 }
-
-// Highlight drop zone when item is dragged over it
 function highlight(e) {
   dropZone.classList.add('highlight');
+  console.log("highlight() added 'highlight' class for event:", e.type);
 }
-
-// Remove highlight when item is dragged out or dropped
 function unhighlight(e) {
   dropZone.classList.remove('highlight');
+  console.log("unhighlight() removed 'highlight' class for event:", e.type);
 }
-
-// Handle dropped files
 function handleDrop(e) {
+  console.log("handleDrop() triggered.");
   let dt = e.dataTransfer;
   let files = dt.files;
   handleFiles(files);
 }
-
-// Set up the drag & drop event listeners
 ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
   dropZone.addEventListener(eventName, preventDefaults, false);
 });

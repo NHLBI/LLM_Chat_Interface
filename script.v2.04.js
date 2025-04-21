@@ -88,6 +88,11 @@ $(document).ready(function() {
 
         var messageContent = base64EncodeUnicode(sanitizedMessageContent); // Encode in Base64 UTF-8
 
+        // Before your AJAX call, log the values from the hidden inputs.
+        var exchangeTypeVal = $('#exchange_type').val();
+        var customConfigVal = $('#custom_config').val();
+        console.log("Submitting form with exchange_type:", exchangeTypeVal, "and custom_config:", customConfigVal);
+
         // Display the user message (prompt) immediately after submission
         if (sanitizedMessageContent !== "") {
             var userMessageDecoded = base64DecodeUnicode(messageContent);
@@ -125,10 +130,11 @@ $(document).ready(function() {
             localStorage.removeItem('chatDraft_' + chatId);
         }
 
+
         if (messageContent !== "") {
             // **Retrieve the selected deployment (model)**
             //var deployment = $('#model_select select[name="model"]').val();
-
+            
             $.ajax({
                 type: "POST",
                 url: "ajax_handler.php",
@@ -136,7 +142,10 @@ $(document).ready(function() {
                     message: messageContent,
                     chat_id: chatId,
                     user: user,
-                    deployment: deployment  // **Include the deployment here**
+                    deployment: deployment,  // **Include the deployment here**
+                    exchange_type: exchangeTypeVal, 
+                    custom_config: customConfigVal 
+
                 },
 
                 beforeSend: function() {

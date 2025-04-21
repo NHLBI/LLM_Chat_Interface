@@ -46,7 +46,7 @@ if (!empty($user)) echo '<p id="username">Hello '.$user.'</p>'."\n";
             <div class="col-md-10 columns">
                 <div>
 
-                    <p class="newchat" style="text-align: center;">
+                    <p class="borderedbox" style="text-align: center;">
                         <?php echo $config['app']['help_text1']; ?>
                         <span style="display: flex; justify-content: space-between; width: 90%; margin: 20px auto;">
                             <a title="Open a link to the Teams interface" href="<?php echo $config['app']['teams_link']; ?>" target="_blank">Connect in Teams</a>
@@ -67,7 +67,7 @@ require_once 'staticpages/disclaimer_text.php';
 # require_once 'staticpages/model_text.html';
 
 ?>                    
-                    <p class="newchat" style="text-align: center;">
+                    <p class="borderedbox" style="text-align: center;">
                     <a title="Click here to go to authentication" href="auth_redirect.php">Proceed</a></p>
                     <!-- Chat messages will be added here -->
                 </div>

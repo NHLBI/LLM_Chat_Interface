@@ -14,7 +14,61 @@ function startNewChat() {
         }
     });
 }
-function deleteChat(chatId, chatTitle) {
+/**
+ * Delete a chat, either softly or hard, with optional confirmation.
+ *
+ * @param {number|string} chatId
+ * @param {string}        chatTitle   – shown in the confirm prompt if not silent
+ * @param {Object}        [options]
+ * @param {boolean}       [options.silent=false]  – skip the confirm dialog
+ * @param {boolean}       [options.hard=false]    – perform a hard delete
+ */
+function deleteChat(chatId, chatTitle, options = {}) {
+  const silent = !!options.silent;
+  const hard   = !!options.hard;
+
+  // 1) Confirmation (unless silent)
+  if (!silent) {
+    const msg = `Delete "${chatTitle}"?\nAre you sure you want to delete this chat?`;
+    if (!confirm(msg)) {
+      return;  // user cancelled
+    }
+  }
+
+  // 2) AJAX call
+  $.ajax({
+    type: "POST",
+    url: "delete_chat.php",
+    data: {
+      chat_id:    chatId,
+      hard_delete: hard ? '1' : '0'
+    },
+    success: function() {
+      // 3) Figure out current chat ID from URL
+      const path = window.location.pathname.split('/');
+      const currentChatId = path[path.length - 1] || 'index.php';
+
+      // 4) Redirect logic
+      let redirectTo;
+      if (chatId == currentChatId ||
+          currentChatId === application_path ||
+          currentChatId === 'index.php') {
+        // back to base chat list
+        redirectTo = window.location.origin + '/' + application_path + '/';
+      } else {
+        // stay on the same chat page (but it’s deleted)
+        redirectTo = window.location.href;
+      }
+
+      window.location.href = redirectTo;
+    },
+    error: function(xhr, status, err) {
+      alert("Failed to delete chat: " + err);
+    }
+  });
+}
+
+function old_deleteChat(chatId, chatTitle) {
     if(confirm(`Delete "${chatTitle}"?\nAre you sure you want to delete this chat?`)) {
         // Send an AJAX request to a PHP script to delete the chat
         $.ajax({

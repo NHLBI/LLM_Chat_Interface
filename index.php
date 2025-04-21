@@ -14,6 +14,8 @@ foreach(array_keys($models) as $m) {
     $deployments_json[$m] = $config[$m];
 }
 
+#echo "<pre>".print_r($_SESSION,1)."</pre>"; #die();
+
 ?><!DOCTYPE html>
 <html lang="en">
 <head>
@@ -59,10 +61,10 @@ foreach(array_keys($models) as $m) {
         var deployments = <?php echo json_encode($deployments_json); ?>;
         var sessionTimeout = <?php echo $sessionTimeout * 1000; ?>; // Convert seconds to milliseconds
         var deployment = "<?php echo $deployment; ?>";
-        var host = "<?php echo $config[$deployment]['host'] ; ?>";
-        var handles_images = "<?php echo $config[$deployment]['handles_images'] ; ?>";
-        var handles_documents = "<?php echo $config[$deployment]['handles_documents'] ; ?>";
-        var temperature = "<?php echo $_SESSION['temperature']; ?>";
+        var host = "<?php echo $config[$deployment]['host'] ?? '' ; ?>";
+        var handles_images = "<?php echo $config[$deployment]['handles_images']  ?? ''; ?>";
+        var handles_documents = "<?php echo $config[$deployment]['handles_documents']  ?? ''; ?>";
+        var temperature = "<?php echo $_SESSION['temperature']  ?? ''; ?>";
         var chatContainer;
         var currentChat;
 
@@ -75,6 +77,35 @@ foreach(array_keys($models) as $m) {
         //console.log("THIS IS THE CHAT ID IN INDEX.PHP: "+chatId)
 
         var search_term = "<?php echo isset($_SESSION['search_term']) ? htmlspecialchars($_SESSION['search_term'], ENT_QUOTES, 'UTF-8') : ''; ?>";
+
+        const TRASH_SVG = `
+        <svg fill="#ffffff" height="18px" width="18px" version="1.1" xmlns="http://www.w3.org/2000/svg" 
+             viewBox="0 0 60.167 60.167" xml:space="preserve">
+          <path d="M54.5,11.667H39.88V3.91c0-2.156-1.754-3.91-3.91-3.91H24.196c-2.156,0-3.91,1.754-3.91,3.91v7.756H5.667
+              c-0.552,0-1,0.448-1,1s0.448,1,1,1h2.042v40.5c0,3.309,2.691,6,6,6h32.75c3.309,0,6-2.691,6-6v-40.5H54.5
+              c0.552,0,1-0.448,1-1S55.052,11.667,54.5,11.667z M22.286,3.91c0-1.053,0.857-1.91,1.91-1.91H35.97c1.053,0,1.91,0.857,1.91,1.91
+              v7.756H22.286V3.91z M50.458,54.167c0,2.206-1.794,4-4,4h-32.75c-2.206,0-4-1.794-4-4v-40.5h40.75V54.167z M38.255,46.153V22.847
+              c0-0.552,0.448-1,1-1s1,0.448,1,1v23.306c0,0.552-0.448,1-1,1S38.255,46.706,38.255,46.153z M29.083,46.153V22.847
+              c0-0.552,0.448-1,1-1s1,0.448,1,1v23.306c0,0.552-0.448,1-1,1S29.083,46.706,29.083,46.153z M19.911,46.153V22.847
+              c0-0.552,0.448-1,1-1s1,0.448,1,1v23.306c0,0.552-0.448,1-1,1S19.911,46.706,19.911,46.153z"
+              stroke="#ffffff" stroke-width="1"/>
+        </svg>
+        `;
+
+        const TRASH_SVG_BLACK = `
+        <svg fill="#333333" height="18px" width="18px" version="1.1" xmlns="http://www.w3.org/2000/svg" 
+             viewBox="0 0 60.167 60.167" xml:space="preserve">
+          <path d="M54.5,11.667H39.88V3.91c0-2.156-1.754-3.91-3.91-3.91H24.196c-2.156,0-3.91,1.754-3.91,3.91v7.756H5.667
+              c-0.552,0-1,0.448-1,1s0.448,1,1,1h2.042v40.5c0,3.309,2.691,6,6,6h32.75c3.309,0,6-2.691,6-6v-40.5H54.5
+              c0.552,0,1-0.448,1-1S55.052,11.667,54.5,11.667z M22.286,3.91c0-1.053,0.857-1.91,1.91-1.91H35.97c1.053,0,1.91,0.857,1.91,1.91
+              v7.756H22.286V3.91z M50.458,54.167c0,2.206-1.794,4-4,4h-32.75c-2.206,0-4-1.794-4-4v-40.5h40.75V54.167z M38.255,46.153V22.847
+              c0-0.552,0.448-1,1-1s1,0.448,1,1v23.306c0,0.552-0.448,1-1,1S38.255,46.706,38.255,46.153z M29.083,46.153V22.847
+              c0-0.552,0.448-1,1-1s1,0.448,1,1v23.306c0,0.552-0.448,1-1,1S29.083,46.706,29.083,46.153z M19.911,46.153V22.847
+              c0-0.552,0.448-1,1-1s1,0.448,1,1v23.306c0,0.552-0.448,1-1,1S19.911,46.706,19.911,46.153z"
+              stroke="#333333" stroke-width="1"/>
+        </svg>
+        `;
+
 
     </script>
 
@@ -155,10 +186,12 @@ foreach(array_keys($models) as $m) {
 
                     </svg>
                 </button>
-                <p class="newchat"><a title="Create new chat" href="javascript:void(0);" onclick="startNewChat()">+&nbsp;&nbsp;New Chat</a></p>
-                    
+                <button class="newchat" style="width: 100px; " title="Create new chat" href="javascript:void(0);" onclick="startNewChat()">+&nbsp;&nbsp;New Chat</button>
+                <button class="newchat" style="margin-left: 10px; width: 130px; " title="Create new chat" href="javascript:void(0);" onclick="startNewWorkflow()">+&nbsp;&nbsp;New Workflow</button>
+                
+
                 <!-- Add a new container for chat titles with a class for styling -->
-                <div class="chat-titles-container">
+                <div class="chat-titles-container" style="margin-top: 20px;">
                     <!-- Chat titles will be dynamically inserted here by JavaScript -->
                     <div id="searching-indicator" class="spinner" style="display: none;"></div>
                 </div>
@@ -182,6 +215,7 @@ foreach(array_keys($models) as $m) {
             <?php require_once 'staticpages/disclaimer_popup.php'; ?>                                                                                        
             <?php require_once 'staticpages/model_text.php'; ?> 
             <?php require_once 'staticpages/document_uploader.php'; ?> 
+            <?php require_once 'staticpages/canned_modal.php'; ?> 
 
             <h1 id="print-title"></h1>
 
@@ -199,27 +233,44 @@ foreach(array_keys($models) as $m) {
                     <textarea class="form-control" id="userMessage" aria-label="Main chat textarea" 
                               placeholder="Type your message..." rows="4" required></textarea>
                     
+<!-- Start of button group -->
+<div class="icon-group" style="display: flex; align-items: center; position: absolute; bottom: 10px; right: 10px;">
+
 <?php if ($config[$deployment]['host'] !== 'dall-e') { ?>
-                    <!-- Paperclip upload button (triggers the upload modal) -->
-                    <button type="button" class="upload-button" 
-                            onclick="openUploadModal()" 
-                            aria-label="Upload Document" 
-                            style="background: none; border: none; cursor: pointer; margin-left: 30px;">
-                      <img src="images/paperclip.svg" 
-                           alt="Upload Document" 
-                           title="Document types accepted: PDF, Word, PPT, text, markdown, images, etc." 
-                           style="height: 24px; transform: rotate(45deg);">
-                    </button>
+
+    <!-- Paperclip upload button -->
+    <button type="button" class="upload-button" 
+            onclick="openUploadModal()" 
+            aria-label="Upload Document" 
+            style="background: none; border: none; cursor: pointer; margin-right: 8px;">
+      <img src="images/paperclip.svg" 
+           alt="Upload Document" 
+           title="Document types accepted: PDF, Word, PPT, text, markdown, images, etc." 
+           style="height: 24px; transform: rotate(45deg);">
+    </button>
+
 <?php } ?>
 
-                    <!-- Send button -->
-                    <button type="submit" class="submit-button" aria-label="Send message">
-                      <!-- Icon (paper plane) -->
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="send-icon">
-                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-                      </svg>
-                    </button>
+    <!-- Send button (always visible) -->
+    <button type="submit" class="submit-button" aria-label="Send message"
+            style="background: none; border: none; cursor: pointer;">
+      <svg xmlns="http://www.w3.org/2000/svg" 
+           viewBox="0 0 24 24" 
+           fill="currentColor" 
+           class="send-icon" 
+           style="height: 24px; color: #3b82f6;">
+        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+      </svg>
+    </button>
+</div>
+
+
+
+
                   </div>
+                    <input type="hidden" id="exchange_type" name="exchange_type" value="chat">
+                    <input type="hidden" id="custom_config" name="custom_config" value="chat">
+
                 </form>
 
 

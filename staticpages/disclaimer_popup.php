@@ -6,7 +6,7 @@
     
     <h4 id="disclaimerModalTitle">About NHLBI Chat</h4>
 
-    <p class="newchat" style="text-align: center; margin-top: 20px;">
+    <p class="borderedbox" style="text-align: center; margin-top: 20px;">
         <?php echo $config['app']['help_text1']; ?>
         <span style="display: flex; justify-content: space-between; width: 90%; margin: 20px auto;">
             <a title="Open a link to the Teams interface" href="<?php echo $config['app']['teams_link']; ?>" target="_blank">Connect in Teams</a>

@@ -31,6 +31,38 @@ if (isset($_GET['remove']) && $_GET['remove'] == '1') {
     exit;
 }
 
+
+if (!empty($_REQUEST['selected_workflow'])) {
+    $workflow = json_decode($_REQUEST['selected_workflow'],1);
+    if (!empty($workflow['configLabel'])) {
+        $configLabels = explode(',',$workflow['configLabel']);
+        $configDescriptions = explode(',',$workflow['configDescription']);
+        for($i=0;$i<count($configLabels);$i++) {
+            $workflow_config[$configLabels[$i]] = $configDescriptions[$i];
+        }
+    }
+    #echo '<pre>'.print_r($workflow_config,1).'</pre>'; 
+
+    /*
+    if (!empty($workflow_config['execution']) && ($workflow_config['execution'] == 'auto-prompt-submit')) {
+        // Save a flag that tells index.php to auto-submit the chat
+        $_SESSION['workflow_auto_prompt'] = true;
+        // Optionally, store the prompt text (which might come from the workflow configuration)
+        // e.g., you could use the "prompt" field that was provided with the workflow.
+
+        $workflow_data = get_workflow_data($workflow['workflowId']);
+        $_SESSION['workflow_auto_prompt'] = json_encode($workflow_data['prompt']);
+        $_SESSION['selected_workflow'] = json_encode($workflow); // $workflow already contains configLabel, configDescription, etc.
+
+
+        #echo '<pre>'.print_r($_SESSION,1).'</pre>'; die();
+    }
+    */
+
+}
+
+#echo '<pre>'.print_r($_REQUEST,1).'</pre>'; die();
+
 if (isset($_FILES['uploadDocument'])) {
     // Process multiple file uploads
     $fileCount = count($_FILES['uploadDocument']['name']);

@@ -418,10 +418,20 @@ code {
 
 
 /* Position the paperclip upload button */
+.canned-button {
+  position: absolute;
+  right: 80px;  /* Adjust so that it's left of the send button */
+  bottom: 2px; /* Align with the send button */
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* Position the paperclip upload button */
 .upload-button {
   position: absolute;
   right: 40px;  /* Adjust so that it's left of the send button */
-  bottom: 7px; /* Align with the send button */
+  bottom: 4px; /* Align with the send button */
   background: none;
   border: none;
   cursor: pointer;
@@ -431,7 +441,7 @@ code {
 .submit-button {
   position: absolute;
   right: 10px;  /* This places it on the right edge */
-  bottom: 10px;
+  bottom: 7px;
   background: none;
   border: none;
   cursor: pointer;
@@ -484,12 +494,22 @@ code {
     margin-top: -5px;
     float: left;
 }
-.newchat {
+.borderedbox {
     border: solid gray 1px;
-    border-radius: 5px;
     padding: 4px 10px 2px 10px;
     margin-top: 5px; 
-    min-width: 230px;
+    color: #FFF; 
+}
+.newchat {
+    border: solid gray 1px;
+    padding: 4px 10px 2px 10px;
+    margin-top: 5px; 
+    color: #FFF; 
+    /*background: #343a40; */
+    display: inline-block;
+    background: linear-gradient(to bottom,#343a40, #565b68); /* Gradient from white to light gray */
+    transition: background 0.3s; /* Smooth transition for background change */
+
 }
 .chat-item {
     position: relative;
@@ -809,7 +829,8 @@ code {
 /* Similarly, unify .closeButton, .closeAbout, and .closeDisclaimer */
 .closeButton,
 .closeAbout,
-.closeDisclaimer {
+.closeDisclaimer,
+.closeCanned {
   position: absolute;
   top: 10px;
   right: 10px;
@@ -822,7 +843,8 @@ code {
 
 .closeButton:focus,
 .closeAbout:focus,
-.closeDisclaimer:focus {
+.closeDisclaimer:focus,
+.closeCanned:focus {
   outline: 1px solid #DDD;
 }
 

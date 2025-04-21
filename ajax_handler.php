@@ -16,6 +16,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Provide a default if needed
     $deployment = isset($_POST['deployment']) ? $_POST['deployment'] : 'default_deployment'; 
 
+    // Provide a default exchange_type if needed
+    $exchange_type = isset($_POST['exchange_type']) ? $_POST['exchange_type'] : 'chat'; 
+    $custom_config = isset($_POST['custom_config']) ? $_POST['custom_config'] : ''; 
+
     // Retrieve the chat ID from the POST data
     $chat_id = filter_input(INPUT_POST, 'chat_id', FILTER_SANITIZE_STRING);
 
@@ -35,19 +39,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     /*
+    echo "THIS IS THE exchange_type: " . $exchange_type . "\n";
     echo "THIS IS THE deployment: " . $deployment . "\n";
-    echo "THIS IS THE config: " . print_r($config,1) . "\n";
-    echo "THIS IS THE session: " . print_r($_SESSION,1) . "\n";
+    #echo "THIS IS THE config: " . print_r($config,1) . "\n";
+    #echo "THIS IS THE session: " . print_r($_SESSION,1) . "\n";
     echo "THIS IS THE AJAX HANDLER CHAT ID: " . $chat_id . "\n";
     echo "THIS IS THE AJAX HANDLER NEW CHAT ID: " . $new_chat_id . "\n";
+    echo "THIS IS THE USER MESSAGE: " . $user_message . "\n";
+    die();
     */
 
     // Get the GPT response to the user's message using the get_gpt_response() function
-    $gpt_response = get_gpt_response($user_message, $id, $user, $deployment);
+    $gpt_response = get_gpt_response($user_message, $id, $user, $deployment, $exchange_type, $custom_config);
     #echo "THIS IS THE GPT Response: <pre>" . print_r($gpt_response,1)."</pre>"; die();
 
     if (!empty($gpt_response['error']) && $gpt_response['error'] == 1) {
-        $gpt_response['message'] = preg_replace('/Please go here.*/','',$gpt_response['message']);
+        #$gpt_response['message'] = preg_replace('/Please go here.*/','',$gpt_response['message']);
     }
 
     // Generate a concise chat title if a new chat was created and there were no errors in the GPT response

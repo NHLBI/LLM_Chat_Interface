@@ -34,18 +34,71 @@ function showAboutModels() {
 
     document.querySelector('.closeButton').focus();
 }
-
-
-function old_showAboutModels() {
-    var aboutWindow = document.querySelector('.aboutModelsWindow');
-    var aboutCloser = document.querySelector('.closeButton'); // Updated selector
-
-    aboutWindow.style.display = 'flex';
-    updateModelButtonStates(); // <-- call this each time modal opens
-
-    aboutWindow.classList.add('show');  // Add the 'show' class to make it visible
-    aboutCloser.focus();  // Give focus to the close button
+function showCannedModal() {
+    const modal = document.querySelector('.cannedModalWindow');
+    if (modal) {
+        console.log("testing found modal");
+        modal.classList.add('show');
+        modal.style.display = 'flex';
+        modal.querySelector('.closeCanned')?.focus();
+    }
 }
+
+function old_new_closeCannedModal() {
+  const modal = document.querySelector('.cannedModalWindow');
+  if (modal) {
+    modal.classList.remove('show');
+    modal.style.display = 'none';
+  }
+
+  // 1) Grab the chatId from the URL (strip any trailing slash first)
+  const path = window.location.pathname.replace(/\/$/, '');
+  const chatId = path.substring(path.lastIndexOf('/') + 1);
+
+  // 2) Silent hard‐delete and let deleteChat() handle the redirect
+  deleteChat(chatId, /*title irrelevant when silent*/ '', {
+    silent: true,
+    hard:   true
+  });
+}
+
+function old_old_closeCannedModal() {
+    const modal = document.querySelector('.cannedModalWindow');
+    if (modal) {
+        modal.classList.remove('show');
+        modal.style.display = 'none';
+    }
+}
+
+/**
+ * Only hides the canned‑workflow modal.
+ */
+function closeCannedModal() {
+  const modal = document.querySelector('.cannedModalWindow');
+  if (!modal) return;
+  modal.classList.remove('show');
+  modal.style.display = 'none';
+}
+
+/**
+ * Hides the canned modal *and* hard‑deletes the just‑created chat.
+ * Bound only to the “×” cancel button.
+ */
+function cancelCannedModal() {
+  // 1) Close the modal
+  closeCannedModal();
+
+  // 2) Figure out the chatId from the URL
+  const path   = window.location.pathname.replace(/\/$/, '');
+  const chatId = path.substring(path.lastIndexOf('/') + 1);
+
+  // 3) Hard‑delete silently
+  deleteChat(chatId, '', {
+    silent: true,
+    hard:   true
+  });
+}
+
 function closeAboutModels() {
     console.log("Close window clicked");
     var aboutWindow = document.querySelector('.aboutModelsWindow');
@@ -56,6 +109,117 @@ function closeAboutModels() {
         userMessage.focus();  // Return focus to the message input if it exists
     }
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+  const workflowButtons = document.querySelectorAll('.canned-option');
+  workflowButtons.forEach(button => {
+    button.addEventListener('click', function() {
+      // Get the raw attribute values.
+      const workflowId = button.getAttribute('data-workflow-id');
+      const configLabelRaw = button.getAttribute('data-config-label');
+      const configDescriptionRaw = button.getAttribute('data-config-description');
+      const prompt = button.dataset.prompt;
+      const action = button.dataset.action;
+      
+      // Parse the comma-separated values into an object.
+      let workflowConfig = {};
+      if (configLabelRaw && configDescriptionRaw) {
+        const labelsArray = configLabelRaw.split(',');
+        const descArray = configDescriptionRaw.split(',');
+        for (let i = 0; i < labelsArray.length; i++) {
+          let key = labelsArray[i].trim();
+          let value = descArray[i] ? descArray[i].trim() : "";
+          workflowConfig[key] = value;
+        }
+      }
+      
+      // Save the workflow info in a global variable.
+      window.selectedWorkflow = {
+        workflowId: workflowId,
+        configLabel: configLabelRaw,           // raw string if needed elsewhere
+        configDescription: configDescriptionRaw, // raw string if needed elsewhere
+        config: workflowConfig,                // the parsed object
+        prompt: prompt,
+        action: action
+      };
+      console.log("Selected workflow:", window.selectedWorkflow);
+
+      // **** New lines Start ****
+      // Update the exchange_type hidden input to "workflow"
+      $('#exchange_type').val('workflow');
+      console.log("Updated exchange_type to 'workflow'");
+      // Update custom_config hidden input with the selected workflow's JSON
+      $('#custom_config').val(JSON.stringify(window.selectedWorkflow));
+      console.log("Updated custom_config with selectedWorkflow");
+      // **** New lines End ****
+
+      // Close the canned modal window and open the upload modal window.
+      closeCannedModal();
+      openUploadModal();
+    });
+  });
+});
+
+// When opening the upload modal, update maxUploads based on selected workflow
+// When opening the upload modal, update maxUploads and UI based on selected workflow
+function openUploadModal() {
+  // First, decide on maxUploads based on workflow configuration
+  if (window.selectedWorkflow && window.selectedWorkflow.config) {
+    // If the workflow config object contains a key "single-text-fileupload",
+    // then we assume that means only one file is allowed.
+    if (window.selectedWorkflow.config["single-text-fileupload"]) {
+      maxUploads = 1;
+    } else {
+      maxUploads = defaultMaxUploads;
+    }
+    
+    // Update the modal title if a custom title is provided.
+    if (window.selectedWorkflow.config["modal-upload-title"]) {
+      document.getElementById('uploadModalTitle').textContent = window.selectedWorkflow.config["modal-upload-title"];
+    } else {
+      document.getElementById('uploadModalTitle').textContent = "Upload Document(s)";
+    }
+    
+    // Update the instruction message if available.
+    if (window.selectedWorkflow.config["modal-upload-instruction"]) {
+      document.getElementById('uploadModalMessage').textContent = window.selectedWorkflow.config["modal-upload-instruction"];
+    } else {
+      const remaining = maxUploads - (window.documentsLength || 0);
+      document.getElementById('uploadModalMessage').textContent = remaining === 1 
+        ? 'You can upload 1 more document.' 
+        : `You can upload up to ${remaining} file${remaining > 1 ? 's' : ''}.`;
+    }
+    
+    // Optionally, update the upload button text.
+    if (window.selectedWorkflow.config["modal-upload-button"]) {
+      document.querySelector('button[onclick="submitUploadForm()"]').textContent = window.selectedWorkflow.config["modal-upload-button"];
+    }
+  } else {
+    // No selected workflow or configuration is available, so use defaults.
+    maxUploads = defaultMaxUploads;
+    document.getElementById('uploadModalTitle').textContent = "Upload Document(s)";
+    const remaining = maxUploads - (window.documentsLength || 0);
+    document.getElementById('uploadModalMessage').textContent = remaining === 1 
+      ? 'You can upload 1 more document.' 
+      : `You can upload up to ${remaining} file${remaining > 1 ? 's' : ''}.`;
+  }
+
+  const currentDocs = window.documentsLength || 0;
+  console.log(`Documents Length: ${currentDocs}, Maximum allowed: ${maxUploads}`);
+
+  // If the user already has maxUploads documents, do not let them upload more.
+  if (currentDocs >= maxUploads) {
+    alert(`You have ${currentDocs} document(s) uploaded. You cannot add more.`);
+    return;
+  }
+
+  const modal = document.getElementById('uploadModal');
+  modal.style.display = 'flex';
+  // Reset any previous selections.
+  uploadedFiles = [];
+  updatePreview();
+}
+
 
 function adjustChatTitlesHeight() {
     // Select the chat-titles-container and the menu bottom content

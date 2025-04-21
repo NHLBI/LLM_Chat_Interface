@@ -9,7 +9,6 @@ require_once 'db.php';
 
 $pdo = get_connection();
 
-
 // Before proceeding, check if the session has the required user data.
 // If not, let’s give it a chance to appear.
 if (!waitForUserSession()) {
@@ -150,7 +149,7 @@ function waitForUserSession($maxAttempts = 5, $delayMicroseconds = 500000) {
  * @param string $deployment The deployment identifier.
  * @return array The processed API response.
  */
-function get_gpt_response($message, $chat_id, $user, $deployment) {
+function get_gpt_response($message, $chat_id, $user, $deployment, $exchange_type = 'chat', $custom_config = '') {
     $active_config = load_configuration($deployment);
     if (!$active_config) {
         return [
@@ -160,7 +159,24 @@ function get_gpt_response($message, $chat_id, $user, $deployment) {
         ];
     }
 
-    $msg = get_chat_thread($message, $chat_id, $user, $active_config);
+    if (false) {
+        // 1. Call Python script to get augmented prompt
+        $rag_result = call_rag_script($message); // New helper function
+
+        // 2. Check for errors from the script
+        if (isset($rag_result['error'])) {
+            return process_error_response("FAR RAG Error: " . $rag_result['error'], $deployment, $chat_id, $message, []);
+        }
+
+        // 3. Prepare messages payload using the augmented prompt
+        // We still use the 'chat' infrastructure but with the special prompt
+        $message = $rag_result['augmented_prompt'];
+    }
+
+    if ($exchange_type == 'chat') $msg = get_chat_thread($message, $chat_id, $user, $active_config);
+    elseif ($exchange_type == 'workflow') $msg = get_workflow_thread($message, $chat_id, $user, $active_config, $custom_config);
+    else return process_api_response('There was an error processing your post. Please contact support.', $active_config, $chat_id, $message, $msg);
+   
 
     if ($active_config['host'] == "Mocha") {
         $response = call_mocha_api($active_config['base_url'], $msg);
@@ -169,7 +185,7 @@ function get_gpt_response($message, $chat_id, $user, $deployment) {
     }
     #echo "<pre>Step get_gpt_response()\n".print_r($response,1)."</pre>"; die();
 
-    return process_api_response($response, $active_config, $chat_id, $message, $msg);
+    return process_api_response($response, $active_config, $chat_id, $message, $msg, $exchange_type);
 }
 
 /**
@@ -208,6 +224,85 @@ function load_configuration($deployment, $hardcoded = false) {
 }
 
 /**
+ * Helper function to call the Python RAG script.
+ *
+ * @param string $user_question The question to pass to the script.
+ * @return array Decoded JSON output from the script (e.g., ['augmented_prompt' => ...] or ['error' => ...]).
+ */
+function call_rag_script($user_question) {
+    global $config; // Access global config for paths
+
+    // --- Retrieve Paths from Config (Ensure these are set!) ---
+    $python_executable = __DIR__.'/rag310/bin/python3';
+    $script_path = __DIR__.'/rag_processor.py';
+
+    if (!$script_path || !file_exists($script_path)) {
+        return ['error' => 'RAG script path not configured or not found. Path: ' . $script_path];
+    }
+    if (!is_executable($python_executable) && !preg_match('/^python[3]?$/', $python_executable)) {
+         // Basic check if it's not 'python'/'python3' and not executable directly
+         // A more robust check might involve `shell_exec("command -v $python_executable")`
+         // but let's keep it simple for now. Adjust if needed.
+        // return ['error' => 'Python executable not found or not executable: ' . $python_executable];
+        // Allow 'python3' assuming it's in PATH
+    }
+
+
+    // --- Prepare Command ---
+    // Use escapeshellarg to safely pass the user question
+    $escaped_question = escapeshellarg($user_question);
+    $command = $python_executable . ' ' . escapeshellarg($script_path) . ' ' . $escaped_question . ' 2>&1'; // Redirect stderr to stdout
+
+    // --- Execute Command ---
+    // Consider adding timeout logic if the script might hang
+    $output = [];
+    $return_var = -1;
+    exec($command, $output, $return_var);
+
+    $raw_output = implode("\n", $output); // Combine output lines
+
+    // --- Process Output ---
+    if ($return_var !== 0) {
+        // Script exited with an error code
+        return ['error' => "RAG script execution failed (Exit Code: $return_var). Output: " . $raw_output];
+    }
+
+    // Attempt to decode JSON output
+    $json_result = json_decode($raw_output, true);
+
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        // Output was not valid JSON
+        return ['error' => "Failed to decode JSON response from RAG script. Raw output: " . $raw_output];
+    }
+
+    // Return the decoded JSON (should contain 'augmented_prompt' or 'error')
+    return $json_result;
+}
+
+/**
+ * Helper function to process and return standardized error responses.
+ */
+function process_error_response($error_message, $deployment, $chat_id, $original_message, $msg_context) {
+     // Log the error internally if needed
+     error_log("Error in get_gpt_response: $error_message (Deployment: $deployment, ChatID: $chat_id)");
+
+     // Return structure similar to process_api_response but indicating an error
+     // Mimic structure of process_api_response for consistency on the frontend
+     return [
+         'deployment' => $deployment,
+         'error' => true,
+         'message' => $error_message, // Error message for the user
+         'request' => [ // Include some request context for debugging if helpful
+             'original_message' => $original_message,
+             'context_messages' => $msg_context // The attempted message structure
+         ],
+         'usage' => ['prompt_tokens' => 0, 'completion_tokens' => 0, 'total_tokens' => 0], // Default usage
+         'finish_reason' => 'error'
+     ];
+}
+
+
+/**
  * Constructs the chat thread based on the active configuration.
  *
  * @param string $message The current user message.
@@ -225,6 +320,42 @@ function get_chat_thread($message, $chat_id, $user, $active_config) {
         // Handle Chat Completion Requests
         return handle_chat_request($message, $chat_id, $user, $active_config);
     }
+}
+
+function get_workflow_thread($message, $chat_id, $user, $active_config, $custom_config) {
+
+    $custom_config = json_decode($custom_config,1);
+    #print_r($custom_config); die();
+    
+
+    // Build the system message
+    $workflow_data = get_workflow_data($custom_config['workflowId']);
+    $resource = $workflow_data['content'];
+    $message = $workflow_data['prompt'];
+
+    #print_r($resource);
+    
+    // Check and handle any document content first
+    $document_messages = handle_document_content($chat_id, $user, $message, $active_config);
+
+    $system_message = [
+        [
+            'role' => 'user',
+            'content' => $resource
+        ]
+    ];
+
+    if ($document_messages !== null) {
+        // If a document is present, use document messages exclusively
+        $messages = array_merge($system_message, $document_messages);
+    } else {
+        $message = 'There was an error processing your post. Please contact support.';
+        $messages[] = ["role" => "user", "content" => $message];
+    }
+
+    #print_r($messages); die("STOPPED IN THE GET WORKFLOW THREAD FUNCTION\n");
+
+    return $messages;
 }
 
 /**
@@ -314,7 +445,8 @@ function call_azure_api($active_config, $chat_id, $msg) {
  * @param mixed $msg The message context sent to the API.
  * @return array The processed API response.
  */
-function process_api_response($response, $active_config, $chat_id, $message, $msg) {
+function process_api_response($response, $active_config, $chat_id, $message, $msg, $exchange_type) {
+
     $response_data = json_decode($response, true);
 
     if (isset($response_data['error'])) {
@@ -326,6 +458,8 @@ function process_api_response($response, $active_config, $chat_id, $message, $ms
             'message' => $api_error_message
         ];
     }
+
+    if($exchange_type == 'workflow') $message = 'Data Management and Sharing Plan';
 
     if ($active_config['host'] === 'dall-e') {
         $image_url = $response_data['data'][0]['url'] ?? null;
