@@ -366,21 +366,29 @@ function submitUploadForm() {
     if (exchangeType === 'workflow') {
       console.log("Workflow mode detected. Preparing to auto-submit chat form...");
 
-      // Check if workflow prompt exists.
-      var autoChatPrompt = (window.selectedWorkflow && window.selectedWorkflow.prompt)
-                            ? window.selectedWorkflow.prompt
-                            : "";
-      console.log("Workflow prompt extracted:", autoChatPrompt);
+      // 1) First try to pull prompt-replacement-text from the config
+      let autoChatPrompt = "";
+      if (window.selectedWorkflow && window.selectedWorkflow.config) {
+        autoChatPrompt = window.selectedWorkflow.config["prompt-replacement-text"] || "";
+        console.log("Found prompt-replacement-text in config:", autoChatPrompt);
+      }
 
-      var userMessageElem = document.getElementById('userMessage');
+      // 2) Fallback to the built-in prompt if no replacement text
+      if (!autoChatPrompt && window.selectedWorkflow && window.selectedWorkflow.prompt) {
+        autoChatPrompt = window.selectedWorkflow.prompt;
+        console.log("Using fallback selectedWorkflow.prompt:", autoChatPrompt);
+      }
+
+      // 3) Pre-fill the textarea if we have something
+      const userMessageElem = document.getElementById('userMessage');
       if (userMessageElem && autoChatPrompt) {
         userMessageElem.value = autoChatPrompt;
-        console.log("Pre-filled userMessage with workflow prompt.");
+        console.log("Pre-filled userMessage with:", autoChatPrompt);
       } else {
         if (!userMessageElem) {
           console.error("userMessage element not found!");
         } else {
-          console.log("No workflow prompt available to pre-fill.");
+          console.log("No prompt available to pre-fill.");
         }
       }
 

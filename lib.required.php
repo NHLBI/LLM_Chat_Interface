@@ -149,7 +149,7 @@ function waitForUserSession($maxAttempts = 5, $delayMicroseconds = 500000) {
  * @param string $deployment The deployment identifier.
  * @return array The processed API response.
  */
-function get_gpt_response($message, $chat_id, $user, $deployment, $exchange_type = 'chat', $custom_config = '') {
+function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config) {
     $active_config = load_configuration($deployment);
     if (!$active_config) {
         return [
@@ -173,8 +173,9 @@ function get_gpt_response($message, $chat_id, $user, $deployment, $exchange_type
         $message = $rag_result['augmented_prompt'];
     }
 
-    if ($exchange_type == 'chat') $msg = get_chat_thread($message, $chat_id, $user, $active_config);
-    elseif ($exchange_type == 'workflow') $msg = get_workflow_thread($message, $chat_id, $user, $active_config, $custom_config);
+    #print("this is custom stuff: ".print_r($custom_config,1)); die();
+    if ($custom_config['exchange_type'] == 'chat') $msg = get_chat_thread($message, $chat_id, $user, $active_config);
+    elseif ($custom_config['exchange_type'] == 'workflow') $msg = get_workflow_thread($message, $chat_id, $user, $active_config, $custom_config);
     else return process_api_response('There was an error processing your post. Please contact support.', $active_config, $chat_id, $message, $msg);
    
 
@@ -185,7 +186,7 @@ function get_gpt_response($message, $chat_id, $user, $deployment, $exchange_type
     }
     #echo "<pre>Step get_gpt_response()\n".print_r($response,1)."</pre>"; die();
 
-    return process_api_response($response, $active_config, $chat_id, $message, $msg, $exchange_type);
+    return process_api_response($response, $active_config, $chat_id, $message, $msg, $custom_config);
 }
 
 /**
@@ -324,7 +325,7 @@ function get_chat_thread($message, $chat_id, $user, $active_config) {
 
 function get_workflow_thread($message, $chat_id, $user, $active_config, $custom_config) {
 
-    $custom_config = json_decode($custom_config,1);
+    #$custom_config = json_decode($custom_config,1);
     #print_r($custom_config); die();
     
 
@@ -445,7 +446,7 @@ function call_azure_api($active_config, $chat_id, $msg) {
  * @param mixed $msg The message context sent to the API.
  * @return array The processed API response.
  */
-function process_api_response($response, $active_config, $chat_id, $message, $msg, $exchange_type) {
+function process_api_response($response, $active_config, $chat_id, $message, $msg, $custom_config) {
 
     $response_data = json_decode($response, true);
 
@@ -459,7 +460,7 @@ function process_api_response($response, $active_config, $chat_id, $message, $ms
         ];
     }
 
-    if($exchange_type == 'workflow') $message = 'Data Management and Sharing Plan';
+    if($custom_config['exchange_type'] == 'workflow' && !empty($custom_config['prompt-replacement-text'])) $message = $custom_config['prompt-replacement-text'];
 
     if ($active_config['host'] === 'dall-e') {
         $image_url = $response_data['data'][0]['url'] ?? null;
@@ -485,7 +486,7 @@ function process_api_response($response, $active_config, $chat_id, $message, $ms
                     error_log("Failed to write fullsize image: $fullsize_path");
                 } else {
                     scale_image_from_path($fullsize_path, $small_path, 0.5);
-                    $eid = create_exchange($chat_id, $message, '', null, null, null, $image_gen_name);
+                    $eid = create_exchange($chat_id, $message, '', $custom_config['exchange_type'], $image_gen_name);
 
                     return [
                         'eid' => $eid,
@@ -503,7 +504,7 @@ function process_api_response($response, $active_config, $chat_id, $message, $ms
 
     // Handle Chat Completion response
     $response_text = $response_data['choices'][0]['message']['content'] ?? 'No response text found.';
-    $eid = create_exchange($chat_id, $message, $response_text);
+    $eid = create_exchange($chat_id, $message, $response_text, $custom_config['exchange_type']);
 
     return [
         'eid' => $eid,

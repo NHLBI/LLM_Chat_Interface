@@ -44,32 +44,6 @@ function showCannedModal() {
     }
 }
 
-function old_new_closeCannedModal() {
-  const modal = document.querySelector('.cannedModalWindow');
-  if (modal) {
-    modal.classList.remove('show');
-    modal.style.display = 'none';
-  }
-
-  // 1) Grab the chatId from the URL (strip any trailing slash first)
-  const path = window.location.pathname.replace(/\/$/, '');
-  const chatId = path.substring(path.lastIndexOf('/') + 1);
-
-  // 2) Silent hard‐delete and let deleteChat() handle the redirect
-  deleteChat(chatId, /*title irrelevant when silent*/ '', {
-    silent: true,
-    hard:   true
-  });
-}
-
-function old_old_closeCannedModal() {
-    const modal = document.querySelector('.cannedModalWindow');
-    if (modal) {
-        modal.classList.remove('show');
-        modal.style.display = 'none';
-    }
-}
-
 /**
  * Only hides the canned‑workflow modal.
  */

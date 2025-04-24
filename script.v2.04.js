@@ -98,8 +98,39 @@ $(document).ready(function() {
             var userMessageDecoded = base64DecodeUnicode(messageContent);
             var sanitizedPrompt = formatCodeBlocks(userMessageDecoded);
 
+            let icon = 'user.png';
+            if (exchangeTypeVal == 'workflow')  {
+                icon = 'gear_icon.png';
+
+                // Hide specific elements
+                document.getElementById('messageForm').style.display = 'none';
+                document.getElementById('modelSelectButton').style.display = 'none';
+                document.getElementById('temperature_select').style.display = 'none';
+
+                // Alter the .maincol-top element
+                let mainColTopElement = document.querySelector('.maincol-top');
+                if (mainColTopElement) {
+                    mainColTopElement.style.height = 'calc(100vh - 140px)';
+                }
+            } else if (exchangeTypeVal == 'chat') {
+                icon = 'user.png';
+
+                // Show specific elements (if needed for 'chat' type)
+                document.getElementById('messageForm').style.display = 'block';
+                document.getElementById('modelSelectButton').style.display = 'block';
+                document.getElementById('temperature_select').style.display = 'block';
+
+                // Revert the .maincol-top element changes (if needed for 'chat' type)
+                let mainColTopElement = document.querySelector('.maincol-top');
+                if (mainColTopElement) {
+                    mainColTopElement.style.height = 'calc(100vh - 240px)';
+                }
+            }
+
+
+
             var userMessageElement = $('<div class="message user-message"></div>').html(sanitizedPrompt);
-            userMessageElement.prepend('<img src="images/user.png" class="user-icon" alt="User icon">');
+            userMessageElement.prepend('<img src="images/'+icon+'" class="user-icon" alt="User icon">');
             chatContainer.append(userMessageElement);
 
             // Apply syntax highlighting to code within the user message
@@ -335,9 +366,46 @@ $(document).ready(function() {
             // 1) USER PROMPT
             //------------------------------------------------
             // Apply formatCodeBlocks to the user's prompt
+            // If message.exchange_type is "workflow", specific elements (#messageForm, #modelSelectButton, #temperature_select) are hidden, 
+            // and the height of the .maincol-top element is adjusted.
+            // If message.exchange_type is "chat", those elements are shown again, 
+            // and the height of the .maincol-top element is reverted to its original value.
+
+            let icon = 'user.png';
+
+            if (message.exchange_type == 'workflow') {
+                icon = 'gear_icon.png';
+
+                // Hide specific elements
+                document.getElementById('messageForm').style.display = 'none';
+                document.getElementById('modelSelectButton').style.display = 'none';
+                document.getElementById('temperature_select').style.display = 'none';
+
+                // Alter the .maincol-top element
+                let mainColTopElement = document.querySelector('.maincol-top');
+                if (mainColTopElement) {
+                    mainColTopElement.style.height = 'calc(100vh - 140px)';
+                }
+            } else if (message.exchange_type == 'chat') {
+                icon = 'user.png';
+
+                // Show specific elements (if needed for 'chat' type)
+                document.getElementById('messageForm').style.display = 'block';
+                document.getElementById('modelSelectButton').style.display = 'block';
+                document.getElementById('temperature_select').style.display = 'block';
+
+                // Revert the .maincol-top element changes (if needed for 'chat' type)
+                let mainColTopElement = document.querySelector('.maincol-top');
+                if (mainColTopElement) {
+                    mainColTopElement.style.height = 'calc(100vh - 240px)';
+                }
+            }
+
+
+
             var sanitizedPrompt = formatCodeBlocks(message.prompt);
             var userMessageElement = $('<div class="message user-message"></div>').html(sanitizedPrompt);
-            userMessageElement.prepend('<img src="images/user.png" class="user-icon">');
+            userMessageElement.prepend('<img src="images/'+icon+'" class="user-icon" alt="User icon">');
             chatContainer.append(userMessageElement);
 
             //------------------------------------------------

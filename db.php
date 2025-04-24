@@ -95,9 +95,7 @@ function create_exchange(
     $chat_id,
     $prompt,
     $reply,
-    $document_name = null,
-    $document_type = null,
-    $document_text = null,
+    $exchange_type,
     $image_gen_name = null
 ) {
     global $pdo, $config;
@@ -119,7 +117,7 @@ function create_exchange(
             chat_id, user, deployment, api_endpoint, temperature, uri,
             prompt, prompt_token_length, 
             reply, reply_token_length, 
-            document_name, document_type, document_text, image_gen_name,
+            exchange_type, image_gen_name,
             timestamp
         )
         VALUES 
@@ -127,7 +125,7 @@ function create_exchange(
             :chat_id, :user, :deployment, :api_endpoint, :temperature, :uri,
             :prompt, :prompt_token_length,
             :reply, :reply_token_length,
-            :document_name, :document_type, :document_text, :image_gen_name,
+            :exchange_type, :image_gen_name,
             NOW()
         )
     ");
@@ -143,9 +141,7 @@ function create_exchange(
         'prompt_token_length' => $prompt_token_length,
         'reply'               => $reply,
         'reply_token_length'  => $reply_token_length,
-        'document_name'       => $document_name,
-        'document_type'       => $document_type,
-        'document_text'       => $document_text,
+        'exchange_type'       => $exchange_type,
         'image_gen_name'      => $image_gen_name
     ]);
 
@@ -221,6 +217,7 @@ function get_all_exchanges($chat_id, $user) {
         e.prompt_token_length,
         e.reply,
         e.reply_token_length,
+        e.exchange_type,
         e.image_gen_name,
         e.deployment,
         e.api_key,
@@ -262,6 +259,7 @@ function get_all_exchanges($chat_id, $user) {
         $output[$r['id']]['prompt_token_length'] = $r['prompt_token_length'];
         $output[$r['id']]['reply']               = $r['reply'];
         $output[$r['id']]['reply_token_length']  = $r['reply_token_length'];
+        $output[$r['id']]['exchange_type']       = $r['exchange_type'];
         $output[$r['id']]['image_gen_name']      = $r['image_gen_name'];
         $output[$r['id']]['deployment']          = $r['deployment'];
         $output[$r['id']]['api_key']             = $r['api_key'];
@@ -294,7 +292,9 @@ function get_all_chats($user, $search = '') {
     $sql = "
     SELECT
         c.id, c.user, c.title, c.deployment, c.temperature,
-        c.new_title, d.id AS `document_id`, d.name AS `document_name`, d.type AS `document_type`, d.deleted AS `document_deleted`, c.deleted, c.timestamp AS latest_interaction
+        c.new_title, d.id AS `document_id`, d.name AS `document_name`, 
+        d.type AS `document_type`, d.deleted AS `document_deleted`, c.deleted, 
+        e.exchange_type, c.timestamp AS latest_interaction
     FROM chat c
     LEFT JOIN document d ON c.id = d.chat_id
     LEFT JOIN exchange e ON c.id = e.chat_id

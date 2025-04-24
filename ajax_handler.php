@@ -18,7 +18,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Provide a default exchange_type if needed
     $exchange_type = isset($_POST['exchange_type']) ? $_POST['exchange_type'] : 'chat'; 
-    $custom_config = isset($_POST['custom_config']) ? $_POST['custom_config'] : ''; 
+
+    if (isset($_POST['custom_config'])) {
+        $custom_config = json_decode($_POST['custom_config'],true);
+    } else {
+        $custom_config = array();
+    }
+
+    $custom_config['exchange_type'] = $exchange_type;
+    //$custom_config = json_encode($custom_config);
+    
 
     // Retrieve the chat ID from the POST data
     $chat_id = filter_input(INPUT_POST, 'chat_id', FILTER_SANITIZE_STRING);
@@ -39,6 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     /*
+    echo "THIS IS THE custom_config: " . print_r($custom_config,1) . "\n";
     echo "THIS IS THE exchange_type: " . $exchange_type . "\n";
     echo "THIS IS THE deployment: " . $deployment . "\n";
     #echo "THIS IS THE config: " . print_r($config,1) . "\n";
@@ -50,7 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     */
 
     // Get the GPT response to the user's message using the get_gpt_response() function
-    $gpt_response = get_gpt_response($user_message, $id, $user, $deployment, $exchange_type, $custom_config);
+    $gpt_response = get_gpt_response($user_message, $id, $user, $deployment, $custom_config);
     #echo "THIS IS THE GPT Response: <pre>" . print_r($gpt_response,1)."</pre>"; die();
 
     if (!empty($gpt_response['error']) && $gpt_response['error'] == 1) {
@@ -59,8 +69,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Generate a concise chat title if a new chat was created and there were no errors in the GPT response
     if ($need_title && empty($gpt_response['error'])) {
-        $chat_title = generate_chat_title($user_message, $gpt_response['message'], HARDCODED_DEPLOYMENT);
-        
+
+        if ($custom_config['exchange_type'] == 'workflow' && !empty($custom_config['config']['chat-title-replacement'])) {
+            $chat_title = $custom_config['config']['chat-title-replacement'];
+        } else {        
+            $chat_title = generate_chat_title($user_message, $gpt_response['message'], HARDCODED_DEPLOYMENT);
+        }
         // Update the chat title in the database if the title was successfully generated
         if ($chat_title !== null) {
             $chat_title = substringWords($chat_title,6); 

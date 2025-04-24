@@ -274,7 +274,7 @@ foreach(array_keys($models) as $m) {
                 </form>
 
 
-                <button style="display: inline-block; margin-top:8px;" title="Select models from a list" aria-label="About models button" onclick="showAboutModels()" id="printButton">Model: <?php echo $models[$_SESSION['deployment']]['label']; ?></button>
+                <button style="display: inline-block; margin-top:8px;" title="Select models from a list" aria-label="About models button" onclick="showAboutModels()" id="modelSelectButton">Model: <?php echo $models[$_SESSION['deployment']]['label']; ?></button>
                 <!-- <span style="display: inline-block; margin-top:8px;"><a title="About models" href="javascript:void(0);" onclick="showAboutModels()">Select Model</a> -->
                 <!--current model: <?php echo $models[$_SESSION['deployment']]['label']; ?></span> -->
 
