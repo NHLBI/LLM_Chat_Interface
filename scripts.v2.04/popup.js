@@ -182,6 +182,8 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
 
             // In your AJAX success callback, when iterating over chats:
             Object.values(response).forEach(function(chat, index) {
+    console.log("this is the full chat item: ");
+    console.log(chat);
                 const isCurrentChat = chat.id === window.location.pathname.split('/')[2];
                 const chatItemClass = isCurrentChat ? 'chat-item current-chat initial-current-chat' : 'chat-item';
 
@@ -258,7 +260,7 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                     const docHeading = $('<p>', {
                         class: 'document-heading',
                         text: 'Documents'
-                    });
+                    }).attr('title', chat.token_length + ' tokens total');
 
                     // Create a container to hold both the paperclip icon and the heading
                     const docHeadingContainer = $('<div>', {
@@ -292,13 +294,19 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                     var itemNum = 1;
                     Object.entries(chat.document).forEach(([docKey, docData]) => {
                         const docTitle = docData.name; 
+                        const docTokens = docData.token_length;
+
                         const isImage = docData.type.startsWith('image/');
                         
                         // Strikethrough only if handles_images is false AND the document is an image
                         //const displayTitle = (!handles_images && isImage) ? `<s style="color: #CCC;cursor: pointer;" title="This model does not support uploaded images">${docTitle}</s>` : docTitle;
                         const displayTitle = docTitle;
 
-                        const docItem = $('<li>', { class: 'document-item' });
+                        const docItem = $('<li>', { 
+                            class: 'document-item',
+                            title: docTokens + ' tokens'
+ 
+                        });
 
                         const docTitleSpan = $('<span>', {
                             class: 'document-title',

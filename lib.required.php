@@ -55,7 +55,7 @@ if (isAuthenticated()) {
 
 // Verify that there is a chat with this id for this user
 // If a 'chat_id' parameter was passed, store its value as a string in the session variable 'chat_id'
-$chat_id = filter_input(INPUT_GET, 'chat_id', FILTER_SANITIZE_STRING);
+$chat_id = filter_input(INPUT_GET, 'chat_id', FILTER_SANITIZE_FULL_SPECIAL_CHARS);
 
 if (!verify_user_chat($user, $chat_id)) {
     echo " -- " . htmlspecialchars($user) . "<br>\n";
@@ -216,7 +216,7 @@ function load_configuration($deployment, $hardcoded = false) {
         'base_url' => $config[$deployment]['url'],
         'deployment_name' => $config[$deployment]['deployment_name'],
         'api_version' => $config[$deployment]['api_version'],
-        'context_limit' => (int)($config[$deployment]['context_limit'] * 1.5),
+        'context_limit' => (int)($config[$deployment]['context_limit']),
     ];
     if (!empty($config[$deployment]['max_tokens'])) $output['max_tokens'] = (int)$config[$deployment]['max_tokens'];
     if (!empty($config[$deployment]['max_completion_tokens'])) $output['max_completion_tokens'] = (int)$config[$deployment]['max_completion_tokens'];
@@ -388,10 +388,67 @@ function call_mocha_api($base_url, $msg) {
  * Calls the Azure OpenAI API.
  *
  * @param array $active_config The active deployment configuration.
+ * @param mixed $msg           The message payload.
+ * @param string $chat_id
+ * @param string $message      The original user message
+ * @return string              The API response.
+ */
+function new_maybe_call_azure_api($active_config, $chat_id, $msg, $message) {
+    // … existing code to choose $url …
+
+    // --- NEW: adjust max_completion_tokens based on context_limit and doc tokens ---
+    // 1) pull your documents (with token lengths) back out of the DB
+    $docs = get_chat_documents($_SESSION['user_data']['userid'], $chat_id);
+
+    // 2) total up all document_token_length
+    $docTokens = array_sum(array_column($docs, 'document_token_length'));
+
+    // 3) count tokens in your new user message as well
+    $promptTokens = get_token_count($message); // your existing Python helper
+
+    // 4) apply your context limit (from config)
+    $contextLimit = $active_config['context_limit'] ?? 8192;
+
+    // 5) compute how many remain for the completion
+    $remaining = $contextLimit - ($docTokens + $promptTokens);
+    if ($remaining < 0) {
+        $remaining = 0;
+    }
+
+    // 6) set max_completion_tokens to the lesser of configured max or what remains
+    $maxCompletion = $active_config['max_completion_tokens'] ?? 256;
+    $payload['max_tokens'] = $active_config['max_tokens'] ?? null;      // if you’re using max_tokens
+    $payload['max_completion_tokens'] = min($maxCompletion, $remaining);
+
+    // --- END NEW SECTION ---
+
+    // your existing header/payload construction…
+    $headers = [
+        'Content-Type: application/json',
+        'api-key: ' . $active_config['api_key']
+    ];
+    $response = execute_api_call($url, $payload, $headers, $chat_id);
+    return $response;
+}
+
+
+/**
+ * Calls the Azure OpenAI API.
+ *
+ * @param array $active_config The active deployment configuration.
  * @param mixed $msg The message payload.
  * @return string The API response.
  */
 function call_azure_api($active_config, $chat_id, $msg) {
+
+    // 1) pull your documents (with token lengths) back out of the DB
+    $docs = get_chat_documents($_SESSION['user_data']['userid'], $chat_id);
+
+    // 2) total up all document_token_length
+    $doc_tokens = array_sum(array_column($docs, 'document_token_length'));
+
+    #echo "this is the document tokens: {$doc_tokens}\n"; die(print_r($docs,1));
+
     $is_dalle = ($active_config['host'] === 'dall-e');
 
     if ($is_dalle) {
@@ -421,7 +478,14 @@ function call_azure_api($active_config, $chat_id, $msg) {
             $payload['max_tokens'] = $active_config['max_tokens'];
         }
         if (!empty($active_config['max_completion_tokens'])) {
-            $payload['max_completion_tokens'] = $active_config['max_completion_tokens'];
+            /*
+            echo "THIS IS THE CURRENT MAX COMPLETION: " . $active_config['max_completion_tokens']."\n";
+            echo "THIS IS THE CURRENT CONTEXT LIMIT: " . $active_config['context_limit']."\n";
+            echo "THIS IS THE CURRENT DOC TOKENS: " . $doc_tokens."\n";
+            echo "THIS IS THE CONTEXT LIMIT MINUS DOC TOKENS: " . $active_config['context_limit'] - $doc_tokens."\n";
+            echo "THIS IS THE MIN OF THOSE TWO: " . min($active_config['max_completion_tokens'], $active_config['context_limit'] - $doc_tokens)."\n";
+            */
+            $payload['max_completion_tokens'] = min($active_config['max_completion_tokens'], $active_config['context_limit'] - $doc_tokens);
             $payload['temperature'] = 1;
         }
     }
@@ -486,7 +550,7 @@ function process_api_response($response, $active_config, $chat_id, $message, $ms
                     error_log("Failed to write fullsize image: $fullsize_path");
                 } else {
                     scale_image_from_path($fullsize_path, $small_path, 0.5);
-                    $eid = create_exchange($chat_id, $message, '', $custom_config['exchange_type'], $image_gen_name);
+                    $eid = create_exchange($chat_id, $message, '', $custom_config['workflowId'], $image_gen_name);
 
                     return [
                         'eid' => $eid,
@@ -504,7 +568,7 @@ function process_api_response($response, $active_config, $chat_id, $message, $ms
 
     // Handle Chat Completion response
     $response_text = $response_data['choices'][0]['message']['content'] ?? 'No response text found.';
-    $eid = create_exchange($chat_id, $message, $response_text, $custom_config['exchange_type']);
+    $eid = create_exchange($chat_id, $message, $response_text, $custom_config['workflowId']);
 
     return [
         'eid' => $eid,
@@ -630,7 +694,7 @@ function build_system_message($active_config) {
  * @return array The formatted context messages.
  */
 function retrieve_context_messages($chat_id, $user, $active_config, $message) {
-    $context_limit = 10000000; #(int)$active_config['context_limit'];
+    $context_limit = (int)$active_config['context_limit'];
     $recent_messages = get_recent_messages($chat_id, $user);
     $total_tokens = estimate_tokens($message);
     $formatted_messages = [];
@@ -679,6 +743,7 @@ function retrieve_context_messages($chat_id, $user, $active_config, $message) {
  */
 function handle_document_content($chat_id, $user, $message, $active_config) {
     $docs = get_chat_documents($user, $chat_id);
+    # print_r($docs);
 
     if (!empty($docs)) {
         $messages = [];

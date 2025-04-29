@@ -331,94 +331,101 @@ function submitUploadForm() {
     console.log("FormData key:", key);
   }
 
-  // Send the AJAX request via fetch.
-  console.log("Initiating fetch to 'upload.php' with FormData...");
-  fetch('upload.php', {
-    method: 'POST',
-    body: formData,
-    headers: {
-      'X-Requested-With': 'XMLHttpRequest'
+// Send the AJAX request via fetch.
+console.log("Initiating fetch to 'upload.php' with FormData...");
+fetch('upload.php', {
+  method: 'POST',
+  body: formData,
+  headers: {
+    'X-Requested-With': 'XMLHttpRequest'
+  }
+})
+.then(response => {
+  console.log("Received response with status:", response.status);
+  return response.json();
+})
+.then(result => {
+  console.log("Upload successful. Received result:", result);
+
+  // 1) If it's a brand-new chat, just redirect
+  if (result.new_chat) {
+    console.log(
+      "Result indicates new_chat. Redirecting with chat_id:", 
+      result.chat_id
+    );
+    window.location.href = 
+      "/" + application_path + "/" + encodeURIComponent(result.chat_id);
+    console.log("--------- submitUploadForm() END (redirect new_chat) ---------");
+    return;
+  }
+
+  // 2) Grab the filenames straight from uploadedFiles
+  const docNames = uploadedFiles.map(file => file.name);
+  console.log("Docs just uploaded:", docNames);
+
+  // 3) Close the upload modal
+  closeUploadModal();
+  console.log("Upload complete; modal closed.");
+
+  // 4) If we're in workflow mode, build & submit the workflow prompt
+  if ($('#exchange_type').val() === 'workflow') {
+    console.log("Workflow mode detected. Preparing to auto-submit chat form...");
+
+    // 4a) Base replacement prompt
+    let autoChatPrompt = 
+        window.selectedWorkflow?.config["prompt-replacement-text"] 
+      || window.selectedWorkflow?.prompt 
+      || "";
+
+    console.log("Base workflow prompt:", autoChatPrompt);
+
+    // 4b) Append uploaded filenames, if any
+    if (docNames.length) {
+      autoChatPrompt += "" 
+                      //+ (docNames.length > 1 ? "s:" : ":") 
+                      + " " + docNames.join(", ");
+      console.log("Extended prompt with docs:", autoChatPrompt);
     }
-  })
-  .then(response => {
-    console.log("Received response with status:", response.status);
-    return response.json();
-  })
-  .then(result => {
-    console.log("Upload successful. Received result:", result);
 
-    if (result.new_chat) {
-      console.log("Result indicates new_chat. Redirecting with chat_id:", result.chat_id);
-      window.location.href = "/" + application_path + "/" + encodeURIComponent(result.chat_id);
-      console.log("--------- submitUploadForm() END (redirect new_chat) ---------");
-      return;
-    }
-
-    // No new chat; complete the upload workflow.
-    closeUploadModal();
-    fetchAndUpdateChatTitles($('#search-input').val(), false);
-    console.log("Upload complete; modal closed and chat titles updated.");
-
-    // Log the current exchange_type value.
-    const exchangeType = $('#exchange_type').val();
-    console.log("exchange_type value:", exchangeType);
-
-    if (exchangeType === 'workflow') {
-      console.log("Workflow mode detected. Preparing to auto-submit chat form...");
-
-      // 1) First try to pull prompt-replacement-text from the config
-      let autoChatPrompt = "";
-      if (window.selectedWorkflow && window.selectedWorkflow.config) {
-        autoChatPrompt = window.selectedWorkflow.config["prompt-replacement-text"] || "";
-        console.log("Found prompt-replacement-text in config:", autoChatPrompt);
-      }
-
-      // 2) Fallback to the built-in prompt if no replacement text
-      if (!autoChatPrompt && window.selectedWorkflow && window.selectedWorkflow.prompt) {
-        autoChatPrompt = window.selectedWorkflow.prompt;
-        console.log("Using fallback selectedWorkflow.prompt:", autoChatPrompt);
-      }
-
-      // 3) Pre-fill the textarea if we have something
-      const userMessageElem = document.getElementById('userMessage');
-      if (userMessageElem && autoChatPrompt) {
-        userMessageElem.value = autoChatPrompt;
-        console.log("Pre-filled userMessage with:", autoChatPrompt);
-      } else {
-        if (!userMessageElem) {
-          console.error("userMessage element not found!");
-        } else {
-          console.log("No prompt available to pre-fill.");
-        }
-      }
-
-      // Auto-trigger the chat form submission.
-      setTimeout(function() {
-        var $messageForm = $('#messageForm');
-        if ($messageForm.length) {
-          console.log("Found messageForm; triggering submit...");
-          $messageForm.trigger("submit");
-          console.log("Auto-triggered messageForm submission for workflow.");
-        } else {
-          console.error("messageForm not found!");
-        }
-      }, 500);
+    // 4c) Pre-fill the chat textarea
+    const userMessageElem = document.getElementById('userMessage');
+    if (userMessageElem) {
+      userMessageElem.value = autoChatPrompt;
+      console.log("Pre-filled userMessage with:", autoChatPrompt);
     } else {
-      console.log("Workflow mode not active (exchange_type not 'workflow').");
+      console.error("userMessage element not found!");
     }
+
+    // 4d) Auto-submit the chat form
+    setTimeout(() => {
+      const $messageForm = $('#messageForm');
+      if ($messageForm.length) {
+        console.log("Triggering submit on messageForm");
+        $messageForm.trigger("submit");
+        console.log("--------- submitUploadForm() END (workflow auto-submit) ---------");
+      } else {
+        console.error("messageForm not found!");
+      }
+    }, 500);
+  } else {
+    console.log("Workflow mode not active; no auto-submit.");
     console.log("--------- submitUploadForm() END (normal flow) ---------");
-  })
-  .catch(error => {
-    console.error("Upload error:", error);
-    alert("There was an error uploading your document. Please try again.");
-    console.log("--------- submitUploadForm() END (error) ---------");
-  })
-  .finally(() => {
-    // Re-enable the upload button.
+  }
+})
+.catch(error => {
+  console.error("Upload error:", error);
+  alert("There was an error uploading your document. Please try again.");
+  console.log("--------- submitUploadForm() END (error) ---------");
+})
+.finally(() => {
+  // Re-enable the upload button.
+  const uploadButton = document.querySelector('button[onclick="submitUploadForm()"]');
+  if (uploadButton) {
     uploadButton.disabled = false;
     uploadButton.textContent = "Upload";
     console.log("Upload button re-enabled.");
-  });
+  }
+});
 }
 
 // DRAG & DROP HANDLING

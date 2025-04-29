@@ -89,9 +89,9 @@ $(document).ready(function() {
         var messageContent = base64EncodeUnicode(sanitizedMessageContent); // Encode in Base64 UTF-8
 
         // Before your AJAX call, log the values from the hidden inputs.
-        var exchangeTypeVal = $('#exchange_type').val();
+        var exchange_type = $('#exchange_type').val();
         var customConfigVal = $('#custom_config').val();
-        console.log("Submitting form with exchange_type:", exchangeTypeVal, "and custom_config:", customConfigVal);
+        console.log("Submitting form with exchange_type:", exchange_type, "and custom_config:", customConfigVal);
 
         // Display the user message (prompt) immediately after submission
         if (sanitizedMessageContent !== "") {
@@ -99,7 +99,7 @@ $(document).ready(function() {
             var sanitizedPrompt = formatCodeBlocks(userMessageDecoded);
 
             let icon = 'user.png';
-            if (exchangeTypeVal == 'workflow')  {
+            if (exchange_type == 'workflow')  {
                 icon = 'gear_icon.png';
 
                 // Hide specific elements
@@ -112,13 +112,17 @@ $(document).ready(function() {
                 if (mainColTopElement) {
                     mainColTopElement.style.height = 'calc(100vh - 140px)';
                 }
-            } else if (exchangeTypeVal == 'chat') {
+            } else if (exchange_type == 'chat') {
                 icon = 'user.png';
 
                 // Show specific elements (if needed for 'chat' type)
                 document.getElementById('messageForm').style.display = 'block';
                 document.getElementById('modelSelectButton').style.display = 'block';
-                document.getElementById('temperature_select').style.display = 'block';
+                const tempForm = document.getElementById('temperature_select');
+                if (tempForm) {
+                    tempForm.style.display = 'block';
+                }
+
 
                 // Revert the .maincol-top element changes (if needed for 'chat' type)
                 let mainColTopElement = document.querySelector('.maincol-top');
@@ -174,7 +178,7 @@ $(document).ready(function() {
                     chat_id: chatId,
                     user: user,
                     deployment: deployment,  // **Include the deployment here**
-                    exchange_type: exchangeTypeVal, 
+                    exchange_type: exchange_type, 
                     custom_config: customConfigVal 
 
                 },
@@ -348,8 +352,8 @@ $(document).ready(function() {
             data: { chat_id: chatId, user: user },
             dataType: 'json',
             success: function(chatMessages) {
-                //console.log("this is chatMessages to show we're actually getting them");
-                //console.log(chatMessages);
+                console.log("this is chatMessages to show we're actually getting them");
+                console.log(chatMessages);
                 displayMessages(chatMessages);
                 //scrollToBottom();
                 debounceScroll();
@@ -392,7 +396,10 @@ $(document).ready(function() {
                 // Show specific elements (if needed for 'chat' type)
                 document.getElementById('messageForm').style.display = 'block';
                 document.getElementById('modelSelectButton').style.display = 'block';
-                document.getElementById('temperature_select').style.display = 'block';
+                const tempForm = document.getElementById('temperature_select');
+                if (tempForm) {
+                    tempForm.style.display = 'block';
+                }
 
                 // Revert the .maincol-top element changes (if needed for 'chat' type)
                 let mainColTopElement = document.querySelector('.maincol-top');

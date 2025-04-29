@@ -95,7 +95,7 @@ function create_exchange(
     $chat_id,
     $prompt,
     $reply,
-    $exchange_type,
+    $workflow_id,
     $image_gen_name = null
 ) {
     global $pdo, $config;
@@ -117,16 +117,14 @@ function create_exchange(
             chat_id, user, deployment, api_endpoint, temperature, uri,
             prompt, prompt_token_length, 
             reply, reply_token_length, 
-            exchange_type, image_gen_name,
-            timestamp
+            image_gen_name, timestamp
         )
         VALUES 
         (
             :chat_id, :user, :deployment, :api_endpoint, :temperature, :uri,
             :prompt, :prompt_token_length,
             :reply, :reply_token_length,
-            :exchange_type, :image_gen_name,
-            NOW()
+            :image_gen_name, NOW()
         )
     ");
 
@@ -141,11 +139,22 @@ function create_exchange(
         'prompt_token_length' => $prompt_token_length,
         'reply'               => $reply,
         'reply_token_length'  => $reply_token_length,
-        'exchange_type'       => $exchange_type,
         'image_gen_name'      => $image_gen_name
     ]);
 
     $insert_id = $pdo->lastInsertId();
+
+    if (!empty((int)$workflow_id)) {
+        $stmtJoin = $pdo->prepare("
+            INSERT INTO workflow_exchange (workflow_id, exchange_id)
+            VALUES (:workflow_id, :exchange_id)
+        ");
+        $stmtJoin->execute([
+            'workflow_id' => $workflow_id,
+            'exchange_id' => $insert_id,
+        ]);
+
+    }
 
     if ($config[$deployment]['handles_images']) {
         // Step 3: Check for associated documents (deleted = 0) for the chat_id
@@ -217,7 +226,6 @@ function get_all_exchanges($chat_id, $user) {
         e.prompt_token_length,
         e.reply,
         e.reply_token_length,
-        e.exchange_type,
         e.image_gen_name,
         e.deployment,
         e.api_key,
@@ -226,6 +234,7 @@ function get_all_exchanges($chat_id, $user) {
         e.api_endpoint,
         e.deleted,
         e.timestamp,
+        w.workflow_id,
         d.id AS `document_id`,
         d.name AS `document_name`,
         d.type AS `document_type`,
@@ -236,6 +245,7 @@ function get_all_exchanges($chat_id, $user) {
         JOIN chat AS c ON c.id = e.chat_id 
         LEFT JOIN exchange_document AS ed ON e.id = ed.exchange_id
         LEFT JOIN document AS d ON d.id = ed.document_id
+        LEFT JOIN workflow_exchange AS w ON w.exchange_id = e.id
         WHERE c.user = :user AND e.chat_id = :chat_id
         AND c.deleted = 0
         AND e.deleted = 0
@@ -259,7 +269,7 @@ function get_all_exchanges($chat_id, $user) {
         $output[$r['id']]['prompt_token_length'] = $r['prompt_token_length'];
         $output[$r['id']]['reply']               = $r['reply'];
         $output[$r['id']]['reply_token_length']  = $r['reply_token_length'];
-        $output[$r['id']]['exchange_type']       = $r['exchange_type'];
+        $output[$r['id']]['exchange_type']       = ($r['workflow_id']) ? 'workflow' : 'chat';
         $output[$r['id']]['image_gen_name']      = $r['image_gen_name'];
         $output[$r['id']]['deployment']          = $r['deployment'];
         $output[$r['id']]['api_key']             = $r['api_key'];
@@ -269,8 +279,6 @@ function get_all_exchanges($chat_id, $user) {
         $output[$r['id']]['deleted']             = $r['deleted'];
         $output[$r['id']]['timestamp']           = $r['timestamp'];
         
-        if (empty($output[$r['id']]['document'])) $output[$r['id']]['document'] = array();
-
         if (empty($output[$r['id']]['document'])) $output[$r['id']]['document'] = array();
 
         if (strstr($r['document_type'],'image')) {
@@ -292,12 +300,13 @@ function get_all_chats($user, $search = '') {
     $sql = "
     SELECT
         c.id, c.user, c.title, c.deployment, c.temperature,
-        c.new_title, d.id AS `document_id`, d.name AS `document_name`, 
+        c.new_title, d.id AS `document_id`, d.name AS `document_name`, d.document_token_length,
         d.type AS `document_type`, d.deleted AS `document_deleted`, c.deleted, 
-        e.exchange_type, c.timestamp AS latest_interaction
+        w.workflow_id, c.timestamp AS latest_interaction
     FROM chat c
     LEFT JOIN document d ON c.id = d.chat_id
     LEFT JOIN exchange e ON c.id = e.chat_id
+    LEFT JOIN workflow_exchange AS w ON w.exchange_id = e.id
     WHERE
         c.user = :user
         AND c.deleted = 0
@@ -337,9 +346,11 @@ function get_all_chats($user, $search = '') {
         $output[$r['id']]['user'] = $r['user'];
         $output[$r['id']]['title'] = $r['title'];
         $output[$r['id']]['deployment'] = $r['deployment'];
+        $output[$r['id']]['exchange_type'] = ($r['workflow_id']) ? 'workflow' : 'chat';
         if (empty($output[$r['id']]['document'])) $output[$r['id']]['document'] = array();
         if ($r['document_deleted'] == 0 && !empty($r['document_name'])) {
-            $output[$r['id']]['document'][$r['document_id']] = array('name'=>$r['document_name'],'type'=>$r['document_type']);
+            $output[$r['id']]['token_length'] = (empty($output[$r['id']]['document'])) ? $r['document_token_length'] : $output[$r['id']]['token_length'] += $r['document_token_length']; 
+            $output[$r['id']]['document'][$r['document_id']] = array('name'=>$r['document_name'],'type'=>$r['document_type'],'token_length'=>$r['document_token_length']);
         }
     }
     #echo '<pre>'.print_r($output,1).'<pre>'; die();
@@ -373,7 +384,8 @@ function get_chat_documents($user, $chat_id, $images_only = false) {
             d.id       AS document_id,
             d.name     AS document_name,
             d.content  AS document_content,
-            d.type     AS document_type
+            d.type     AS document_type,
+            d.document_token_length
         FROM chat c
         LEFT JOIN document d 
                ON c.id = d.chat_id
@@ -472,9 +484,63 @@ function update_temperature($user, $chat_id, $temperature) {
 }
 
 /**
+ * Insert a document record into the document table, recording its token length.
+ *
+ * @param string $user           — owning user ID (if you record it)
+ * @param string $chat_id        — parent chat ID
+ * @param string $document_name
+ * @param string $document_type
+ * @param string $document_text
+ * @return int                   — the new document’s primary key
+ */
+function insert_document(
+    $user,
+    $chat_id,
+    $document_name,
+    $document_type,
+    $document_text
+) {
+    global $pdo;
+
+    // 1) compute token length (chunks and all)
+    //    you can pass an encoding if desired, e.g. "cl100k_base"
+    $doc_token_length = get_token_count($document_text, "cl100k_base");
+
+    // 2) insert with the new column
+    $stmt = $pdo->prepare("
+        INSERT INTO document
+        (
+          chat_id,
+          name,
+          type,
+          content,
+          document_token_length
+        )
+        VALUES
+        (
+          :chat_id,
+          :name,
+          :type,
+          :content,
+          :token_length
+        )
+    ");
+
+    $stmt->execute([
+        'chat_id'      => $chat_id,
+        'name'         => $document_name,
+        'type'         => $document_type,
+        'content'      => $document_text,
+        'token_length' => $doc_token_length
+    ]);
+
+    return (int)$pdo->lastInsertId();
+}
+
+/**
  * Insert a document record into the document table.
  */
-function insert_document($user, $chat_id, $document_name, $document_type, $document_text) {
+function old_insert_document($user, $chat_id, $document_name, $document_type, $document_text) {
     global $pdo;
     
     $stmt = $pdo->prepare("INSERT INTO document (chat_id, name, type, content) VALUES (:chat_id, :name, :type, :content)");
