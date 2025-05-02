@@ -74,7 +74,7 @@
       <input id="fileInput" 
              type="file" 
              name="uploadDocument[]" 
-             accept=".pdf,.docx,.pptx,.txt,.md,.json,.xml<?php if ($config[$deployment]['handles_images']) echo ',.png,.jpg,.jpeg,.gif'; ?>"
+             accept=".csv,.xlsx,.pdf,.docx,.pptx,.txt,.md,.json,.xml<?php if ($config[$deployment]['handles_images']) echo ',.png,.jpg,.jpeg,.gif'; ?>"
              multiple 
              style="display:none" 
              onchange="handleFiles(this.files)" />
@@ -366,6 +366,7 @@ fetch('upload.php', {
   // 3) Close the upload modal
   closeUploadModal();
   console.log("Upload complete; modal closed.");
+  fetchAndUpdateChatTitles($('#search-input').val(), false);
 
   // 4) If we're in workflow mode, build & submit the workflow prompt
   if ($('#exchange_type').val() === 'workflow') {

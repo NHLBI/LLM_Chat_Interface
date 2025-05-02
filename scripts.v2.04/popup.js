@@ -313,8 +313,15 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                             html: `${itemNum}. ${displayTitle}`
                         });
 
+                        //const exchange_type = $('#exchange_type').val()
+                        console.log(chat.exchange_type);
+                        var showTrash = '';
+                        if (chat.exchange_type == 'workflow') {
+                            showTrash = 'display:none'; // show or hide the trashcan
+                        }
                         const deleteBtn = $('<button>', {
                             class: 'delete-document-button',
+                            style: showTrash,
                             'data-doc-key': docKey,
                             'data-chat-id': chat.id,
                             title: 'Delete this document',

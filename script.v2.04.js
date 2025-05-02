@@ -384,6 +384,7 @@ $(document).ready(function() {
                 document.getElementById('messageForm').style.display = 'none';
                 document.getElementById('modelSelectButton').style.display = 'none';
                 document.getElementById('temperature_select').style.display = 'none';
+                $('#exchange_type').val('workflow')
 
                 // Alter the .maincol-top element
                 let mainColTopElement = document.querySelector('.maincol-top');

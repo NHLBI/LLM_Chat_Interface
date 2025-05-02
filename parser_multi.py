@@ -7,6 +7,7 @@ from pdfminer.high_level import extract_text
 from pptx import Presentation
 from pptx.shapes.group import GroupShape
 from pptx.enum.shapes import MSO_SHAPE_TYPE
+import pandas as pd
 import os
 
 '''
@@ -34,9 +35,10 @@ def parse_doc(file, filename):
         return parse_pptx(file, filename)
     elif filename.endswith('.pdf'):
         return parse_pdf(file, filename)
+    elif filename.endswith('.csv') or filename.endswith('.xlsx'):
+        return parse_csv(file, filename)
     else:
         raise ValueError('File type not supported')
-
 
 '''
 This function will return text from a pdf file. It does not ready any images. And it does not 
@@ -154,8 +156,38 @@ def parse_txt(file, filename):
         contents = f.read()
     return contents
 
+
+'''
+This funciton will return text from a csv file.
+
+Input: file_path (string) - the path to the file
+Output: csv_text (string) - the contents of the file
+'''
+def parse_csv(file, filename):
+
+    if filename.endswith('.csv'):        
+        df = pd.read_csv(file)
+        csv_json = df.to_json(orient='records', lines=True)
+    elif filename.endswith('.xlsx'):
+        df = pd.read_excel(file, engine='openpyxl', sheet_name=None)
+        csv_json = ''
+        for sheet_name, sheet_df in df.items():        
+            csv_json += f'--- Sheet: {sheet_name} ---\n'
+
+            # Convert each sheet to JSON format
+            csv_json += sheet_df.to_json(orient='records', lines=True)     
+            csv_json = csv_json + '\n' # Add a newline to separate sheets       
+    else:
+        raise ValueError('File type not supported')
+
+    #csv_text = "\n".join([f"Row {i + 1}: {line}" for i, line in enumerate(csv_json.splitlines())])
+
+    # Add a pre-amble
+    preamble = 'Below is Excel data in the form of json, broken down by tabs. Depnding on the ask, you may need to query the data. Ensure that all your calculations are correc, showing your thought process when applicable.'
+    csv_json = preamble + '\n' + csv_json
+
+    return csv_json
+
 if __name__ == '__main__':
     text = parse_doc(sys.argv[1], sys.argv[2])
     print(text)
-    
-

@@ -269,7 +269,7 @@ foreach(array_keys($models) as $m) {
 
                   </div>
                     <input type="hidden" id="exchange_type" name="exchange_type" value="chat">
-                    <input type="hidden" id="custom_config" name="custom_config" value="chat">
+                    <input type="hidden" id="custom_config" name="custom_config" value="">
 
                 </form>
 

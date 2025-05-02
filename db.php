@@ -538,21 +538,6 @@ function insert_document(
 }
 
 /**
- * Insert a document record into the document table.
- */
-function old_insert_document($user, $chat_id, $document_name, $document_type, $document_text) {
-    global $pdo;
-    
-    $stmt = $pdo->prepare("INSERT INTO document (chat_id, name, type, content) VALUES (:chat_id, :name, :type, :content)");
-    $stmt->execute([
-        'chat_id' => $chat_id,
-        'name'    => $document_name,
-        'type'    => $document_type,
-        'content' => $document_text
-    ]);
-}
-
-/**
  * Delete a document from the `document` table,
  * ensuring that the user owns the chat in question.
  *
@@ -666,7 +651,7 @@ function delete_old_chats($months = 6) {
     
     $sql = "DELETE FROM `chat` 
             WHERE `timestamp` <= :date_threshold
-            AND `user` = 'wyrickrv'
+            AND `user` IN ('arif','wyrickrv')
             AND `deleted` = 1";
 
     #echo $sql . "\n";
@@ -701,7 +686,7 @@ function soft_delete_old_chats($months = 6) {
             SET `deleted` = 1,
                 `timestamp` = `timestamp`
             WHERE `last_viewed` <= :date_threshold
-            AND `user` = 'wyrickrv'
+            AND `user` IN ('arif','wyrickrv')
             AND `deleted` = 0";
 
     #echo $sql . "\n";
