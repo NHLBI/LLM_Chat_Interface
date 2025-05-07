@@ -74,7 +74,7 @@
       <input id="fileInput" 
              type="file" 
              name="uploadDocument[]" 
-             accept=".csv,.xlsx,.pdf,.docx,.pptx,.txt,.md,.json,.xml<?php if ($config[$deployment]['handles_images']) echo ',.png,.jpg,.jpeg,.gif'; ?>"
+             accept=".csv,.xlsx,.xls,.pdf,.docx,.pptx,.txt,.md,.json,.xml<?php if ($config[$deployment]['handles_images']) echo ',.png,.jpg,.jpeg,.gif'; ?>"
              multiple 
              style="display:none" 
              onchange="handleFiles(this.files)" />

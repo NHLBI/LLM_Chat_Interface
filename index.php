@@ -187,7 +187,7 @@ foreach(array_keys($models) as $m) {
                     </svg>
                 </button>
                 <button class="newchat" style="width: 100px; " title="Create new chat" href="javascript:void(0);" onclick="startNewChat()">+&nbsp;&nbsp;New Chat</button>
-                <button class="newchat" style="margin-left: 10px; width: 130px; " title="Create new chat" href="javascript:void(0);" onclick="startNewWorkflow()">+&nbsp;&nbsp;New Workflow</button>
+                <button class="newchat newworkflow" style="margin-left: 10px; width: 130px; " title="Create new chat" href="javascript:void(0);" onclick="startNewWorkflow()">+&nbsp;&nbsp;New Workflow</button>
                 
 
                 <!-- Add a new container for chat titles with a class for styling -->
@@ -274,13 +274,13 @@ foreach(array_keys($models) as $m) {
                 </form>
 
 
-                <button style="display: inline-block; margin-top:8px;" title="Select models from a list" aria-label="About models button" onclick="showAboutModels()" id="modelSelectButton">Model: <?php echo $models[$_SESSION['deployment']]['label']; ?></button>
+                <button style="" title="Select models from a list" aria-label="About models button" id="modelSelector" onclick="showAboutModels()" id="modelSelectButton">Model: <?php echo $models[$_SESSION['deployment']]['label']; ?></button>
                 <!-- <span style="display: inline-block; margin-top:8px;"><a title="About models" href="javascript:void(0);" onclick="showAboutModels()">Select Model</a> -->
                 <!--current model: <?php echo $models[$_SESSION['deployment']]['label']; ?></span> -->
 
 <?php if ($config[$deployment]['handles_temperature']) { ?>
 
-                <form onsubmit="saveMessage()" id="temperature_select" action="" method="post" style="display: inline-block; margin-left: 20px; margin-right: 10px; margin-top: 8px; border-top: 1px solid white; ">
+                <form onsubmit="saveMessage()" id="temperature_select" action="" method="post" >
                     <label for="temperature">Temperature</label>: <select title="Choose a temperature setting between 0 and 2. A temperature of 0 means the responses will be very deterministic (meaning you almost always get the same response to a given prompt). A temperature of 2 means the responses can vary substantially." name="temperature" onchange="document.getElementById('temperature_select').submit();">
                         <?php
                         foreach ($temperatures as $t) {

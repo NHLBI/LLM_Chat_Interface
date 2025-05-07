@@ -35,7 +35,7 @@ def parse_doc(file, filename):
         return parse_pptx(file, filename)
     elif filename.endswith('.pdf'):
         return parse_pdf(file, filename)
-    elif filename.endswith('.csv') or filename.endswith('.xlsx'):
+    elif filename.endswith('.csv') or filename.endswith('.xlsx') or filename.endswith('.xls'):
         return parse_csv(file, filename)
     else:
         raise ValueError('File type not supported')
@@ -163,30 +163,67 @@ This funciton will return text from a csv file.
 Input: file_path (string) - the path to the file
 Output: csv_text (string) - the contents of the file
 '''
-def parse_csv(file, filename):
+import xlrd
+import pandas as pd
+import os
+import io
 
-    if filename.endswith('.csv'):        
-        df = pd.read_csv(file)
-        csv_json = df.to_json(orient='records', lines=True)
-    elif filename.endswith('.xlsx'):
-        df = pd.read_excel(file, engine='openpyxl', sheet_name=None)
-        csv_json = ''
-        for sheet_name, sheet_df in df.items():        
-            csv_json += f'--- Sheet: {sheet_name} ---\n'
+def parse_csv(file_path, filename):
+    ext = os.path.splitext(filename)[1].lower()
 
-            # Convert each sheet to JSON format
-            csv_json += sheet_df.to_json(orient='records', lines=True)     
-            csv_json = csv_json + '\n' # Add a newline to separate sheets       
+    # Read the entire upload into memory as bytes
+    with open(file_path, 'rb') as f:
+        data = f.read()
+
+    if ext == '.csv':
+        # CSV can still be read directly from disk
+        df = pd.read_csv(file_path)
+        df_dict = None
+
+    elif ext == '.xlsx':
+        # Let pandas/openpyxl load from bytes
+        df_dict = pd.read_excel(io.BytesIO(data), sheet_name=None)
+
+    elif ext == '.xls':
+        # Feed raw bytes into xlrd to avoid mmap/permission issues
+        wb = xlrd.open_workbook(file_contents=data, formatting_info=False)
+        df_dict = {}
+        for sheet in wb.sheets():
+            # Read every row as a list of values
+            rows = [sheet.row_values(r) for r in range(sheet.nrows)]
+            if not rows:
+                df = pd.DataFrame()  # empty sheet
+            else:
+                header, body_rows = rows[0], rows[1:]
+                if any(str(h).strip() for h in header):
+                    # Use first row as header
+                    df = pd.DataFrame(body_rows, columns=header)
+                else:
+                    # No header: treat every row as data
+                    df = pd.DataFrame(rows)
+            df_dict[sheet.name] = df
+
     else:
-        raise ValueError('File type not supported')
+        raise ValueError(f'Unsupported extension: {ext}')
 
-    #csv_text = "\n".join([f"Row {i + 1}: {line}" for i, line in enumerate(csv_json.splitlines())])
+    # Serialize to JSON
+    if df_dict is None:
+        # Single CSV
+        body = df.to_json(orient='records', lines=True)
+    else:
+        # Multi-sheet Excel
+        parts = []
+        for name, sheet_df in df_dict.items():
+            parts.append(f'--- Sheet: {name} ---')
+            parts.append(sheet_df.to_json(orient='records', lines=True))
+        body = "\n".join(parts)
 
-    # Add a pre-amble
-    preamble = 'Below is Excel data in the form of json, broken down by tabs. Depnding on the ask, you may need to query the data. Ensure that all your calculations are correc, showing your thought process when applicable.'
-    csv_json = preamble + '\n' + csv_json
-
-    return csv_json
+    preamble = (
+        "Below is Excel data in the form of JSON, broken down by tabs. "
+        "Depending on the ask, you may need to query the data. Ensure that "
+        "all your calculations are correct, showing your thought process when applicable."
+    )
+    return f"{preamble}\n{body}"
 
 if __name__ == '__main__':
     text = parse_doc(sys.argv[1], sys.argv[2])

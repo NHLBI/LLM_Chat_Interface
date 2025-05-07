@@ -194,6 +194,19 @@ code {
     resize: none; /* Optional: prevent resizing */
 }
 
+#temperature_select {
+    display: inline-block !Important; 
+    margin-left: 20px; 
+    margin-right: 10px; 
+    margin-top: 8px; 
+    border-top: 1px solid white;
+}
+
+#modelSelector {
+    display: inline-block !Important;
+    margin-top:8px;
+}
+
 /* Style for the submit button */
 .submit-button {
     position: absolute;
@@ -509,6 +522,10 @@ code {
     display: inline-block;
     background: linear-gradient(to bottom,#343a40, #565b68); /* Gradient from white to light gray */
     transition: background 0.3s; /* Smooth transition for background change */
+
+}
+.newworkflow {
+    display: none;
 
 }
 .chat-item {
