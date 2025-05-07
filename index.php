@@ -23,7 +23,7 @@ foreach(array_keys($models) as $m) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo $config['app']['app_title']; ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="style.v2.01.css" rel="stylesheet">
+    <link href="style.v2.02.css" rel="stylesheet">
     <!-- Highlight.js CSS -->
     <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css">
 
@@ -274,7 +274,7 @@ foreach(array_keys($models) as $m) {
                 </form>
 
 
-                <button style="" title="Select models from a list" aria-label="About models button" id="modelSelector" onclick="showAboutModels()" id="modelSelectButton">Model: <?php echo $models[$_SESSION['deployment']]['label']; ?></button>
+                <button style="" title="Select models from a list" aria-label="About models button" onclick="showAboutModels()" id="modelSelectButton">Model: <?php echo $models[$_SESSION['deployment']]['label']; ?></button>
                 <!-- <span style="display: inline-block; margin-top:8px;"><a title="About models" href="javascript:void(0);" onclick="showAboutModels()">Select Model</a> -->
                 <!--current model: <?php echo $models[$_SESSION['deployment']]['label']; ?></span> -->
 
@@ -339,13 +339,13 @@ foreach(array_keys($models) as $m) {
     <script src="session_handler.js"></script>
 
 <!-- Include application-specific scripts -->
-<script src="scripts.v2.04/utilities.js"></script>
-<script src="scripts.v2.04/manage_chats.js"></script>
-<script src="scripts.v2.04/popup.js"></script>
-<script src="scripts.v2.04/ui.js"></script>
-<script src="scripts.v2.04/listeners.js"></script>
-<script src="scripts.v2.04/user_images.js"></script>
-<script src="script.v2.04.js"></script>
+<script src="scripts.v2.05/utilities.js"></script>
+<script src="scripts.v2.05/manage_chats.js"></script>
+<script src="scripts.v2.05/popup.js"></script>
+<script src="scripts.v2.05/ui.js"></script>
+<script src="scripts.v2.05/listeners.js"></script>
+<script src="scripts.v2.05/user_images.js"></script>
+<script src="script.v2.05.js"></script>
 <script>
 function printChat() {
     // Prevent the default form submission behavior
