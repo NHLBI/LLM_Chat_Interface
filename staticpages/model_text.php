@@ -17,7 +17,7 @@
 foreach ($models as $m => $modelconfig) {
     if (empty($modelconfig['enabled'])) continue;
     $label = $modelconfig['label'];
-    $tooltip = $modelconfig['tooltip'];
+    $tooltip = trim($modelconfig['tooltip']);
     $checked = ($m == $_SESSION['deployment']) ? 'true' : 'false';
     $handles_images = !empty($modelconfig['handles_images']) ? 'true' : 'false';
     $handles_documents = !empty($modelconfig['handles_documents']) ? 'true' : 'false';
@@ -38,7 +38,7 @@ foreach ($models as $m => $modelconfig) {
                 role="radio"
                 aria-checked="'.$checked.'">
             <h5>'.$label.' '.$disabled_note.'</h5>
-            <p>'.$tooltip.'</p>
+            '.$tooltip.'
         </button>
     '."\n";
 }
@@ -92,7 +92,15 @@ foreach ($models as $m => $modelconfig) {
     font-weight: 600;
 }
 
-.model-option p {
+.model-option ul {
+    margin-bottom: 0px;
+  display: flex;
+  gap: 1.5em;
+  list-style: disc inside;
+  padding: 0;
+  margin: 0;
+}
+.model-option p, .model-option li {
     margin: 0;
     font-size: 0.9rem;
     color: #475569;

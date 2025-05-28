@@ -465,7 +465,7 @@ function call_azure_api($active_config, $chat_id, $msg) {
     } else {
         // Chat Completion Endpoint
         $url = $active_config['base_url'] . "/openai/deployments/" . $active_config['deployment_name'] . "/chat/completions?api-version=" . $active_config['api_version'];
-        $top_p = (preg_match('/o1|o3/',$_SESSION['deployment'])) ? 1 : 0.95;
+        $top_p = (preg_match('/o1|o3|o4/',$_SESSION['deployment'])) ? 1 : 0.95;
         
         $payload = [
             'messages' => $msg,
@@ -568,6 +568,7 @@ function process_api_response($response, $active_config, $chat_id, $message, $ms
 
     // Handle Chat Completion response
     $response_text = $response_data['choices'][0]['message']['content'] ?? 'No response text found.';
+    if (empty($custom_config['workflowId'])) $custom_config['workflowId'] = '';
     $eid = create_exchange($chat_id, $message, $response_text, $custom_config['workflowId']);
 
     return [
