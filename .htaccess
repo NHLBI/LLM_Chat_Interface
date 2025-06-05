@@ -1,0 +1,6 @@
+
+
+<IfFile '/var/www/ai.nhlbi.nih.gov/chatdev/DOWN'>
+    Redirect /maintenance/
+</IfFile>
+

@@ -1,0 +1,24 @@
+# Ignore system & editor files
+*.log
+*.tgz
+*.xls
+*.bak
+*.swp
+*~
+
+# Ignore dev/prod junk
+junk/
+outputs/
+doc_parser/
+.githubtoken.txt
+.env
+.user.ini
+.maintenance
+
+# Ignore image test files
+images/testimage.jpg
+
+# Ignore runtime/CLI scripts if not meant for prod
+db.cli.php
+delete_chat.php.new
+

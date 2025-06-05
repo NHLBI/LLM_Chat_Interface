@@ -1,0 +1,991 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+h3, h4 {
+    font-size: 1.25rem;
+}
+code {
+    color: #993366;
+}
+.no-wrap {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis; /* This will add "..." at the end if text overflows */
+}
+
+.math-block {
+    display: block;
+    margin: 1em 0;
+    text-align: center;
+}
+
+.math-inline {
+    display: inline-block;
+    vertical-align: middle;
+}
+.p-2 {
+    width: 100%;
+}
+.maincol-top {
+    height: calc(100vh - 240px);
+    overflow-y: scroll;
+    margin-bottom: 10px;
+    border: solid 0px blue;
+}
+.maincol-bottom {
+    margin-bottom: auto;
+}
+.chat-container {
+    /*padding: 10px;*/
+}
+.skip-link {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    background: #000;
+    color: #fff;
+    padding: 8px;
+    z-index: 100;
+}
+
+.skip-link:focus {
+    top: 0;
+}
+
+.message {
+    margin: 0px 0 0px 0;
+    padding: 20px;
+    padding-bottom: 30px;
+    /*border-radius: 10px;*/
+}
+.assistant-message {
+    background-color: #f0f0f0;
+    border-bottom: solid 1px #ddd;
+}
+.user-message {
+    background-color: #fbfbfb;
+}
+
+.message.assistant-message {
+    position: relative;
+    /* other styles */
+}
+
+.message.assistant-message:hover {
+    display: block;
+}
+
+
+#username {
+    margin-right: 10px; /* add some space to the right */
+    white-space: nowrap;
+}
+.header {
+    /*text-decoration: underline;*/
+    background-color: #f8f9fa; /* Light gray background */
+    border: solid 1px lightgray;
+}
+.logo {
+    max-width: 180px;
+    width: 90%;
+    margin: 10px;
+    margin-right: 20px;
+}
+.header h1 {
+    font-size: 18pt;
+    margin: 0; /* remove margin to prevent overflow on small screens */
+    text-align: center;
+    margin: 15px 0px;
+}
+.header p {
+    margin: 0; /* remove margin to prevent overflow on small screens */
+    text-align: right;
+    margin: 15px 0px;
+}
+
+.notification_center {
+    border: solid 1px gray;
+    background: #ffffcc;
+    padding: 20px;
+    margin-bottom: 40px;
+    margin-left: 10px;
+}
+
+/* Search Input Styles */
+#search-input {
+    width: 0;
+    width: 250px; /* Adjust as needed */
+    opacity: 0;
+    opacity: 1;
+    border: none;
+    border: 1px solid #ccc;
+    padding: 0;
+    padding: 5px;
+    margin-right: 10px;
+    margin: 10px 0px;
+    transition: width 0.3s ease, opacity 0.3s ease;
+    display: inline-block;
+    vertical-align: middle;
+    overflow: hidden;
+}
+
+#snearch-input.open {
+    width: 150px; /* Adjust as needed */
+    opacity: 1;
+    border: 1px solid #ccc;
+    padding: 5px;
+}
+
+/* Cancel Button Styles */
+#cancel-search {
+    display: none;
+    margin-right: 0px;
+    cursor: pointer;
+}
+
+/* Align the icons and input */
+#username > * {
+    vertical-align: middle;
+}
+
+/* Optional: Hide the search input when not in use */
+#snearch-input:not(.open) {
+    pointer-events: none;
+}
+
+
+
+
+
+
+
+
+
+
+/* Main container */
+.row.flex-grow-1 {
+    display: flex; /* Use flexbox to control the layout */
+    flex-wrap: nowrap; /* Prevent wrapping of elements */
+}
+
+/* Sidebar navigation */
+.menu {
+    background-color: #343a40;
+    color: white;
+    width: 310px; /* Fixed width */
+    flex: 0 0 310px; /* Prevent the menu from growing or shrinking */
+    overflow: hidden;
+    font-size: 85%;
+    padding: 3px;
+}
+
+/* Main content */
+.main-content {
+    flex: 1; /* Allows the main content to grow and shrink */
+    display: flex;
+    flex-direction: column; /* Stack elements vertically */
+    min-width: 0; /* Prevent overflow */
+}
+
+
+
+
+/* HANDLE THE MARKDOWN TABLES !!! */
+
+.markdown-table-wrapper {
+  margin: 1em 0;
+  overflow-x: auto;
+}
+.markdown-table-wrapper table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0;
+  font-size: 0.9rem;
+}
+.markdown-table-wrapper th,
+.markdown-table-wrapper td {
+  padding: 0.5em 0.75em;
+  border: 1px solid #dee2e6;
+  text-align: left;
+}
+.markdown-table-wrapper th {
+  background-color: #f6f8fa;
+}
+.markdown-table-wrapper tr:nth-child(even) td {
+  background-color: #f9f9f9;
+}
+/* DONE WITH MARKDOWN TABLES */
+
+/* Adjust the textarea to leave space for the submit button */
+#userMessage {
+    width: 100%;
+    padding-right: 40px; /* Add padding to avoid overlap with the button */
+    resize: none; /* Optional: prevent resizing */
+}
+
+#temperature_select {
+    display: inline-block !Important; 
+    margin-left: 20px; 
+    margin-right: 10px; 
+    margin-top: 8px; 
+    border-top: 1px solid white;
+}
+
+#modelSelectButton {
+    display: inline-block !Important;
+    margin-top:8px;
+}
+
+/* Style for the submit button */
+.submit-button {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    outline: none;
+    color: #007bff; /* Button color */
+}
+
+/* Media query for mobile/tablet screens */
+@media (max-width: 767.98px) {
+    /* Adjust layout for mobile view */
+    .row.flex-grow-1 {
+        flex-direction: column; /* Stack elements vertically */
+    }
+    
+    /* Adjust the sidebar */
+    .menu {
+        width: 100%;
+        flex: none; /* Remove fixed sizing */
+    }
+
+    /* Adjust the main content */
+    .main-content {
+        width: 100%;
+        min-width: auto;
+    }
+
+    /* Adjust height for smaller screens */
+    .maincol-top {
+        height: calc(100vh - 360px); /* Adjust height as needed */
+    }
+}
+
+
+    /* Styling for code blocks */
+    .code-block {
+        position: relative;
+        background-color: #282c34; /* Dark background */
+        color: #abb2bf; /* Light text */
+        padding: 36px 4px 4px 4px;
+        border-radius: 8px;
+        overflow-x: auto;
+        margin: 20px auto 0px auto;
+        width: 80%; /* Adjust the width to 80% of the chat container */
+    }
+
+    .code-block .language-label {
+        position: absolute;
+        top: 8px;
+        left: 16px;
+        background-color: rgba(255, 255, 255, 0.1);
+        color: #e5c07b;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 12px;
+        text-transform: uppercase;
+    }
+    /* Copy Button Styling */
+    .copy-button, .scopy-chat-button {
+        position: absolute;
+        top: 2px;
+        right: 12px;
+        background: none;
+        border: none;
+        color: #e5c07b;
+        cursor: pointer;
+        padding: 4px;
+        border-radius: 4px;
+        transition: background-color 0.3s;
+    }
+    .copy-button:hover, .copy-chat-button:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+    }
+    .copy-button:focus, .copy-chat-button:focus {
+        outline: none;
+    }
+    .copy-button svg, .copy-chat-button svg {
+        width: 16px;
+        height: 16px;
+        fill: currentColor;
+    }
+
+
+.copied-chat-popup {
+    position: absolute;
+    background-color: #56b364;
+    color: #fff;
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-size: 12px;
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out;
+    z-index: 1001;
+    pointer-events: none; /* Allows clicks to pass through */
+}
+
+.copied-chat-popup.show {
+    opacity: 1;
+}
+
+.pin-chat-button {
+    position: absolute;
+    background: none;
+    border: none;
+    color: #a5803b;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 4px;
+    transition: background-color 0.3s;
+    bottom: 4px;
+    right: 4px;
+    font-size: 16px;
+    display: none;
+}
+
+.copy-chat-button {
+        position: absolute;
+        background: none;
+        border: none;
+        color: #a5803b;
+        cursor: pointer;
+        padding: 6px;
+        border-radius: 4px;
+        transition: background-color 0.3s;
+    bottom: 4px;
+    left: 4px;
+    /*display: none;*/
+    font-size: 16px;
+}
+
+.copy-chat-button:hover {
+    color: #FFFFDD;
+    background-color: #0056b3;
+}
+
+
+
+
+
+
+
+
+
+
+    /* Copied Popup Styling */
+    .copied-popup {
+        position: absolute;
+        top: 40px;
+        left: 50%;
+        transform: translateX(-50%);
+        background-color: #56b364;
+        color: #fff;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.3s, visibility 0.3s;
+        pointer-events: none;
+        z-index: 10;
+    }
+    /* Show the popup when active */
+    .copied-popup.show {
+        opacity: 1;
+        visibility: visible;
+    }
+    /* Adjust the pre and code tags */
+    .code-block pre {
+        margin: 0;
+    }
+
+
+
+
+
+
+.navbar {
+    display: none; /* Hide by default */
+}
+.main-content {
+    /*height: calc(100vh - 140px);*/
+    display: flex;
+}
+.menu {
+    overflow: hidden;
+    background-color: #343a40;
+    color: white;
+    /*font-size: 0.8vw;*/
+
+    /*padding: 15px;*/
+}
+
+.menu a {
+    display: inline-block;
+    white-space: nowrap;
+    overflow: hidden;
+    /*text-overflow: ellipsis;*/
+    max-width: 165px;
+    max-width: 98%;
+    color: white;
+    text-decoration: none;
+}
+.menu a:hover {
+    text-decoration: underline;
+}
+.menu p {
+    width: 14%;
+    /*min-width: 230px;*/
+    width: 100%;
+}
+.maincolumn {
+    width: 100%;
+}
+.form-control {
+    width: 99%;
+    margin: 5px auto;
+}
+
+/* Container for the textarea and submit button */
+.input-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+
+
+
+
+
+
+
+/* Position the paperclip upload button */
+.canned-button {
+  position: absolute;
+  right: 80px;  /* Adjust so that it's left of the send button */
+  bottom: 2px; /* Align with the send button */
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* Position the paperclip upload button */
+.upload-button {
+  position: absolute;
+  right: 40px;  /* Adjust so that it's left of the send button */
+  bottom: 4px; /* Align with the send button */
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* Position the send button */
+.submit-button {
+  position: absolute;
+  right: 10px;  /* This places it on the right edge */
+  bottom: 7px;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* Icon styling */
+.send-icon,
+.upload-icon {
+  width: 24px;
+  height: 24px;
+  fill: currentColor;
+}
+
+
+
+/* Hide the button outline on focus */
+.submit-button:focus {
+    outline: none;
+}
+
+.image-message {
+    display: block;
+    margin: 20px 40px;
+    max-width: 512px;
+    max-height: 512px;
+}
+
+.waiting-indicator {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 9999;
+    background-color: rgba(255, 255, 255, 0.7); /* Optional: semi-transparent background */
+ 
+}
+.openai-icon {
+    width: 30px;
+    /*height: 30px;*/
+    margin: 0px;
+    margin-right: 9px;
+    margin-top: -5px;
+    float: left;
+}
+.user-icon {
+    width: 40px;
+    height: 40px;
+    margin: 0px;
+    margin-right: 6px;
+    margin-top: -5px;
+    float: left;
+}
+.borderedbox {
+    border: solid gray 1px;
+    padding: 4px 10px 2px 10px;
+    margin-top: 5px; 
+    color: #FFF; 
+}
+.newchat {
+    border: solid gray 1px;
+    padding: 4px 10px 2px 10px;
+    margin-top: 5px; 
+    color: #FFF; 
+    /*background: #343a40; */
+    display: inline-block;
+    background: linear-gradient(to bottom,#343a40, #565b68); /* Gradient from white to light gray */
+    transition: background 0.3s; /* Smooth transition for background change */
+
+}
+.newworkflow {
+    display: none;
+
+}
+.chat-item {
+    position: relative;
+    width: 98%;
+    padding: 7px;
+    margin: 5px 0px 0px 3px;
+    border-radius: 5px;
+}
+
+.chat-icon {
+    position: absolute;
+    right: 0;
+    visibility: hidden;
+    cursor: pointer;
+    margin: 0 5px;
+
+}
+
+.copy-title-button, .edit-icon, .delete-icon {
+    width: 24px;
+    height: 24px;
+    padding: 0px;
+    margin: 0 5px;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+.edit-icon img, .delete-icon img{
+    width: 24px;
+    height: 24px;
+}
+.copy-title-button svg {
+    fill: #fff; /* Icon color */
+}
+
+.edit-confirm-icon {
+    margin-left: 10px;
+}
+
+.chat-titles-container {
+    /*max-height: 460px;*/ /* Adjust this value as needed */
+    overflow-y: auto;
+    border-bottom: solid #555 1px;
+}
+
+/* For WebKit browsers (Chrome, Safari) */
+.chat-titles-container {
+    scrollbar-width: thin; /* For Firefox */
+    scrollbar-color: #555 #333; /* For Firefox */
+    overflow-y: auto; /* Enable vertical scrolling */
+    overflow-x: show; /* Hide horizontal overflow */
+
+}
+
+.chat-titles-container::-webkit-scrollbar {
+    width: 10px;
+}
+
+.chat-titles-container::-webkit-scrollbar-track {
+    background: #343440;
+    background: #333;
+}
+
+.chat-titles-container::-webkit-scrollbar-thumb {
+    background-color: #555;
+    border-radius: 10px;
+    border: 2px solid #333;
+}
+
+.chat-title {
+    display: inline-block;
+    white-space: nowrap;
+    overflow: hidden;
+    /*text-overflow: ellipsis;*/
+    max-width: 300px;
+    position: relative;
+}
+
+
+.chat-link {
+  display: inline-block;
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 165px;
+  color: white;
+  text-decoration: none;
+  width: 96%;
+}
+
+.chat-link:hover {
+  text-decoration: underline;
+}
+
+.chat-ellipsis {
+  display: inline-block;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  cursor: pointer;
+  background: inherit;
+  padding: 0 5px;
+  box-shadow: -10px 0 10px -2px rgba(84, 90, 96, 0.75);
+  height: 30px;
+  vertical-align: middle;
+  z-index: 10;
+  text-decoration: none; /* Ensure no underline */
+}
+
+.chat-item:hover .chat-ellipsis {
+  opacity: 1; /* Show ellipsis on hover */
+}
+
+.chat-ellipsis:hover {
+  text-decoration: none !important; /* Ensure no underline */
+}
+
+.popup {
+    position: fixed;
+    left: 275px;
+    height: 35px;
+    background-color: #343440;
+    color: white;
+    padding: 0px;
+    border-radius: 5px;
+    display: none;
+    z-index: 1000;
+    border: 1px #223 solid;
+    box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.2);
+}
+
+.chat-item.hover  {
+    display: flex; /* Show the toolbar */
+    flex-direction: row;
+    opacity: 1; /* Fully visible */
+    pointer-events: auto; /* Enable pointer events */
+}
+
+.edit-field {
+    width: 70%;
+}
+
+.current-chat {
+    background-color: #545a60;
+    min-width: 230px;
+}
+
+
+.document-heading {
+    margin: 0px;
+    max-width: 120px;
+}
+
+.document-heading-container {
+    margin-bottom:4px;
+}
+
+.document-list {
+  list-style-type: none;   /* Removes bullet points */
+  padding-left: 0;         /* Removes default padding */
+  margin-left: 20px;       /* You can keep the margin for indentation */
+  margin-bottom: 0px;
+  background: rgb(96, 113, 128);
+  padding-top:4px;
+  padding-bottom:2px;
+
+}
+
+/* Each document item is laid out horizontally. */
+.document-item {
+  display: flex;           /* Flex container for title + button */
+  align-items: center;     /* Vertically center them */
+  justify-content: space-between; /* Title on left, button on right */
+  overflow: hidden;        /* Required for text-overflow to work */
+  white-space: nowrap;     /* Prevent wrapping */
+  text-overflow: ellipsis; /* Shows '...' at overflow */
+  max-width: 250px;        /* Adjust as desired */
+  margin-bottom: 5px;      /* Spacing between items */
+  margin-left: 10px;
+  padding-bottom:0px;
+}
+
+.document-title {
+  overflow: hidden;        /* Also needed for ellipsis if it's a block or inline-block */
+  white-space: nowrap;     
+  text-overflow: ellipsis; 
+  display: inline-block;    /* Or block, whichever you prefer */
+  /* Adjust as needed so the trash icon is visible 
+   * A bit of space before the trash icon */
+  /*
+  max-width: 150px;         
+  margin-right: 8px;        
+  */
+}
+
+/* The trash icon button */
+.delete-document-button {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #555;             /* Adjust color as you like */
+}
+
+/* Optional: Hover effect for the trash icon */
+.delete-document-button:hover {
+  color: #d00;
+}
+
+.no-results {
+    text-align: center;
+    font-size: 1.2em;
+    color: #999;
+    margin-top: 20px;
+}
+
+.spinner {
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    animation: spin 1s linear infinite;
+    margin: 10px auto;
+}
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+#searching-indicator {
+    text-align: center;
+    font-size: 1.2em;
+    color: #666;
+}
+
+.logout-link {
+    margin-left: 10px;
+    /*background-color: #007bff;*/
+    /*color: #fff;*/
+    padding: 5px 10px;
+    border-radius: 5px;
+    /*text-decoration: none;*/
+    font-size: 14px;
+    display: inline-block;
+    transition: background-color 0.3s;
+}
+/*
+.logout-link:hover {
+    background-color: #0056b3;
+}
+*/
+#print-title {
+    display: none;
+}
+
+#printButton {
+}
+
+
+
+
+
+
+
+
+
+/* ============= Overlay Wrappers ============= */
+
+/* We want .uploadModal, .aboutModelsWindow, and .disclaimerWindow to share identical overlay rules */
+.uploadModal,
+.aboutModelsWindow,
+.disclaimerWindow {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.5);
+  display: none; /* hidden by default */
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+/* When “show” is applied, display as flex */
+.uploadModal.show,
+.aboutModelsWindow.show,
+.disclaimerWindow.show {
+  display: flex;
+}
+
+/* ============= Modal Content ============= */
+
+/* We want .modalContent, .modelsModalContent, and .disclaimerModalContent to share the same “box” style */
+.modalContent,
+.modelsModalContent,
+.disclaimerModalContent {
+  background: #fff;
+  padding: 20px;
+  border-radius: 1px;
+  width: 90%;
+  max-width: 800px;
+  max-height: 700px;
+  position: relative;
+  overflow-y:scroll;
+}
+
+/* ============= Close Button ============= */
+
+/* Similarly, unify .closeButton, .closeAbout, and .closeDisclaimer */
+.closeButton,
+.closeAbout,
+.closeDisclaimer,
+.closeCanned {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 20px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  /* other styles if desired */
+}
+
+.closeButton:focus,
+.closeAbout:focus,
+.closeDisclaimer:focus,
+.closeCanned:focus {
+  outline: 1px solid #DDD;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* Show the navbar with the hamburger menu on small screens */
+@media (max-width: 767.98px) { 
+    .navbar {
+        display: flex;
+        background-color: #000; /* Or any color you prefer */
+    }
+    .menu {
+        display: none !important;
+
+    }
+    .greeting {
+        display: none;
+    }
+    .header h1 {
+        font-size: 14px;
+    }
+    .text-center {
+        display: none;
+    }
+    .maincol-top {
+        height: calc(100vh - 29.5vh); /* Fill the height minus header */
+    }
+    .menu.active {
+        display: block !important; /* Show menu when active */
+        position: fixed; /* Fixed position */
+        width: 100%; /* Full width */
+        height: 100%; /* Full height */
+        top: 60px; /* Below the header */
+        left: 0;
+        z-index: 1000; /* On top of other content */
+        overflow: scroll;
+    }
+}
+
+/* Show the navbar with the hamburger menu on small screens */
+@media (max-width: 538px) { 
+    .maincol-top {
+        height: calc(100vh - 360px); /* Fill the height minus header */
+    }
+}
+
+@media print {
+/* Hide elements not required in print view */
+form, #printButton, .header, .navbar, .menu, .maincol-bottom  {
+display: none !Important;
+}
+/* Adjust chat content to fill page */
+.main-content {
+width: 98%;
+margin: 0;
+padding: 0;
+}
+.maincol-top {
+display: block !important;
+overflow: visible !important;
+
+}
+    
+#print-title {
+    display: block;
+    font-size: 14pt;
+}
+}
+
