@@ -6,6 +6,7 @@ $pdo = get_connection();
 function execute_query_to_csv($pdo, $query, $filename) {
     $stmt = $pdo->query($query);
     $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    #print_r($result);
 
     $fp = fopen($filename, 'w');
     fputcsv($fp, array_keys(reset($result))); // header
@@ -22,6 +23,7 @@ $file2 = '/tmp/report_chats_by_day.csv';
 $file3 = '/tmp/report_exchanges_by_user.csv';
 $file4 = '/tmp/report_exchanges_by_day.csv';
 $file5 = '/tmp/report_by_model.csv';
+$file6 = '/tmp/report_by_workflow.csv';
 
 // Queries
 $query1 = "
@@ -90,6 +92,21 @@ GROUP BY
 ORDER BY
   chat_date, deployment
 ";
+$query6 = "
+SELECT 
+    c.id,
+    c.user,
+    DATE(e.timestamp) AS chat_date,
+    w.title,
+    COUNT(e.chat_id) AS count_exchanges
+FROM chat c
+LEFT JOIN exchange e ON c.id = e.chat_id
+LEFT JOIN workflow_exchange we ON e.id = we.exchange_id
+LEFT JOIN workflow w ON w.id = we.workflow_id
+WHERE w.id IS NOT NULL
+GROUP BY DATE(e.timestamp), w.id
+ORDER BY chat_date, w.id
+";
 
 // Execute queries and save the results to CSV
 execute_query_to_csv($pdo, $query1, $file1);
@@ -97,6 +114,7 @@ execute_query_to_csv($pdo, $query2, $file2);
 execute_query_to_csv($pdo, $query3, $file3);
 execute_query_to_csv($pdo, $query4, $file4);
 execute_query_to_csv($pdo, $query5, $file5);
+execute_query_to_csv($pdo, $query6, $file6);
 
 // CSV files generated and saved to /tmp or /scratch
 

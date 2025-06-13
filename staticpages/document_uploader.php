@@ -94,7 +94,7 @@ let uploadedFiles = [];  // files selected during this upload session
 // documentsLength should already be defined globally; if not, you can set a default:
 window.documentsLength = window.documentsLength || 0;
 
-const defaultMaxUploads = 2;
+const defaultMaxUploads = <?php echo (int)$config['app']['default_max_uploads']; ?>;
 let maxUploads = defaultMaxUploads; // will be updated based on workflow selection
 
 // Function to open the upload modal with dynamic configuration

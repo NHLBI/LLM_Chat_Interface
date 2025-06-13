@@ -642,81 +642,150 @@ function delete_chat(int $id, string $user, bool $soft = true) {
     }
 }
 
+// db.php
+
 /**
- * Soft-delete chats older than $months (set deleted=1 + soft_delete_date),
- * then blank out all corresponding exchange & document content.
- *
- * @param int $months Number of months since last_viewed to qualify
- * @return array|false  ['chats'=>int,'exchanges'=>int,'documents'=>int] or false on error
+ * Hard‐delete chats older than $days.
+ * Returns array of chat IDs actually hard‐deleted, or false on error.
  */
 function hard_delete_old_chats($days = null) {
     global $pdo, $config;
-    $days = $days ?? (int)$config['deletion']['hard_delete_delay_days'];
-    $threshold = (new DateTime())->modify("-{$days} days")->format('Y-m-d');
-    
+    $days      = $days  ?? (int)$config['deletion']['hard_delete_delay_days'];
+    $threshold = (new DateTime())
+                    ->modify("-{$days} days")
+                    ->format('Y-m-d');
+
+    // 0) Find which chats qualify
+    $sqlSelect = "
+      SELECT id
+        FROM chat
+       WHERE soft_delete_date <= :threshold
+         AND deleted = 1
+         AND hard_delete_date IS NULL
+         AND user IN ('arif','wyrickrv','saracuzar','lizunovv','asendorfna','rhodesse','cheekss2')
+    ";
+    // log the SELECT
+    echo $sqlSelect . "\n";
+    echo "threshold = {$threshold}\n\n";
+
     try {
-        $pdo->beginTransaction();
-        
-        // 1) Anonymize parent chats, set hard_delete_date
-        $updChat = "
-          UPDATE chat
-          SET
-            title           = '',
-            summary         = '',
-            timestamp       = timestamp,
-            hard_delete_date= CURRENT_DATE()
-          WHERE soft_delete_date <= :threshold
-            AND deleted = 1
-            AND hard_delete_date IS NULL
-        ";
-        $stmt = $pdo->prepare($updChat);
+        $stmt = $pdo->prepare($sqlSelect);
         $stmt->execute(['threshold' => $threshold]);
-        
+        $toDelete = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+        if (empty($toDelete)) {
+            return [];  // nothing to delete
+        }
+
+        $pdo->beginTransaction();
+
+        // Build placeholder list
+        $in = implode(',', array_fill(0, count($toDelete), '?'));
+
+        // 1) Anonymize parent chats & set hard_delete_date
+        $sqlUpdChat = "
+          UPDATE chat
+             SET title = '',
+                 summary = '',
+                 hard_delete_date = CURRENT_DATE()
+           WHERE id IN ($in)
+        ";
+        // log the UPDATE chat
+        echo $sqlUpdChat . "\n";
+        echo 'ids = [' . implode(', ', $toDelete) . "]\n\n";
+
+        $upd = $pdo->prepare($sqlUpdChat);
+        $upd->execute($toDelete);
+
         // 2) Anonymize exchanges
-        $pdo->exec("
+        $sqlUpdExchg = "
           UPDATE exchange AS e
           JOIN chat AS c ON e.chat_id = c.id
-          SET 
-              e.prompt = '',
-              e.reply  = ''
-          WHERE c.hard_delete_date = CURRENT_DATE()
-        ");
-        
+             SET e.prompt = '',
+                 e.reply  = ''
+           WHERE c.id IN ($in)
+        ";
+        // log the UPDATE exchange
+        echo $sqlUpdExchg . "\n";
+        echo 'ids = [' . implode(', ', $toDelete) . "]\n\n";
+
+        $pdo->exec($sqlUpdExchg);
+
         // 3) Anonymize documents
-        $pdo->exec("
+        $sqlUpdDoc = "
           UPDATE document AS d
-          JOIN chat AS c ON d.chat_id = c.id
-          SET d.name    = '',
-              d.content = ''
-          WHERE c.hard_delete_date = CURRENT_DATE()
-        ");
+          JOIN chat AS c    ON d.chat_id = c.id
+             SET d.name    = '',
+                 d.content = ''
+           WHERE c.id IN ($in)
+        ";
+        // log the UPDATE document
+        echo $sqlUpdDoc . "\n";
+        echo 'ids = [' . implode(', ', $toDelete) . "]\n\n";
+
+        $pdo->exec($sqlUpdDoc);
 
         $pdo->commit();
-        return true;
+        return $toDelete;
+
     } catch (PDOException $e) {
         $pdo->rollBack();
-        error_log("Hard delete failed: " . $e->getMessage());
+        error_log("[".date('Y-m-d H:i:s')."] Hard delete failed: " . $e->getMessage());
         return false;
     }
 }
 
-// Delete all chats where last_viewed is 6 months old or more and deleted = 1
+
+/**
+ * Soft‐delete chats older than $months.
+ * Returns array of chat IDs actually soft‐deleted, or false on error.
+ */
 function soft_delete_old_chats($months = null) {
     global $pdo, $config;
-    // pull the window from config if not passed explicitly
-    $months = $months ?? (int)$config['deletion']['soft_delete_window_days'];
-    $threshold = (new DateTime())->modify("-{$months} months")->format('Y-m-d H:i:s');
-    
+
+    // If no explicit $days passed, pull from config.app.soft_delay
+    $days = $days
+          ?? (int)$config['app']['soft_delay'];     // e.g. 90
+
+    // Now correctly subtract days, not months
+    $threshold = (new DateTime())
+                    ->modify("-{$days} days")
+                    ->format('Y-m-d H:i:s');
+
+    // (Optional) echo for debug
+    echo "Threshold (now - {$days} days): {$threshold}\n\n";
+
+
+    // 0) Find which chats qualify
     $sql = "
-      UPDATE chat
-      SET deleted = 1,
-          soft_delete_date = CURRENT_DATE()
-      WHERE last_viewed <= :threshold
-        AND user IN ('arif','wyrickrv','saracuzar','lizunovv','asendorfna','rhodesse','cheekss2')
-        AND deleted = 0
+      SELECT id
+        FROM chat
+       WHERE last_viewed <= :threshold
+         AND user IN ('arif','wyrickrv','saracuzar','lizunovv','asendorfna','rhodesse','cheekss2')
+         AND deleted = 0
     ";
+    echo $sql . "\n";
+    echo $threshold . "\n\n";
     $stmt = $pdo->prepare($sql);
     $stmt->execute(['threshold' => $threshold]);
-    return $stmt->rowCount();
+    $toDelete = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    if (empty($toDelete)) {
+        return [];
+    }
+
+    // 1) Mark them deleted
+    $in  = implode(',', array_fill(0, count($toDelete), '?'));
+    $sql = "
+      UPDATE chat
+         SET deleted = 1,
+             soft_delete_date = CURRENT_DATE()
+       WHERE id IN ($in)
+    ";
+    echo $sql . "\n";
+    echo $in . "\n\n";
+    $upd = $pdo->prepare($sql);
+    $upd->execute($toDelete);
+
+    return $toDelete;
 }
 

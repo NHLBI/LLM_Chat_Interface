@@ -3,6 +3,8 @@
 $_SESSION['splash'] = true;
 $error = '';
 
+require_once 'staticpages/disclaimer_text.php';
+
 #file_put_contents("mylog.log", "\$_SESSION in Splash.php BEFORE changes = ".print_r($_SESSION,1)."\n\n\n", FILE_APPEND);
 
 if (!empty($_SESSION['user_data']['userid']) && (empty($_SESSION['authorized']) || $_SESSION['authorized'] !== true)){
@@ -46,15 +48,7 @@ if (!empty($user)) echo '<p id="username">Hello '.$user.'</p>'."\n";
             <div class="col-md-10 columns">
                 <div>
 
-                    <p class="borderedbox" style="text-align: center;">
-                        <?php echo $config['app']['help_text1']; ?>
-                        <span style="display: flex; justify-content: space-between; width: 90%; margin: 20px auto;">
-                            <a title="Open a link to the Teams interface" href="<?php echo $config['app']['teams_link']; ?>" target="_blank">Connect in Teams</a>
-                            <a title="Open a link to the NHLBI Intranet interface" href="<?php echo $config['app']['intranet_link']; ?>" target="_blank">Overview and Instructions</a>
-                            <a title="Open the training video in a new window" href="<?php echo $config['app']['video_link']; ?>" target="_blank">Training Video</a>
-                            <a title="Open a new window to submit feedback" href="<?php echo $config['app']['feedback_link']; ?>" target="_blank">Submit Feedback</a>
-                        </span>
-                    </p>
+    <?php echo $topbox; ?>
 
 <?php
 
@@ -62,7 +56,7 @@ if (!empty($error)) echo '<span style="color:red">'.$error.'</span></p>'."\n";
 
 require_once 'staticpages/notification_center.html';
 
-require_once 'staticpages/disclaimer_text.php';
+    echo $maintext; 
 
 # require_once 'staticpages/model_text.html';
 

@@ -61,10 +61,12 @@ foreach(array_keys($models) as $m) {
         var deployments = <?php echo json_encode($deployments_json); ?>;
         var sessionTimeout = <?php echo $sessionTimeout * 1000; ?>; // Convert seconds to milliseconds
         var deployment = "<?php echo $deployment; ?>";
+        var deployment_label = "<?php echo $models[$deployment]['label']; ?>";
         var host = "<?php echo $config[$deployment]['host'] ?? '' ; ?>";
         var handles_images = "<?php echo $config[$deployment]['handles_images']  ?? ''; ?>";
         var handles_documents = "<?php echo $config[$deployment]['handles_documents']  ?? ''; ?>";
         var temperature = "<?php echo $_SESSION['temperature']  ?? ''; ?>";
+        var context_limit = "<?php echo $context_limit; ?>";
         var chatContainer;
         var currentChat;
 
@@ -205,7 +207,7 @@ foreach(array_keys($models) as $m) {
                 <!-- Adding the feedback link -->
                 <!-- <p class="aboutChat"><a title="About text" href="javascript:void(0);" onclick="showAboutUs()">About NHLBI Chat</a></p> -->
                 <p class=""><a title="About text" href="javascript:void(0);" onclick="showAboutUs()">About NHLBI Chat</a></p>
-                <!--<p class=""><a title="About models" href="javascript:void(0);" onclick="showAboutModels()">Model Descriptions</a></p>-->
+                <p class=""><a title="Contact OSI" href="mailto:nhlbi_dir_sio@nhlbi.nih.gov">Contact OSI</a></p>
                 <p><a title="Open the disclosure information in a new window" href="<?php echo $config['app']['disclosure_link']; ?>" target="_Blank">Vulnerability Disclosure</a></p>
             </div><!-- End Menu bottom content -->
         </nav> <!-- End the menu column -->

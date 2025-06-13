@@ -1,3 +1,22 @@
+//------------------------------------------
+// Helper:   3247323 → 3.2 M, 64353 → 64 K
+//------------------------------------------
+function prettyTokens(n) {
+    // If Intl.NumberFormat with compact notation is supported
+    if (Intl && Intl.NumberFormat) {
+        return new Intl.NumberFormat('en', {
+            notation: 'compact',
+            maximumFractionDigits: 1   // 3 244 000 → 3.2 M
+        }).format(n);
+    }
+
+    // Fallback manual formatter
+    if      (n >= 1e9) return (n / 1e9).toFixed(1).replace(/\.0$/, '') + 'B';
+    else if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+    else if (n >= 1e3) return (n / 1e3).toFixed(0)                    + 'K';
+    return n.toString();
+}
+
 function fetchAndUpdateChatTitles(searchString, clearSearch) {
 
     // Check if searchingIndicator exists
@@ -229,50 +248,80 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
 
                 // Now docEntries is an array of [ [docKey, docTitle], ... ] for valid docs only
 
-                // ... (lines 235-242 remain unchanged)
-
                 if (deployment != 'azure-dall-e-3' && docEntries.length > 0) {
 
-                    // Create the paperclip icon as a jQuery object with the onclick attribute
-                    const paperclipIcon = $('<label>', {
-                        class: 'paperclip-icon',
-                        for: 'uploadTrigger',
-                        css: {
-                            cursor: 'pointer',
-                            marginRight: '10px'
-                        },
-                        // Add the onclick attribute to trigger the upload modal
-                        onclick: 'openUploadModal()'
-                    }).append(
-                        $('<img>', {
-                            src: 'images/paperclip.white.svg',
-                            alt: 'Upload Document',
-                            title: 'Document types accepted: PDF, Word, PPT, text, markdown, images, etc.',
-                            css: {
-                                height: '20px',
-                                transform: 'rotate(45deg)',
-                                marginLeft: '10px'
-                            }
-                        })
-                    );
 
-                    // Create the "Documents" heading as before
-                    const docHeading = $('<p>', {
-                        class: 'document-heading',
-                        text: 'Documents'
-                    }).attr('title', chat.token_length + ' tokens total');
 
-                    // Create a container to hold both the paperclip icon and the heading
-                    const docHeadingContainer = $('<div>', {
-                        class: 'document-heading-container',
-                        css: {
-                            display: 'flex',
-                            alignItems: 'center'
-                        }
-                    });
+
+
+// -----------------------------
+// 1.  Total document‑token count
+// -----------------------------
+const totalDocTokens = Object.values(chat.document || {})
+  .reduce((sum, d) => sum + (Number(d.token_length) || 0), 0);
+
+// -------------------------------------------------------------
+// 2.  Helpers (human‑readable numbers)
+// -------------------------------------------------------------
+const prettyTotal = prettyTokens(totalDocTokens);   // e.g. 4.1 M
+const maxTokens   = prettyTokens(context_limit);    // e.g. 1 M
+
+// -------------------------------------------------------------
+// 5.  Assemble icon + heading on one row (replaces steps 3-5)
+// -------------------------------------------------------------
+const headingRow = $('<div>', {
+  class: 'heading-row',
+  css  : { display: 'flex', alignItems: 'center', flexWrap: 'nowrap' }
+}).append(
+  $('<label>', {
+    class: 'paperclip-icon',
+    for  : 'uploadTrigger',
+    css  : { cursor: 'pointer', marginRight: '10px', marginLeft: '10px' },
+    onclick: 'openUploadModal()'
+  }).append(
+    $('<img>', {
+      src  : 'images/paperclip.white.svg',
+      alt  : 'Upload Document',
+      title: 'Document types accepted: PDF, Word, PPT, text, markdown, images, etc.',
+      css  : { height: '20px', transform: 'rotate(45deg)' }
+    })
+  ),
+  $('<span>', {
+    class: 'document-heading',
+    text : `Documents (${prettyTotal} tokens)`,
+    css  : { whiteSpace: 'nowrap' }
+  }).attr('title', `${totalDocTokens.toLocaleString()} tokens total`)
+);
+
+// -------------------------------------------------------------
+// 6.  Container (column; headingRow first, warning below)
+// -------------------------------------------------------------
+const docHeadingContainer = $('<div>', {
+  class: 'document-heading-container',
+  css  : { display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }
+}).append(headingRow);
+
+// -------------------------------------------------------------
+// 7.  Append red warning if over the limit
+// -------------------------------------------------------------
+if (totalDocTokens > context_limit) {
+  const warning = $('<span>', {
+    class: 'token-warning',
+    //text : `Exceeds this model's max ${maxTokens} tokens.`,
+    text : `Exceeds ${deployment_label}'s max of ${maxTokens} tokens. Change models or remove documents.`,
+    title: 'Mouse over document titles to reveal their individual token lengths.',
+    css  : { color: 'yellow', marginTop: '4px', marginLeft: '10px' }
+  });
+  docHeadingContainer.append(warning);
+}
+
+
+
+
+
 
                     // Append the icon and heading to the container
-                    docHeadingContainer.append(paperclipIcon, docHeading);
+                    //docHeadingContainer.append(paperclipIcon, docHeading);
 
                     // Create the document list container (docList)
                     docList = $('<ol>', {

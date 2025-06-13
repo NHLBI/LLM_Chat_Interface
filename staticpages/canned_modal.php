@@ -21,6 +21,16 @@ if (!empty($workflows['config_label'])) {
 
     <h4 id="cannedModalTitle">Select a Workflow</h4>
 
+<p>
+<b>Disclaimer</b>: These workflows use generative AI to organize and present information based on the prompt designed by NHLBI program officials. While each workflow has been reviewed and tested for accuracy, the results may contain errors or omissions.
+</p>
+<p>
+You are responsible for reviewing all AI-generated outputs and making decisions based on your own professional judgment. These tools are designed to support your workflow, not to replace human oversight.
+</p>
+<p>
+For questions or suggestions on new workflows, please contact <a href="mailto:NHLBI_AIWorkflows@nhlbi.nih.gov">NHLBI_AIWorkflows@nhlbi.nih.gov</a>.
+</p>
+
     <div class="canned-options">
       <?php foreach($workflows as $workflow): ?>
         <button type="button" 
@@ -63,7 +73,7 @@ if (!empty($workflows['config_label'])) {
     display: block;
     width: 100%;
     padding: 1rem;
-    border: 1px solid #e2e8f0;
+    border: 1px solid #a2a8b0;
     border-radius: 0.5rem;
     background: transparent;
     text-align: left;
@@ -83,6 +93,10 @@ if (!empty($workflows['config_label'])) {
     margin: 0;
     font-size: 0.9rem;
     color: #475569;
+}
+#cannedModalTitle {
+    text-align: center;
+    padding-bottom: 10px;
 }
 </style>
 

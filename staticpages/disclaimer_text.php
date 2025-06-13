@@ -1,3 +1,18 @@
+<?php
+
+$topbox = '
+<p style="margin-top: 20px;">'.$config['app']['help_text1'].'</p>
+<p class="borderedbox" style="text-align: center;">
+    <span style="display: flex; justify-content: space-between; width: 90%; margin: 20px auto;">
+        <a title="Open a link to the Teams interface" href="'.$config['app']['teams_link'].'" target="_blank">Connect in Teams</a>
+        <a title="Open a link to the NHLBI Intranet interface" href="'.$config['app']['intranet_link'].'" target="_blank">Overview and Instructions</a>
+        <a title="Open the training video in a new window" href="'.$config['app']['video_link'].'" target="_blank">Training Video</a>
+    </span>
+</p>
+';
+
+
+$maintext = '
 <p>NHLBI Chat stores all data locally in the NIH data center and uses a secure NIH STRIDES cloud account to host AI models. This enables staff to use NHLBI Chat for sensitive data workloads including:</p>
 <ul>
 <li>De-identified and anonymized clinical data</li>
@@ -18,4 +33,4 @@
 <p>By using this information system, you understand and consent to the following.</p>
 <p>You have no reasonable expectation of privacy regarding any communications or data transiting or stored on this information system. At any time, and for any lawful Government purpose, the government may monitor, intercept, record, and search and seize any communication or data transiting or stored on this information system.</p>
 <p>Any communication or data transiting or stored on this information system may be disclosed or used for any lawful Government purpose.</p>
-
+';

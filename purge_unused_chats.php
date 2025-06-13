@@ -1,37 +1,41 @@
 <?php
-
-# Using crontab: 
-
-$_SERVER['REQUEST_URI'] = 'https://ai.nhlbi.nih.gov/chatdev/';
-
 require 'get_config.php';
 require 'db.php';
 $pdo = get_connection();
 
-$soft_delay = $config['app']['soft_delay'];
-$purge_delay = $config['app']['purge_delay'];
+date_default_timezone_set('America/New_York');  // or your TZ
 
-$deleted_rows = hard_delete_old_chats($purge_delay); // You can specify a different number of months if needed
 
-if ($deleted_rows !== false) {
-    if ($deleted_rows > 0) {
-        error_log("Successfully deleted $deleted_rows old chats.", 0);
-    } else {
-        error_log("No old chats to delete.", 0);
-    }
+$soft_delay_days  = (int)$config['app']['soft_delay'];   // 90
+$hard_delay_days  = (int)$config['app']['purge_delay'];  // 90
+
+echo "CONFIG soft_delay_days = {$soft_delay_days}\n";
+echo "CONFIG hard_delay_days = {$hard_delay_days}\n";
+
+
+// 1) Hard delete
+$hardDeleted = hard_delete_old_chats($config['app']['purge_delay']);
+if ($hardDeleted === false) {
+    error_log("[".date('Y-m-d H:i:s')."] Hard delete failed.");
+} elseif (empty($hardDeleted)) {
+    error_log("[".date('Y-m-d H:i:s')."] No chats qualified for hard delete.");
 } else {
-    error_log("Failed to delete old chats.", 0);
+    $ids = implode(', ', $hardDeleted);
+    error_log(
+      "[".date('Y-m-d H:i:s')."] Hard‐deleted chats (".count($hardDeleted)."): IDs [{$ids}]."
+    );
 }
 
-$soft_deleted_rows = soft_delete_old_chats($soft_delay); // You can specify a different number of months if needed
-
-if ($soft_deleted_rows !== false) {
-    if ($soft_deleted_rows > 0) {
-        error_log("Successfully soft deleted $soft_deleted_rows old chats.", 0);
-    } else {
-        error_log("No old chats to soft delete.", 0);
-    }
+// 2) Soft delete
+$softDeleted = soft_delete_old_chats($config['app']['soft_delay']);
+if ($softDeleted === false) {
+    error_log("[".date('Y-m-d H:i:s')."] Soft delete failed.");
+} elseif (empty($softDeleted)) {
+    error_log("[".date('Y-m-d H:i:s')."] No chats qualified for soft delete.");
 } else {
-    error_log("Failed to soft delete old chats.", 0);
+    $ids = implode(', ', $softDeleted);
+    error_log(
+      "[".date('Y-m-d H:i:s')."] Soft‐deleted chats (".count($softDeleted)."): IDs [{$ids}]."
+    );
 }
 

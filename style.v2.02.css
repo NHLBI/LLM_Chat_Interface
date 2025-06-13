@@ -568,7 +568,7 @@ code {
 
 }
 .newworkflow {
-    display: none;
+    /*display: none;*/
 
 }
 .chat-item {
@@ -722,7 +722,7 @@ code {
 
 .document-heading {
     margin: 0px;
-    max-width: 120px;
+    max-width: 210px;
 }
 
 .document-heading-container {
