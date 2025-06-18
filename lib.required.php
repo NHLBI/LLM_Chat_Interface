@@ -133,13 +133,13 @@ if (!isset($_SESSION['temperature']) || (float)$_SESSION['temperature'] < 0 || (
 // echo "<pre>". print_r($_SERVER,1) ."</pre>";
 
 // Helper function to wait for critical session data
-function waitForUserSession($maxAttempts = 5, $delayMicroseconds = 500000) {
+function waitForUserSession($maxAttempts = 5, $delayMicroseconds = 5000) {
     $attempt = 0;
     // Check if the user_data userid is set; if not, wait and retry
     while ($attempt < $maxAttempts && empty($_SESSION['user_data']['userid'])) {
         usleep($delayMicroseconds);
         $attempt++;
-        $delayMicroseconds += 500000;
+        $delayMicroseconds += 5000;
     }
     return !empty($_SESSION['user_data']['userid']);
 }

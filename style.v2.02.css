@@ -224,7 +224,7 @@ code {
 }
 
 #temperature_select {
-    display: inline-block !Important; 
+    display: inline-block; 
     margin-left: 20px; 
     margin-right: 10px; 
     margin-top: 8px; 
@@ -232,7 +232,7 @@ code {
 }
 
 #modelSelectButton {
-    display: inline-block !Important;
+    display: inline-block;
     margin-top:8px;
 }
 

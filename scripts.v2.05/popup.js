@@ -201,8 +201,8 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
 
             // In your AJAX success callback, when iterating over chats:
             Object.values(response).forEach(function(chat, index) {
-    console.log("this is the full chat item: ");
-    console.log(chat);
+    //console.log("this is the full chat item: ");
+    //console.log(chat);
                 const isCurrentChat = chat.id === window.location.pathname.split('/')[2];
                 const chatItemClass = isCurrentChat ? 'chat-item current-chat initial-current-chat' : 'chat-item';
 
@@ -363,7 +363,7 @@ if (totalDocTokens > context_limit) {
                         });
 
                         //const exchange_type = $('#exchange_type').val()
-                        console.log(chat.exchange_type);
+                        //console.log(chat.exchange_type);
                         var showTrash = '';
                         if (chat.exchange_type == 'workflow') {
                             showTrash = 'display:none'; // show or hide the trashcan

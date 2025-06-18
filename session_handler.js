@@ -5,15 +5,13 @@
 var sessionTimer;       // Main session timer
 var serverPingTimer;    // Secondary timer for server pings
 var lastActivityTime = Date.now(); // Track the last time of user activity
-var pingInterval = 5 * 60 * 1000;  // 5 minutes (in milliseconds)
+var pingInterval = 1 * 60 * 1000;  // 5 minutes (in milliseconds)
 var sessionExpiresAt;   // Timestamp when the session will expire
 var nextServerPingAt;   // Timestamp when the next server ping will occur
 
 // Function to send AJAX request to keep the session alive on the server
 function pingServerToKeepSessionAlive() {
-
-    return
-    $.ajax({
+    return $.ajax({
         url: 'session_status.php',
         type: 'GET',
         dataType: 'json',

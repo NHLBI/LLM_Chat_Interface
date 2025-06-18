@@ -13,7 +13,7 @@
  */
 
 # 1.  Default to production
-$environment = 'prod';
+$environment = '';
 
 # 2.  If we're in a web context, key off REQUEST_URI
 if (!empty($_SERVER['REQUEST_URI'])) {

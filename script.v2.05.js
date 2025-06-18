@@ -402,8 +402,11 @@ if (typeof fetchAndUpdateChatTitles === 'function') {
 
             let icon = 'user.png';
 
+            console.log("exchange type = " + message.exchange_type);
+
             if (message.exchange_type == 'workflow') {
                 icon = 'gear_icon.png';
+                console.log("CONFIRMED this is a workflow");
 
                 // Hide specific elements
                 document.getElementById('messageForm').style.display = 'none';
@@ -418,13 +421,14 @@ if (typeof fetchAndUpdateChatTitles === 'function') {
                 }
             } else if (message.exchange_type == 'chat') {
                 icon = 'user.png';
+                console.log("CONFIRMED this is a chat");
 
                 // Show specific elements (if needed for 'chat' type)
                 document.getElementById('messageForm').style.display = 'block';
-                document.getElementById('modelSelectButton').style.display = 'block';
+                document.getElementById('modelSelectButton').style.display = 'inline-block';
                 const tempForm = document.getElementById('temperature_select');
                 if (tempForm) {
-                    tempForm.style.display = 'block';
+                    tempForm.style.display = 'inline-block';
                 }
 
                 // Revert the .maincol-top element changes (if needed for 'chat' type)
