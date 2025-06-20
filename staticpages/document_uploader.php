@@ -109,6 +109,9 @@ function openUploadModal() {
     if (window.selectedWorkflow.config["single-text-fileupload"]) {
       maxUploads = 1;
       console.log("maxUploads set to 1 based on 'single-text-fileupload'");
+    } else if (window.selectedWorkflow.config["three-fileupload"]) {
+      maxUploads = 3;
+      console.log("maxUploads set to 3 based on 'three-fileupload'");
     } else {
       maxUploads = defaultMaxUploads;
       console.log("No specific file upload limit found; using default maxUploads =", defaultMaxUploads);

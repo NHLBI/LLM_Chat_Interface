@@ -154,7 +154,8 @@ function waitForUserSession($maxAttempts = 5, $delayMicroseconds = 5000) {
  * @return array The processed API response.
  */
 function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config) {
-    $active_config = load_configuration($deployment);
+    global $config;
+   $active_config = load_configuration($deployment);
     if (!$active_config) {
         return [
             'deployment' => $deployment,
@@ -179,7 +180,11 @@ function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config
 
     #print("this is custom stuff: ".print_r($custom_config,1)); die();
     if ($custom_config['exchange_type'] == 'chat') $msg = get_chat_thread($message, $chat_id, $user, $active_config);
-    elseif ($custom_config['exchange_type'] == 'workflow') $msg = get_workflow_thread($message, $chat_id, $user, $active_config, $custom_config);
+    elseif ($custom_config['exchange_type'] == 'workflow') {
+        
+        $active_config = load_configuration($config['azure']['workflow_default']);
+        $msg = get_workflow_thread($message, $chat_id, $user, $active_config, $custom_config);
+    }
     else return process_api_response('There was an error processing your post. Please contact support.', $active_config, $chat_id, $message, $msg);
    
 
@@ -215,6 +220,7 @@ function load_configuration($deployment, $hardcoded = false) {
     $_SESSION['api_key'] = $config[$deployment]['api_key'];
 
     $output = [
+        'deployment' => $deployment,
         'api_key' => trim($config[$deployment]['api_key'], '"'),
         'host' => $config[$deployment]['host'],
         'base_url' => $config[$deployment]['url'],
@@ -467,6 +473,7 @@ function call_azure_api($active_config, $chat_id, $msg) {
         ];
 
     } else {
+        #print_r($active_config); die();
         // Chat Completion Endpoint
         $url = $active_config['base_url'] . "/openai/deployments/" . $active_config['deployment_name'] . "/chat/completions?api-version=" . $active_config['api_version'];
         $top_p = (preg_match('/o1|o3|o4/',$_SESSION['deployment'])) ? 1 : 0.95;
@@ -555,7 +562,7 @@ function process_api_response($response, $active_config, $chat_id, $message, $ms
                 } else {
                     scale_image_from_path($fullsize_path, $small_path, 0.5);
                     if (empty($custom_config['workflowId'])) $custom_config['workflowId'] = '';
-                    $eid = create_exchange($chat_id, $message, '', $custom_config['workflowId'], $image_gen_name);
+                    $eid = create_exchange($active_config['deployment'], $chat_id, $message, '', $custom_config['workflowId'], $image_gen_name);
 
                     return [
                         'eid' => $eid,
@@ -570,11 +577,12 @@ function process_api_response($response, $active_config, $chat_id, $message, $ms
             }
         }
     }
+    #print_r($active_config); die();
 
     // Handle Chat Completion response
     $response_text = $response_data['choices'][0]['message']['content'] ?? 'No response text found.';
     if (empty($custom_config['workflowId'])) $custom_config['workflowId'] = '';
-    $eid = create_exchange($chat_id, $message, $response_text, $custom_config['workflowId']);
+    $eid = create_exchange($active_config['deployment'], $chat_id, $message, $response_text, $custom_config['workflowId']);
 
     return [
         'eid' => $eid,

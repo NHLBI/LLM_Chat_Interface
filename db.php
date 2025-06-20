@@ -92,6 +92,7 @@ function call_token_counter($text, $encoding_name) {
  * Optionally pass document metadata and image generation filename.
  */
 function create_exchange(
+    $deployment,
     $chat_id,
     $prompt,
     $reply,
@@ -100,7 +101,7 @@ function create_exchange(
 ) {
     global $pdo, $config;
 
-    $deployment   = $_SESSION['deployment'] ?? null;
+    #$deployment   = $_SESSION['deployment'] ?? null;
     $temperature  = $_SESSION['temperature'] ?? null;
     $api_endpoint = $_SESSION['api_endpoint'] ?? null;
     $uri          = $_SERVER['HTTP_REFERER'] ?? '';
