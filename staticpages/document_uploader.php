@@ -98,7 +98,7 @@ const defaultMaxUploads = <?php echo (int)$config['app']['default_max_uploads'];
 let maxUploads = defaultMaxUploads; // will be updated based on workflow selection
 
 // Function to open the upload modal with dynamic configuration
-function openUploadModal() {
+function old_defunct_openUploadModal() {
   console.log("openUploadModal() triggered");
 
   // Check for a selected workflow and inspect its config values.

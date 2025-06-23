@@ -137,14 +137,28 @@ document.addEventListener('DOMContentLoaded', function() {
 // When opening the upload modal, update maxUploads based on selected workflow
 // When opening the upload modal, update maxUploads and UI based on selected workflow
 function openUploadModal() {
+  console.log("ui.js - openUploadModal() triggered");
   // First, decide on maxUploads based on workflow configuration
   if (window.selectedWorkflow && window.selectedWorkflow.config) {
     // If the workflow config object contains a key "single-text-fileupload",
     // then we assume that means only one file is allowed.
+    /*
     if (window.selectedWorkflow.config["single-text-fileupload"]) {
       maxUploads = 1;
     } else {
       maxUploads = defaultMaxUploads;
+    }
+    */
+    // Set the maximum number of uploads.
+    if (window.selectedWorkflow.config["single-text-fileupload"]) {
+      maxUploads = 1;
+      console.log("maxUploads set to 1 based on 'single-text-fileupload'");
+    } else if (window.selectedWorkflow.config["three-fileupload"]) {
+      maxUploads = 3;
+      console.log("maxUploads set to 3 based on 'three-fileupload'");
+    } else {
+      maxUploads = defaultMaxUploads;
+      console.log("No specific file upload limit found; using default maxUploads =", defaultMaxUploads);
     }
     
     // Update the modal title if a custom title is provided.
