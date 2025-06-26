@@ -178,7 +178,7 @@ function create_exchange(
     }
 
     // Step 4: Update chat timestamp
-    $stmt = $pdo->prepare("UPDATE chat SET timestamp = NOW() WHERE id = :id");
+    $stmt = $pdo->prepare("UPDATE `chat` SET timestamp = NOW() WHERE id = :id");
     $stmt->execute(['id' => $chat_id]);
 
     return $insert_id;
@@ -300,7 +300,7 @@ function get_all_chats($user, $search = '') {
     // Base SQL query
     $sql = "
     SELECT
-        c.id, c.user, c.title, c.deployment, c.temperature,
+        c.id, c.user, c.title, c.deployment, c.azure_thread_id, c.temperature,
         c.new_title, d.id AS `document_id`, d.name AS `document_name`, d.document_token_length,
         d.type AS `document_type`, d.deleted AS `document_deleted`, c.deleted, 
         w.workflow_id, c.timestamp AS latest_interaction
@@ -347,6 +347,7 @@ function get_all_chats($user, $search = '') {
         $output[$r['id']]['user'] = $r['user'];
         $output[$r['id']]['title'] = $r['title'];
         $output[$r['id']]['deployment'] = $r['deployment'];
+        $output[$r['id']]['azure_thread_id'] = $r['azure_thread_id'];
         $output[$r['id']]['exchange_type'] = ($r['workflow_id']) ? 'workflow' : 'chat';
         if (empty($output[$r['id']]['document'])) $output[$r['id']]['document'] = array();
         if ($r['document_deleted'] == 0 && !empty($r['document_name'])) {
@@ -457,6 +458,27 @@ function get_workflow_data($workflow_id) {
     return $result[0];
 }
 
+
+/* ------------------------------------------------------------------ */
+/* Thread-ID persistence in the existing `chats` table                */
+/* ------------------------------------------------------------------ */
+function get_thread_for_chat($chat_id) {
+    global $pdo;
+    $stmt = $pdo->prepare('SELECT azure_thread_id FROM chat WHERE id = ?');
+    $stmt->execute([$chat_id]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $row['azure_thread_id'] ?? null;
+}
+
+function save_thread_for_chat($chat_id, $thread_id) {
+    global $pdo;
+    $stmt = $pdo->prepare(
+        'UPDATE chat SET azure_thread_id = ? WHERE id = ?'
+    );
+    $stmt->execute([$thread_id, $chat_id]);
+}
+
+
 // Update the deployment in the database
 function update_deployment($user, $chat_id, $deployment) {
     global $pdo;
@@ -471,7 +493,7 @@ function update_chat_title($user, $chat_id, $updated_title) {
     global $pdo;
 
     // Prepare a SQL statement to update the title
-    $stmt = $pdo->prepare("UPDATE chat SET title = :title, new_title = :new_title WHERE id = :id");
+    $stmt = $pdo->prepare("UPDATE `chat` SET title = :title, new_title = :new_title WHERE id = :id");
     $stmt->execute(['title' => substr($updated_title,0,254), 'new_title' => '0', 'id' => $chat_id]);
 }
 
@@ -604,7 +626,7 @@ function delete_chat(int $id, string $user, bool $soft = true) {
             $pdo->beginTransaction();
 
             $stmt1 = $pdo->prepare(
-                "UPDATE chat 
+                "UPDATE `chat` 
                    SET `deleted` = 1 
                  WHERE `id` = :id 
                    AND `user` = :user 
@@ -645,23 +667,26 @@ function delete_chat(int $id, string $user, bool $soft = true) {
 
 /**
  * Hard-delete chats older than the configured delay.
+ *
  * @param  string|null $threshold  Y-m-d string; null = auto-calculated
- * @return array|string[]|false    ["user:id", …]  • [] if none  • false on error
+ * @return array|string[]|false    ["user:id", …] • [] if none • false on error
  */
-function hard_delete_old_chats($threshold = null) {
+function hard_delete_old_chats($logFile, $threshold = null)
+{
     global $pdo, $config;
 
-    /* 1. Work out threshold date ------------------------------------------- */
+    /* 1. Work out threshold date ----------------------------------------- */
     if ($threshold === null) {
         $days = isset($config['purge_delay'])
-                  ? (int)$config['purge_delay']
-                  : (int)$config['deletion']['hard_delete_delay_days'];
+              ? (int)$config['purge_delay']
+              : (int)$config['deletion']['hard_delete_delay_days'];
+
         $threshold = (new DateTime())
-                       ->modify("-{$days} days")
-                       ->format('Y-m-d');
+                        ->modify("-{$days} days")
+                        ->format('Y-m-d');
     }
 
-    /* 2. Select candidate rows -------------------------------------------- */
+    /* 2. Select candidate rows ------------------------------------------ */
     $sql = "
       SELECT id, user
         FROM chat
@@ -678,15 +703,15 @@ function hard_delete_old_chats($threshold = null) {
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         if (empty($rows)) {
-            return [];                      // nothing qualifies
+            return [];                           // nothing qualifies
         }
 
-        /* 3. Prepare data -------------------------------------------------- */
-        $ids   = array_column($rows, 'id');                 // for binds
+        /* 3. Prepare data ------------------------------------------------ */
+        $ids   = array_column($rows, 'id');
         $pairs = array_map(fn($r) => "{$r['user']}:{$r['id']}", $rows);
         $in    = implode(',', array_fill(0, count($ids), '?'));
 
-        /* 4. Three anonymisation updates in one TX ------------------------ */
+        /* 4. Three anonymisation updates in one TX ---------------------- */
         $pdo->beginTransaction();
 
         // (a) chat table
@@ -719,28 +744,34 @@ function hard_delete_old_chats($threshold = null) {
 
     } catch (PDOException $e) {
         $pdo->rollBack();
-        error_log("[".date('Y-m-d H:i:s')."] Hard delete failed: ".$e->getMessage());
+        error_log(
+            '[' . date('Y-m-d H:i:s') . '] Hard delete failed: ' . $e->getMessage() . "\n",
+            3,
+            $logFile
+        );
         return false;
     }
 }
 
 /**
  * Soft-delete chats older than the configured delay.
+ *
  * @param  string|null $threshold  Y-m-d H:i:s string; null = auto-calculated
- * @return array|string[]|false    ["user:id", …]  • [] if none  • false on error
+ * @return array|string[]|false    ["user:id", …] • [] if none • false on error
  */
-function soft_delete_old_chats($threshold = null) {
+function soft_delete_old_chats($logFile, $threshold = null)
+{
     global $pdo, $config;
 
-    /* 1. Threshold --------------------------------------------------------- */
+    /* 1. Threshold ------------------------------------------------------- */
     if ($threshold === null) {
         $days = (int)$config['app']['soft_delay'];
         $threshold = (new DateTime())
-                       ->modify("-{$days} days")
-                       ->format('Y-m-d H:i:s');
+                        ->modify("-{$days} days")
+                        ->format('Y-m-d H:i:s');
     }
 
-    /* 2. Select candidate rows -------------------------------------------- */
+    /* 2. Select candidate rows ------------------------------------------ */
     $sql = "
       SELECT id, user
         FROM chat
@@ -756,19 +787,19 @@ function soft_delete_old_chats($threshold = null) {
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         if (empty($rows)) {
-            return [];                      // nothing qualifies
+            return [];                           // nothing qualifies
         }
 
-        /* 3. Prepare data -------------------------------------------------- */
-        $ids   = array_column($rows, 'id');                 // for binds
+        /* 3. Prepare data ------------------------------------------------ */
+        $ids   = array_column($rows, 'id');
         $pairs = array_map(fn($r) => "{$r['user']}:{$r['id']}", $rows);
         $in    = implode(',', array_fill(0, count($ids), '?'));
 
-        /* 4. Mark as softly deleted --------------------------------------- */
-        $params = array_merge([$threshold], $ids);          // date first, then IDs
+        /* 4. Mark as softly deleted ------------------------------------- */
+        $params = array_merge([$threshold], $ids);     // date first, then IDs
         $pdo->prepare("
           UPDATE chat
-             SET deleted         = 1,
+             SET deleted          = 1,
                  soft_delete_date = ?
            WHERE id IN ($in)
         ")->execute($params);
@@ -776,7 +807,11 @@ function soft_delete_old_chats($threshold = null) {
         return $pairs;
 
     } catch (PDOException $e) {
-        error_log("[".date('Y-m-d H:i:s')."] Soft delete failed: ".$e->getMessage());
+        error_log(
+            '[' . date('Y-m-d H:i:s') . '] Soft delete failed: ' . $e->getMessage() . "\n",
+            3,
+            $logFile
+        );
         return false;
     }
 }

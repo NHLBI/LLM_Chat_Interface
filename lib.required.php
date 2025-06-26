@@ -9,6 +9,8 @@ require_once 'db.php';
 
 $pdo = get_connection();
 
+define('DOC_GEN_DIR',dirname(__DIR__) . '/doc_gen');
+
 // Before proceeding, check if the session has the required user data.
 // If not, let’s give it a chance to appear.
 if (!waitForUserSession()) {
@@ -178,6 +180,8 @@ function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config
         $message = $rag_result['augmented_prompt'];
     }
 
+    $isAssistant = ($active_config['host'] === 'assistant');
+
     #print("this is custom stuff: ".print_r($custom_config,1)); die();
     if ($custom_config['exchange_type'] == 'chat') $msg = get_chat_thread($message, $chat_id, $user, $active_config);
     elseif ($custom_config['exchange_type'] == 'workflow') {
@@ -191,7 +195,8 @@ function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config
     if ($active_config['host'] == "Mocha") {
         $response = call_mocha_api($active_config['base_url'], $msg);
     } else {
-        $response = call_azure_api($active_config, $chat_id, $msg);
+        if ($isAssistant) $response = call_assistant_api($active_config, $chat_id, $message);
+        else $response = call_azure_api($active_config, $chat_id, $msg);
     }
     #echo "<pre>Step get_gpt_response()\n".print_r($response,1)."</pre>"; die();
 
@@ -221,6 +226,7 @@ function load_configuration($deployment, $hardcoded = false) {
 
     $output = [
         'deployment' => $deployment,
+        'assistant_id'   => 'asst_iBl1B7WpHluW0B3D39e0k9Ca',
         'api_key' => trim($config[$deployment]['api_key'], '"'),
         'host' => $config[$deployment]['host'],
         'base_url' => $config[$deployment]['url'],
@@ -394,53 +400,93 @@ function call_mocha_api($base_url, $msg) {
     return $response;
 }
 
-/**
- * Calls the Azure OpenAI API.
- *
- * @param array $active_config The active deployment configuration.
- * @param mixed $msg           The message payload.
- * @param string $chat_id
- * @param string $message      The original user message
- * @return string              The API response.
- */
-function new_maybe_call_azure_api($active_config, $chat_id, $msg, $message) {
-    // … existing code to choose $url …
-
-    // --- NEW: adjust max_completion_tokens based on context_limit and doc tokens ---
-    // 1) pull your documents (with token lengths) back out of the DB
-    $docs = get_chat_documents($_SESSION['user_data']['userid'], $chat_id);
-
-    // 2) total up all document_token_length
-    $docTokens = array_sum(array_column($docs, 'document_token_length'));
-
-    // 3) count tokens in your new user message as well
-    $promptTokens = get_token_count($message); // your existing Python helper
-
-    // 4) apply your context limit (from config)
-    $contextLimit = $active_config['context_limit'] ?? 8192;
-
-    // 5) compute how many remain for the completion
-    $remaining = $contextLimit - ($docTokens + $promptTokens);
-    if ($remaining < 0) {
-        $remaining = 0;
+/* =========================================================== */
+/*  call_assistant_api – production version (no debug dies)    */
+/* =========================================================== */
+function call_assistant_api(array $cfg, string $chat_id, string $user_msg)
+{
+    if (empty($cfg['assistant_id'])) {
+        throw new RuntimeException('assistant_id missing from config');
     }
 
-    // 6) set max_completion_tokens to the lesser of configured max or what remains
-    $maxCompletion = $active_config['max_completion_tokens'] ?? 256;
-    $payload['max_tokens'] = $active_config['max_tokens'] ?? null;      // if you’re using max_tokens
-    $payload['max_completion_tokens'] = min($maxCompletion, $remaining);
+    $thread_id = ensure_thread_bootstrapped($cfg, $chat_id);
 
-    // --- END NEW SECTION ---
+    /* add user message */
+    rest_json('POST', "/openai/threads/$thread_id/messages",
+         ['role'=>'user','content'=>$user_msg], $cfg);
 
-    // your existing header/payload construction…
-    $headers = [
-        'Content-Type: application/json',
-        'api-key: ' . $active_config['api_key']
-    ];
-    $response = execute_api_call($url, $payload, $headers, $chat_id);
-    return $response;
+    /* create run */
+    $run = rest_json('POST', "/openai/threads/$thread_id/runs",
+         ['assistant_id'=>$cfg['assistant_id']], $cfg);
+
+    /* poll */
+    while (true) {
+        usleep(500_000);
+        $run = rest_json('GET',
+            "/openai/threads/$thread_id/runs/{$run['id']}",
+            null, $cfg);
+
+        if ($run['status'] === 'completed') break;
+
+        if ($run['status'] === 'requires_action'
+            && ($run['required_action']['type'] ?? '') === 'submit_tool_outputs') {
+
+            $tool_outputs = [];
+            foreach ($run['required_action']['tool_calls'] as $tc) {
+                $tool_outputs[] = [
+                    'tool_call_id' => $tc['id'],
+                    'output'       => ''          // Code-Interpreter will run
+                ];
+            }
+            rest_json('POST',
+                 "/openai/threads/$thread_id/runs/{$run['id']}/submit_tool_outputs",
+                 ['tool_outputs'=>$tool_outputs], $cfg);
+        } elseif (!in_array($run['status'], ['queued','in_progress'])) {
+            throw new RuntimeException("Run ended with status {$run['status']}");
+        }
+    }
+
+    /* return newest assistant message */
+    $msgs = rest_json('GET',
+        "/openai/threads/$thread_id/messages?order=desc&limit=1",
+        null, $cfg);
+
+    return $msgs['data'][0];
 }
 
+function ensure_thread_bootstrapped($cfg, $chat_id) {
+
+    // 1. Do we already have an Azure thread for this chat?
+    $thread_id = get_thread_for_chat($chat_id);
+    if ($thread_id) return $thread_id;
+
+    // 2. Create a new Azure thread
+    $thr = rest_json('POST', '/openai/threads', [], $cfg);
+    $thread_id = $thr['id'];
+
+    // 3. Re-play existing messages so the model has context
+    $msgs = get_recent_messages($chat_id,
+                                $_SESSION['user_data']['userid']);
+    foreach ($msgs as $m) {
+        /* user prompt */
+        rest_json('POST', "/openai/threads/$thread_id/messages", [
+            'role'    => 'user',
+            'content' => $m['prompt']
+        ], $cfg);
+
+        /* assistant reply (skip blank ones from DALL-E turns) */
+        if (!empty($m['reply'])) {
+            rest_json('POST', "/openai/threads/$thread_id/messages", [
+                'role'    => 'assistant',
+                'content' => $m['reply']
+            ], $cfg);
+        }
+    }
+
+    // 4. Persist mapping
+    save_thread_for_chat($chat_id, $thread_id);
+    return $thread_id;
+}
 
 /**
  * Calls the Azure OpenAI API.
@@ -521,25 +567,141 @@ function call_azure_api($active_config, $chat_id, $msg) {
  * @param mixed $msg The message context sent to the API.
  * @return array The processed API response.
  */
-function process_api_response($response, $active_config, $chat_id, $message, $msg, $custom_config) {
+/**
+ * Normalises every OpenAI/Azure response into the shape
+ *   [ 'eid'        => int,
+ *     'deployment' => string,
+ *     'error'      => bool,
+ *     'message'    => string,        // assistant text answer
+ *     'links'      => [              // optional download links
+ *         [ 'filename' => 'cover.docx',
+ *           'url'      => '/download.php?f=cover.docx' ],
+ *         …
+ *     ]
+ *   ]
+ */
+function process_api_response($response,
+                              $active_config,
+                              $chat_id,
+                              $user_prompt,
+                              $msg_ctx,                 // whatever you passed to the API
+                              $custom_config)
+{
+    /* ==============================================================
+     * 1.   Azure Assistant with Code-Interpreter
+     * ==============================================================*/
+    if ($active_config['host'] === 'assistant') {
 
-    $response_data = json_decode($response, true);
+        // call_assistant_api() already returned the *message object*
+        $assistantMsg = $response;          // array (NOT json-string)
+        $answer_text  = '';
+        $links        = [];
+        $seen         = [];                 // file_id => true  (dedupe)
 
-    if (isset($response_data['error'])) {
-        $api_error_message = $response_data['error']['message'];
-        log_error_details($msg, $message, $api_error_message);
+        /* -------- iterate over top-level “content” parts --------- */
+        foreach ($assistantMsg['content'] as $part) {
+
+            /* A. Plain text + inline annotations ------------------ */
+            if ($part['type'] === 'text') {
+                $answer_text .= $part['text']['value'];
+
+                foreach ($part['text']['annotations'] as $ann) {
+                    if ($ann['type'] === 'file_path') {
+                        $fid = $ann['file_path']['file_id'];
+                        if (isset($seen[$fid])) continue;
+
+                        $links[] = fetch_and_save_file(
+                                      $chat_id,
+                                      $fid,
+                                      $active_config,
+                                      $ann['text']          // <-- hint “…/foo.docx”
+                                   );
+                        $seen[$fid] = true;
+                    }
+                }
+            }
+
+            /* B. Rare case: file_path part on its own ------------- */
+            elseif ($part['type'] === 'file_path') {
+                $fid = $part['file_path']['file_id'];
+                if (!isset($seen[$fid])) {
+                    $links[]   = fetch_and_save_file($chat_id, $fid, $active_config);
+                    $seen[$fid] = true;
+                }
+            }
+        }
+
+        /* C. Message-level “attachments” (redundant in practice) -- */
+        foreach ($assistantMsg['attachments'] ?? [] as $att) {
+            $fid = $att['file_id'];
+            if (!isset($seen[$fid])) {
+                $links[]   = fetch_and_save_file($chat_id, $fid, $active_config);
+                $seen[$fid] = true;
+            }
+        }
+
+        /* 2.  strip assistant’s own sandbox links ----------------- */
+        $answer_text = preg_replace('/\[[^\]]+\]\(sandbox:[^)]+\)/i',
+                                    '',
+                                    $answer_text);
+
+        /* 3.  append our working download links ------------------- */
+        if ($links) {
+            $answer_text .= "\n\n---\n**Download:**\n";
+            foreach ($links as $l) {
+                $answer_text .= "- [{$l['filename']}]({$l['url']})\n";
+            }
+        }
+
+        /* 4.  persist exchange ------------------------------------ */
+        $wfId = $custom_config['workflowId'] ?? '';
+        $eid  = create_exchange(
+                    $active_config['deployment'],   // e.g. azure-gpt4o
+                    $chat_id,
+                    $user_prompt,
+                    $answer_text,
+                    $wfId,
+                    null,                           // no image
+                    json_encode($links)
+                );
+
         return [
-            'deployment' => $active_config['deployment_name'],
-            'error' => true,
-            'message' => $api_error_message
+            'eid'        => $eid,
+            'deployment' => $active_config['deployment'],
+            'error'      => false,
+            'message'    => $answer_text,
+            'links'      => $links
         ];
     }
 
-    if($custom_config['exchange_type'] == 'workflow' && !empty($custom_config['prompt-replacement-text'])) $message = $custom_config['prompt-replacement-text'];
+    /* ==============================================================
+     * 2.   Normal Chat-Completion payload
+     * ==============================================================*/
+    $data = json_decode($response, true);
 
+    /* 2a. Hard error from OpenAI/Azure ---------------------------- */
+    if (isset($data['error'])) {
+        log_error_details($msg_ctx,
+                          $user_prompt,
+                          $data['error']['message'] ?? 'Unknown error');
+        return [
+            'deployment' => $active_config['deployment_name'] ?? 'n/a',
+            'error'      => true,
+            'message'    => $data['error']['message'] ?? 'Unknown error'
+        ];
+    }
+
+    /* ==============================================================
+     * 3.   DALL·E flow (unchanged)
+     * ==============================================================*/
     if ($active_config['host'] === 'dall-e') {
-        $image_url = $response_data['data'][0]['url'] ?? null;
 
+        $image_url = $data['data'][0]['url'] ?? null;
+        if (!$image_url) {
+            return [ 'deployment'=>$active_config['deployment_name'],
+                     'error'=>true,
+                     'message'=>'No image URL in response' ];
+        }
         if ($image_url) {
             preg_match('#/images/([^/]+)/generated_#', $image_url, $matches);
             $unique_dir = $matches[1] ?? uniqid();
@@ -577,19 +739,64 @@ function process_api_response($response, $active_config, $chat_id, $message, $ms
             }
         }
     }
-    #print_r($active_config); die();
 
-    // Handle Chat Completion response
-    $response_text = $response_data['choices'][0]['message']['content'] ?? 'No response text found.';
-    if (empty($custom_config['workflowId'])) $custom_config['workflowId'] = '';
-    $eid = create_exchange($active_config['deployment'], $chat_id, $message, $response_text, $custom_config['workflowId']);
+    /* ==============================================================
+     * 4.   Classic Chat-Completions (unchanged)
+     * ==============================================================*/
+    $answer_text = $data['choices'][0]['message']['content']
+                   ?? 'No response text found.';
+
+    $wfId = $custom_config['workflowId'] ?? '';
+    $eid  = create_exchange($active_config['deployment'],
+                            $chat_id,
+                            $user_prompt,
+                            $answer_text,
+                            $wfId);
 
     return [
-        'eid' => $eid,
+        'eid'        => $eid,
         'deployment' => $active_config['deployment_name'],
-        'error' => false,
-        'message' => $response_text
+        'error'      => false,
+        'message'    => $answer_text
     ];
+}
+
+function fetch_and_save_file(string $chat_id,
+                             string $file_id,
+                             array  $cfg,
+                             ?string $hintName = null): array
+{
+    $bytes = rest_raw('GET', "/openai/files/$file_id/content", null, $cfg);
+    $local = save_to_blob($chat_id, $file_id, $bytes, $hintName);
+
+    return [
+        'filename' => $local,
+        'url'      => "download.php?f=$local"
+    ];
+}
+
+/**
+ * Save arbitrary bytes to the doc_gen/full folder and return the filename.
+ * Keeps the original extension if the Assistant gave one, else defaults to .bin.
+ */
+function save_to_blob(string $chat_id,
+                      string $fid,
+                      string $bytes,
+                      ?string $hintName = null): string
+{
+    // try extension from hint first (e.g. “…/report.docx”)
+    $ext = '.bin';
+    if ($hintName && preg_match('/\.([a-z0-9]{2,5})(?:\?|$)/i', $hintName, $m)) {
+        $ext = '.'.$m[1];
+    } elseif (preg_match('/\.([a-z0-9]{2,5})$/i', $fid, $m)) {
+        $ext = '.'.$m[1];
+    }
+
+    $basename = $chat_id.'-'.$fid.$ext;           // unique per chat
+    $path     = DOC_GEN_DIR.'/full/'.$basename;
+
+    file_put_contents($path, $bytes);
+    return $basename;
 }
 
 /**
@@ -623,6 +830,63 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
     }
 
     return $messages;
+}
+
+/**
+ * rest_json() – for all normal Azure OpenAI endpoints that return JSON
+ * rest_raw()  – for /files/{id}/content which returns bytes
+ */
+function rest_json(string $method, string $path, ?array $body, array $cfg): array
+{
+    $resp = _rest_core($method, $path, $body, $cfg, $status, $ctype);
+
+    // Expect JSON; if not, throw.
+    if ($ctype !== 'application/json' && !str_starts_with($ctype, 'application/json')) {
+        throw new RuntimeException("Expected JSON, got $ctype from $path");
+    }
+    return json_decode($resp, true);
+}
+
+function rest_raw(string $method, string $path, ?array $body, array $cfg): string
+{
+    return _rest_core($method, $path, $body, $cfg, $status, $ctype);
+}
+
+/* ---- shared curl core --------------------------------------- */
+function _rest_core(string $method, string $path, ?array $body, array $cfg,
+                    &$status = 0, &$ctype = ''): string
+{
+    $url  = rtrim($cfg['base_url'], '/').$path;
+    $url .= (str_contains($url, '?') ? '&' : '?')
+          . 'api-version='.$cfg['api_version'];
+
+    $hdrs = ['api-key: '.$cfg['api_key']];
+    if (strtoupper($method) !== 'GET') {
+        $hdrs[] = 'Content-Type: application/json';
+        $payload = json_encode($body ?? new stdClass());
+    } else {
+        $payload = null;
+    }
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CUSTOMREQUEST  => strtoupper($method),
+        CURLOPT_HTTPHEADER     => $hdrs,
+    ]);
+    if ($payload !== null) curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+
+    $resp   = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $ctype  = curl_getinfo($ch, CURLINFO_CONTENT_TYPE) ?? '';
+
+    if (curl_errno($ch))  throw new RuntimeException('cURL error: '.curl_error($ch));
+    curl_close($ch);
+
+    if ($status < 200 || $status >= 300) {
+        throw new RuntimeException("Azure REST $method $path HTTP $status");
+    }
+    return $resp;
 }
 
 /**

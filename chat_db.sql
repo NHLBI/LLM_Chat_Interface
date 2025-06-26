@@ -1,7 +1,7 @@
 /*M!999999\- enable the sandbox mode */ 
 -- MariaDB dump 10.19  Distrib 10.5.27-MariaDB, for Linux (x86_64)
 --
--- Host: localhost    Database: osi_chat
+-- Host: localhost    Database: osi_chat_dev
 -- ------------------------------------------------------
 -- Server version	10.5.27-MariaDB
 
@@ -36,6 +36,8 @@ CREATE TABLE `chat` (
   `timestamp` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `date_created` timestamp NOT NULL DEFAULT current_timestamp(),
   `last_viewed` timestamp NULL DEFAULT NULL,
+  `soft_delete_date` date DEFAULT NULL,
+  `hard_delete_date` date DEFAULT NULL,
   UNIQUE KEY `id` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -53,6 +55,7 @@ CREATE TABLE `document` (
   `name` varchar(255) NOT NULL,
   `type` varchar(124) DEFAULT NULL,
   `content` longtext NOT NULL,
+  `document_token_length` int(11) NOT NULL DEFAULT 0,
   `source` varchar(24) DEFAULT NULL,
   `deleted` tinyint(1) DEFAULT 0,
   `timestamp` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
@@ -60,7 +63,7 @@ CREATE TABLE `document` (
   PRIMARY KEY (`id`),
   KEY `fk_exchange_chat_docs` (`chat_id`),
   CONSTRAINT `fk_exchange_chat_docs` FOREIGN KEY (`chat_id`) REFERENCES `chat` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=53362 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=53901 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -90,7 +93,7 @@ CREATE TABLE `exchange` (
   PRIMARY KEY (`id`),
   KEY `fk_exchange_chat` (`chat_id`),
   CONSTRAINT `fk_exchange_chat` FOREIGN KEY (`chat_id`) REFERENCES `chat` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=96725 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=99307 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -107,7 +110,7 @@ CREATE TABLE `exchange_document` (
   PRIMARY KEY (`id`),
   KEY `exchange_id` (`exchange_id`),
   KEY `document_id` (`document_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=4569 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=5253 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -143,7 +146,7 @@ CREATE TABLE `workflow_config` (
   `config_label` varchar(48) DEFAULT NULL,
   `description` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -157,8 +160,28 @@ CREATE TABLE `workflow_config_join` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `workflow_id` int(11) NOT NULL,
   `workflow_config_id` int(11) NOT NULL,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `workflow_id` (`workflow_id`),
+  KEY `workflow_config_id` (`workflow_config_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=12 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `workflow_exchange`
+--
+
+DROP TABLE IF EXISTS `workflow_exchange`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `workflow_exchange` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `workflow_id` int(11) NOT NULL,
+  `exchange_id` int(11) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `exchange_id` (`exchange_id`),
+  KEY `workflow_id` (`workflow_id`),
+  CONSTRAINT `fk_workflow_exchange` FOREIGN KEY (`exchange_id`) REFERENCES `exchange` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=127 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -170,4 +193,4 @@ CREATE TABLE `workflow_config_join` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2025-04-23 15:33:43
+-- Dump completed on 2025-06-24 12:49:04
