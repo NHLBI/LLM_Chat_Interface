@@ -8,31 +8,30 @@
  *  Usage:  download.php?f=<basename-from-chat>
  *****************************************************************/
 
+/* -------------------------------------------------------------
+ * Secure download proxy for /doc_gen/full files
+ *   ?f=<opaque-local-name>&name=<pretty name shown to user>
+ * ------------------------------------------------------------*/
+$docDir = dirname(__DIR__).'/doc_gen/full';  // adjust if moved
+
 /* 1.  basic parameter check ----------------------------------- */
 if (!isset($_GET['f']) || $_GET['f'] === '') {
     http_response_code(400);
     exit('Missing "f" parameter');
 }
-$basename = basename($_GET['f']);          // strips any .. / slashes
+$fname  = basename($_GET['f'] ?? '');
+$pretty = $_GET['name'] ?? $fname;              // fallback if missing
+$path   = realpath("$docDir/$fname");
 
-/* 2.  build absolute path & verify ---------------------------- */
-define('DOC_GEN_DIR', dirname(__DIR__).'/doc_gen/full');  // adjust if moved
-
-$absPath = DOC_GEN_DIR . DIRECTORY_SEPARATOR . $basename;
-if (!is_file($absPath)) {
+if (!$path || !str_starts_with($path, realpath($docDir))) {
     http_response_code(404);
-    exit('File not found');
+    exit('File not found.');
 }
 
-
-/* 3.  guess mime-type ----------------------------------------- */
-$mime = mime_content_type($absPath) ?: 'application/octet-stream';
-
-/* 4.  send headers & stream ----------------------------------- */
-header('Content-Type: ' . $mime);
-header('Content-Length: ' . filesize($absPath));
-header('Content-Disposition: attachment; filename="' . $basename . '"');
-
-readfile($absPath);
+header('Content-Type: application/octet-stream');
+header('Content-Length: ' . filesize($path));
+header('Content-Disposition: attachment; filename="' .
+       addslashes($pretty) . '"');
+readfile($path);
 exit;
 

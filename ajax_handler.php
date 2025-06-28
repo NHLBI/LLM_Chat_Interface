@@ -135,3 +135,23 @@ function generate_chat_title($user_message, $gpt_response, $config_key) {
     }
 }
 
+/**
+ * Substrings the text to the specified number of words.
+ *
+ * @param string $text The input text.
+ * @param int $numWords The number of words to keep.
+ * @return string The truncated text.
+ */
+function substringWords($text, $numWords) {
+    // Split the text into words
+    $words = explode(' ', $text);
+    
+    // Select a subset of words based on the specified number
+    $selectedWords = array_slice($words, 0, $numWords);
+    
+    // Join the selected words back together into a string
+    $subString = implode(' ', $selectedWords);
+    
+    return $subString;
+}
+

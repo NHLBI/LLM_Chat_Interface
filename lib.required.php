@@ -195,7 +195,7 @@ function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config
     if ($active_config['host'] == "Mocha") {
         $response = call_mocha_api($active_config['base_url'], $msg);
     } else {
-        if ($isAssistant) $response = call_assistant_api($active_config, $chat_id, $message);
+        if ($isAssistant) $response = call_assistant_api($active_config, $chat_id, $msg);
         else $response = call_azure_api($active_config, $chat_id, $msg);
     }
     #echo "<pre>Step get_gpt_response()\n".print_r($response,1)."</pre>"; die();
@@ -403,7 +403,7 @@ function call_mocha_api($base_url, $msg) {
 /* =========================================================== */
 /*  call_assistant_api – production version (no debug dies)    */
 /* =========================================================== */
-function call_assistant_api(array $cfg, string $chat_id, string $user_msg)
+function call_assistant_api(array $cfg, string $chat_id, array $messages)
 {
     if (empty($cfg['assistant_id'])) {
         throw new RuntimeException('assistant_id missing from config');
@@ -411,9 +411,14 @@ function call_assistant_api(array $cfg, string $chat_id, string $user_msg)
 
     $thread_id = ensure_thread_bootstrapped($cfg, $chat_id);
 
-    /* add user message */
-    rest_json('POST', "/openai/threads/$thread_id/messages",
-         ['role'=>'user','content'=>$user_msg], $cfg);
+    /* add *all* messages of this turn (system/doc/user) */
+    foreach ($messages as $m) {
+        rest_json('POST',
+                  "/openai/threads/$thread_id/messages",
+                  [ 'role'    => $m['role'],
+                    'content' => $m['content'] ],
+                  $cfg);
+    }
 
     /* create run */
     $run = rest_json('POST', "/openai/threads/$thread_id/runs",
@@ -649,7 +654,9 @@ function process_api_response($response,
         if ($links) {
             $answer_text .= "\n\n---\n**Download:**\n";
             foreach ($links as $l) {
-                $answer_text .= "- [{$l['filename']}]({$l['url']})\n";
+                // use display_name, fall back to filename
+                $label = $l['display_name'] ?? $l['filename'];   // ← NEW
+                $answer_text .= "- [{$label}]({$l['url']})\n";   // ← CHANGED
             }
         }
 
@@ -764,14 +771,27 @@ function process_api_response($response,
 function fetch_and_save_file(string $chat_id,
                              string $file_id,
                              array  $cfg,
-                             ?string $hintName = null): array
+                             ?string $suggested = null): array
 {
     $bytes = rest_raw('GET', "/openai/files/$file_id/content", null, $cfg);
-    $local = save_to_blob($chat_id, $file_id, $bytes, $hintName);
+
+    /* extension guessing */
+    $ext = pathinfo($suggested ?? '', PATHINFO_EXTENSION) ?: 'bin';
+
+    $basename = "{$chat_id}-{$file_id}.{$ext}";
+    $fullpath = DOC_GEN_DIR . '/full/' . $basename;
+    file_put_contents($fullpath, $bytes);
+
+    /* strip “sandbox:/mnt/data/” if it’s there */
+    $pretty = $suggested
+              ? preg_replace('#^sandbox:/mnt/data/#i', '', $suggested)
+              : $basename;
 
     return [
-        'filename' => $local,
-        'url'      => "download.php?f=$local"
+        'filename'      => $basename,                         // opaque
+        'display_name'  => $pretty,                           // nice label
+        'url'           => "download.php?f=$basename&name=" .
+                           urlencode($pretty)                 // pass to PHP
     ];
 }
 
@@ -780,20 +800,13 @@ function fetch_and_save_file(string $chat_id,
  * Keeps the original extension if the Assistant gave one, else defaults to .bin.
  */
 function save_to_blob(string $chat_id,
-                      string $fid,
+                      string $file_id,
                       string $bytes,
-                      ?string $hintName = null): string
+                      ?string $hint = null): string
 {
-    // try extension from hint first (e.g. “…/report.docx”)
-    $ext = '.bin';
-    if ($hintName && preg_match('/\.([a-z0-9]{2,5})(?:\?|$)/i', $hintName, $m)) {
-        $ext = '.'.$m[1];
-    } elseif (preg_match('/\.([a-z0-9]{2,5})$/i', $fid, $m)) {
-        $ext = '.'.$m[1];
-    }
-
-    $basename = $chat_id.'-'.$fid.$ext;           // unique per chat
-    $path     = DOC_GEN_DIR.'/full/'.$basename;
+    $ext = pathinfo($hint ?? '', PATHINFO_EXTENSION) ?: 'bin';
+    $basename = "{$chat_id}-{$file_id}.{$ext}";
+    $path     = DOC_GEN_DIR . '/full/' . $basename;
 
     file_put_contents($path, $bytes);
     return $basename;
@@ -809,28 +822,72 @@ function save_to_blob(string $chat_id,
  * @return array The messages array for Chat Completion.
  */
 function handle_chat_request($message, $chat_id, $user, $active_config) {
-    // Build the system message
+    // 1) build system message
     $system_message = build_system_message($active_config);
-    
-    // Check and handle any document content first
-    $document_messages = handle_document_content($chat_id, $user, $message, $active_config);
-    
-    if ($document_messages !== null) {
-        // If a document is present, use document messages exclusively
-        $messages = array_merge($system_message, $document_messages);
-    } else {
-        // If no document, retrieve and format context messages
-        $context_messages = retrieve_context_messages($chat_id, $user, $active_config, $message);
-        
-        // Initialize the messages array with system and context messages
-        $messages = array_merge($system_message, $context_messages);
-        
-        // Append the current user message
-        $messages[] = ["role" => "user", "content" => $message];
+
+    // 2) pull docs and compute their total tokens
+    $docs       = get_chat_documents($user, $chat_id);
+    $doc_tokens = array_sum(array_column($docs, 'document_token_length'));
+
+    // 3) format docs into messages
+    $document_messages = format_document_messages($docs, $message);
+
+    // 4) pull chat history, *reserving* doc_tokens
+    $context_messages = retrieve_context_messages(
+        $chat_id,
+        $user,
+        $active_config,
+        $message,
+        $reserved_tokens = $doc_tokens
+    );
+
+    // 5) stitch everything together
+    $messages = array_merge(
+        $system_message,
+        $document_messages,
+        $context_messages,
+        [
+            ["role" => "user", "content" => $message]
+        ]
+    );
+
+    #die("THESE ARE THE FINAL MESSAGES\n" . print_r($messages,1));
+
+    return $messages;
+}
+
+/**
+ * Given an array of doc rows and the current user message,
+ * return an array of “messages” that inject each document.
+ */
+function format_document_messages(array $docs, string $userMessage): array {
+    $messages = [];
+    foreach ($docs as $i => $doc) {
+        // metadata
+        $messages[] = [
+            "role"    => "user",
+            "content" => "This is document #" . ($i + 1) . ". Filename: " . $doc['document_name']
+        ];
+
+        if (strpos($doc['document_type'], 'image/') === 0) {
+            $messages[] = [
+                "role"    => "user",
+                "content" => [
+                    ["type" => "text",  "text"           => $userMessage],
+                    ["type" => "image_url", "image_url"  => ["url" => $doc['document_content']]]
+                ]
+            ];
+        } else {
+            $messages[] = [
+                "role"    => "user",
+                "content" => $doc['document_content']
+            ];
+        }
     }
 
     return $messages;
 }
+
 
 /**
  * rest_json() – for all normal Azure OpenAI endpoints that return JSON
@@ -868,6 +925,7 @@ function _rest_core(string $method, string $path, ?array $body, array $cfg,
         $payload = null;
     }
 
+    #print("3. The Final payload: ".print_r($payload,1));
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
@@ -971,40 +1029,36 @@ function build_system_message($active_config) {
  * @param string $message The current user message.
  * @return array The formatted context messages.
  */
-function retrieve_context_messages($chat_id, $user, $active_config, $message) {
-    $context_limit = (int)$active_config['context_limit'];
+function retrieve_context_messages(
+    $chat_id,
+    $user,
+    $active_config,
+    $message,
+    $reserved_tokens = 0           // ← new parameter
+) {
+    $context_limit   = (int)$active_config['context_limit'];
+    $token_budget    = $context_limit - $reserved_tokens;
     $recent_messages = get_recent_messages($chat_id, $user);
-    $total_tokens = estimate_tokens($message);
-    $formatted_messages = [];
+    $total_tokens    = estimate_tokens($message);
+    $formatted       = [];
 
     foreach (array_reverse($recent_messages) as $msg) {
         if (stristr($msg['deployment'],'dall-e')) {
-            $msg['reply'] = '';
             $msg['reply_token_length'] = 0;
         }
-        $prompt_tokens = $msg['prompt_token_length'];
-        $reply_tokens = $msg['reply_token_length'];
-        $tokens_needed = $prompt_tokens + $reply_tokens + (4 * 2); // 4 tokens per message
+        $needed = $msg['prompt_token_length']
+                + $msg['reply_token_length']
+                + 8; // 4 tokens × 2 messages
 
-        if ($total_tokens + $tokens_needed > $context_limit) {
-            break; // Exceeds limit
+        if ($total_tokens + $needed > $token_budget) {
+            break;
         }
-
-        // Prepend messages to maintain chronological order
-        $formatted_messages[] = ['role' => 'user', 'content' => $msg['prompt']];
-        $formatted_messages[] = ['role' => 'assistant', 'content' => $msg['reply']];
-
-        #print_r($formatted_messages);
-        #echo "\n\n\n";
-
-        $total_tokens += $tokens_needed;
+        $formatted[] = ['role' => 'user',      'content' => $msg['prompt']];
+        $formatted[] = ['role' => 'assistant', 'content' => $msg['reply']];
+        $total_tokens += $needed;
     }
 
-    $output = array_reverse($formatted_messages); // Reverse to maintain original order
-    #echo "HERE IS THE OUTPUT: \n\n";
-    #print_r($output);
-    #die();
-    return $output;
+    return array_reverse($formatted);
 }
 
 /**
@@ -1063,52 +1117,6 @@ function handle_document_content($chat_id, $user, $message, $active_config) {
     return null; // Explicitly return null if no documents exist
 }
 
-/**
- * Fetches a remote image, saves it temporarily, and returns a base64 data URL.
- *
- * @param string $remote_url The remote image URL from dall-E.
- * @return array|null Returns ['data_url' => ..., 'mime_type' => ..., 'filename' => ...]
- *                    or null on failure.
- */
-function fetch_remote_image_as_base64($remote_url) {
-    // Create a temporary file in the system temp directory
-    $temp_file = tempnam(sys_get_temp_dir(), 'dalle_');
-    if (!$temp_file) {
-        return null;
-    }
-
-    // Download the remote file
-    $file_data = @file_get_contents($remote_url);
-    if ($file_data === false) {
-        // Could not fetch the remote image
-        return null;
-    }
-
-    // Write the downloaded data to the temp file
-    file_put_contents($temp_file, $file_data);
-
-    // Attempt to detect the MIME type
-    $mimeType = mime_content_type($temp_file) ?: 'application/octet-stream';
-
-    // Convert local file to data URL
-    $data_url = local_image_to_data_url($temp_file, $mimeType);
-
-    // Generate a plausible filename (optional)
-    $ext = '';
-    // Basic extension guess
-    if (preg_match('/image\/(\w+)/', $mimeType, $m)) {
-        $ext = '.' . $m[1];
-    }
-    $filename = 'dalle_image' . $ext;
-
-    // Return relevant details
-    return [
-        'data_url' => $data_url,
-        'mime_type' => $mimeType,
-        'filename' => $filename
-    ];
-}
-
 function scale_image_from_path($src_path, $dest_path, $scaleFactor) {
     $image_data = @file_get_contents($src_path);
     if ($image_data === false) {
@@ -1155,57 +1163,6 @@ function local_image_to_data_url($image_path, $mimeType)
 
     // Return the data URL with the appropriate MIME type
     return "data:$mimeType;base64,$base64_encoded_data";
-}
-
-function scale_base64_image($base64_data_url, $scaleFactor = 0.25) {
-    // 1) Parse the base64 data URL
-    if (!preg_match('/^data:(.*?);base64,(.*)$/', $base64_data_url, $matches)) {
-        return null; // invalid data URL
-    }
-    $mimeType = $matches[1] ?? 'application/octet-stream';
-    $base64   = $matches[2] ?? '';
-    
-    // 2) Decode to binary
-    $imageData = base64_decode($base64);
-    if ($imageData === false) {
-        return null;
-    }
-
-    // 3) Create GD image resource from string
-    $sourceImg = imagecreatefromstring($imageData);
-    if (!$sourceImg) {
-        return null;
-    }
-
-    // 4) Get original dimensions
-    $origWidth  = imagesx($sourceImg);
-    $origHeight = imagesy($sourceImg);
-
-    // 5) Compute new dims
-    $newWidth  = (int)($origWidth * $scaleFactor);
-    $newHeight = (int)($origHeight * $scaleFactor);
-
-    // 6) Create a new blank image
-    $destImg = imagecreatetruecolor($newWidth, $newHeight);
-
-    // 7) Copy and resize
-    imagecopyresampled($destImg, $sourceImg, 0, 0, 0, 0, 
-                       $newWidth, $newHeight, $origWidth, $origHeight);
-
-    // 8) Re-encode as PNG (or use imagejpeg if you prefer)
-    ob_start();
-    imagepng($destImg);
-    $resizedData = ob_get_clean();
-
-    // 9) Convert back to base64 data URL
-    $resizedBase64 = base64_encode($resizedData);
-    $resizedDataUrl = "data:image/png;base64," . $resizedBase64;
-
-    // Cleanup
-    imagedestroy($sourceImg);
-    imagedestroy($destImg);
-
-    return $resizedDataUrl;
 }
 
 /**
@@ -1284,42 +1241,6 @@ function log_error_details($msg, $message, $api_error) {
 
     // Send the log entry to PHP's standard error log
     error_log($log_entry);
-}
-
-/**
- * Substrings the text to the specified number of words.
- *
- * @param string $text The input text.
- * @param int $numWords The number of words to keep.
- * @return string The truncated text.
- */
-function substringWords($text, $numWords) {
-    // Split the text into words
-    $words = explode(' ', $text);
-    
-    // Select a subset of words based on the specified number
-    $selectedWords = array_slice($words, 0, $numWords);
-    
-    // Join the selected words back together into a string
-    $subString = implode(' ', $selectedWords);
-    
-    return $subString;
-}
-
-function get_tool_tips() {
-    global $config;
-    $output = "<ul>\n";
-    $deployments = explode(',',$config['azure']['deployments']);
-    foreach($deployments as $pair) {
-        $a = explode(':',$pair);
-        $deployment = $config[$a[0]];
-        if ($deployment['enabled'] > 0) {
-            #echo '<pre>'.print_r($config[$a[0]],1).'</pre>';
-            $output .= '<li><strong>'.$a[1].'</strong>: '.$deployment['tooltip']."</li>\n";
-        }
-    }
-    $output .= "</ul>\n";
-    return $output;
 }
 
 function clean_disclaimer_text() {

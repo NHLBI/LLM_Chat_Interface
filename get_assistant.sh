@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # ----- fill in your secrets first -----
 export AZURE_OPENAI_ENDPOINT="https://nhlbi-chat.openai.azure.com"
-export AZURE_OPENAI_KEY="c766f3be8420471dabccac63c2f75d8f"
+#export AZURE_OPENAI_KEY="c766f3be8420471dabccac63c2f75d8f"# gpt4o
+#export AZURE_OPENAI_KEY="c766f3be8420471dabccac63c2f75d8f" # gpt4.1
+#export AZURE_OPENAI_KEY="c766f3be8420471dabccac63c2f75d8f" # o3
+export AZURE_OPENAI_KEY="c766f3be8420471dabccac63c2f75d8f" # o4-mini
 # --------------------------------------
 
 curl -sS -X POST \
