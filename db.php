@@ -250,7 +250,7 @@ function get_all_exchanges($chat_id, $user) {
         WHERE c.user = :user AND e.chat_id = :chat_id
         AND c.deleted = 0
         AND e.deleted = 0
-        AND e.prompt IS NOT NULl
+        AND e.prompt IS NOT NULL
         AND e.reply IS NOT NULL
         ORDER BY e.timestamp ASC
         ";

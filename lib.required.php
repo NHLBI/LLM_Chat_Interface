@@ -128,23 +128,9 @@ if (!isset($_SESSION['temperature']) || (float)$_SESSION['temperature'] < 0 || (
     $_SESSION['temperature'] = 0.7;
 }
 
-
-
 // Uncomment for debugging
 // echo "<pre>". print_r($_SESSION,1) ."</pre>";
 // echo "<pre>". print_r($_SERVER,1) ."</pre>";
-
-// Helper function to wait for critical session data
-function waitForUserSession($maxAttempts = 5, $delayMicroseconds = 5000) {
-    $attempt = 0;
-    // Check if the user_data userid is set; if not, wait and retry
-    while ($attempt < $maxAttempts && empty($_SESSION['user_data']['userid'])) {
-        usleep($delayMicroseconds);
-        $attempt++;
-        $delayMicroseconds += 5000;
-    }
-    return !empty($_SESSION['user_data']['userid']);
-}
 
 /**
  * Retrieves the GPT response by orchestrating the API call and processing the response.
@@ -183,14 +169,17 @@ function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config
     $isAssistant = ($active_config['host'] === 'assistant');
 
     #print("this is custom stuff: ".print_r($custom_config,1)); die();
-    if ($custom_config['exchange_type'] == 'chat') $msg = get_chat_thread($message, $chat_id, $user, $active_config);
-    elseif ($custom_config['exchange_type'] == 'workflow') {
-        
+    if ($custom_config['exchange_type'] == 'chat') {
+        $msg = get_chat_thread($message, $chat_id, $user, $active_config);
+    
+    } elseif ($custom_config['exchange_type'] == 'workflow') {
         $active_config = load_configuration($config['azure']['workflow_default']);
         $msg = get_workflow_thread($message, $chat_id, $user, $active_config, $custom_config);
-    }
-    else return process_api_response('There was an error processing your post. Please contact support.', $active_config, $chat_id, $message, $msg);
+        
+    } else {
+        return process_api_response('There was an error processing your post. Please contact support.', $active_config, $chat_id, $message, $msg);
    
+    }
 
     if ($active_config['host'] == "Mocha") {
         $response = call_mocha_api($active_config['base_url'], $msg);
@@ -238,84 +227,6 @@ function load_configuration($deployment, $hardcoded = false) {
     if (!empty($config[$deployment]['max_completion_tokens'])) $output['max_completion_tokens'] = (int)$config[$deployment]['max_completion_tokens'];
     // print_r($output);
     return $output;
-}
-
-/**
- * Helper function to call the Python RAG script.
- *
- * @param string $user_question The question to pass to the script.
- * @return array Decoded JSON output from the script (e.g., ['augmented_prompt' => ...] or ['error' => ...]).
- */
-function call_rag_script($user_question) {
-    global $config; // Access global config for paths
-
-    // --- Retrieve Paths from Config (Ensure these are set!) ---
-    $python_executable = __DIR__.'/rag310/bin/python3';
-    $script_path = __DIR__.'/rag_processor.py';
-
-    if (!$script_path || !file_exists($script_path)) {
-        return ['error' => 'RAG script path not configured or not found. Path: ' . $script_path];
-    }
-    if (!is_executable($python_executable) && !preg_match('/^python[3]?$/', $python_executable)) {
-         // Basic check if it's not 'python'/'python3' and not executable directly
-         // A more robust check might involve `shell_exec("command -v $python_executable")`
-         // but let's keep it simple for now. Adjust if needed.
-        // return ['error' => 'Python executable not found or not executable: ' . $python_executable];
-        // Allow 'python3' assuming it's in PATH
-    }
-
-
-    // --- Prepare Command ---
-    // Use escapeshellarg to safely pass the user question
-    $escaped_question = escapeshellarg($user_question);
-    $command = $python_executable . ' ' . escapeshellarg($script_path) . ' ' . $escaped_question . ' 2>&1'; // Redirect stderr to stdout
-
-    // --- Execute Command ---
-    // Consider adding timeout logic if the script might hang
-    $output = [];
-    $return_var = -1;
-    exec($command, $output, $return_var);
-
-    $raw_output = implode("\n", $output); // Combine output lines
-
-    // --- Process Output ---
-    if ($return_var !== 0) {
-        // Script exited with an error code
-        return ['error' => "RAG script execution failed (Exit Code: $return_var). Output: " . $raw_output];
-    }
-
-    // Attempt to decode JSON output
-    $json_result = json_decode($raw_output, true);
-
-    if (json_last_error() !== JSON_ERROR_NONE) {
-        // Output was not valid JSON
-        return ['error' => "Failed to decode JSON response from RAG script. Raw output: " . $raw_output];
-    }
-
-    // Return the decoded JSON (should contain 'augmented_prompt' or 'error')
-    return $json_result;
-}
-
-/**
- * Helper function to process and return standardized error responses.
- */
-function process_error_response($error_message, $deployment, $chat_id, $original_message, $msg_context) {
-     // Log the error internally if needed
-     error_log("Error in get_gpt_response: $error_message (Deployment: $deployment, ChatID: $chat_id)");
-
-     // Return structure similar to process_api_response but indicating an error
-     // Mimic structure of process_api_response for consistency on the frontend
-     return [
-         'deployment' => $deployment,
-         'error' => true,
-         'message' => $error_message, // Error message for the user
-         'request' => [ // Include some request context for debugging if helpful
-             'original_message' => $original_message,
-             'context_messages' => $msg_context // The attempted message structure
-         ],
-         'usage' => ['prompt_tokens' => 0, 'completion_tokens' => 0, 'total_tokens' => 0], // Default usage
-         'finish_reason' => 'error'
-     ];
 }
 
 
@@ -373,31 +284,6 @@ function get_workflow_thread($message, $chat_id, $user, $active_config, $custom_
     #print_r($messages); die("STOPPED IN THE GET WORKFLOW THREAD FUNCTION\n");
 
     return $messages;
-}
-
-/**
- * Calls the Mocha API.
- *
- * @param string $base_url The base URL for the Mocha API.
- * @param mixed $msg The message payload.
- * @return string The API response.
- */
-function call_mocha_api($base_url, $msg) {
-    global $config;
-    
-    $payload = [
-        "model" => "llama3:70b",
-        'messages' => $msg,
-        "max_tokens" => $config['max_tokens'],
-        "temperature" => (float)$_SESSION['temperature'],
-        "frequency_penalty" => 0,
-        "presence_penalty" => 0,
-        "top_p" => 0.95,
-        "stop" => ""
-    ];
-    $headers = ['Content-Type: application/json'];
-    $response = execute_api_call($base_url, $payload, $headers);
-    return $response;
 }
 
 /* =========================================================== */
@@ -731,7 +617,7 @@ function process_api_response($response,
                 } else {
                     scale_image_from_path($fullsize_path, $small_path, 0.5);
                     if (empty($custom_config['workflowId'])) $custom_config['workflowId'] = '';
-                    $eid = create_exchange($active_config['deployment'], $chat_id, $message, '', $custom_config['workflowId'], $image_gen_name);
+                    $eid = create_exchange($active_config['deployment'], $chat_id, $user_prompt, '', $custom_config['workflowId'], $image_gen_name);
 
                     return [
                         'eid' => $eid,
@@ -1241,6 +1127,121 @@ function log_error_details($msg, $message, $api_error) {
 
     // Send the log entry to PHP's standard error log
     error_log($log_entry);
+}
+
+// Helper function to wait for critical session data
+function waitForUserSession($maxAttempts = 5, $delayMicroseconds = 5000) {
+    $attempt = 0;
+    // Check if the user_data userid is set; if not, wait and retry
+    while ($attempt < $maxAttempts && empty($_SESSION['user_data']['userid'])) {
+        usleep($delayMicroseconds);
+        $attempt++;
+        $delayMicroseconds += 5000;
+    }
+    return !empty($_SESSION['user_data']['userid']);
+}
+
+/**
+ * Helper function to call the Python RAG script.
+ *
+ * @param string $user_question The question to pass to the script.
+ * @return array Decoded JSON output from the script (e.g., ['augmented_prompt' => ...] or ['error' => ...]).
+ */
+function call_rag_script($user_question) {
+    global $config; // Access global config for paths
+
+    // --- Retrieve Paths from Config (Ensure these are set!) ---
+    $python_executable = __DIR__.'/rag310/bin/python3';
+    $script_path = __DIR__.'/rag_processor.py';
+
+    if (!$script_path || !file_exists($script_path)) {
+        return ['error' => 'RAG script path not configured or not found. Path: ' . $script_path];
+    }
+    if (!is_executable($python_executable) && !preg_match('/^python[3]?$/', $python_executable)) {
+         // Basic check if it's not 'python'/'python3' and not executable directly
+         // A more robust check might involve `shell_exec("command -v $python_executable")`
+         // but let's keep it simple for now. Adjust if needed.
+        // return ['error' => 'Python executable not found or not executable: ' . $python_executable];
+        // Allow 'python3' assuming it's in PATH
+    }
+
+
+    // --- Prepare Command ---
+    // Use escapeshellarg to safely pass the user question
+    $escaped_question = escapeshellarg($user_question);
+    $command = $python_executable . ' ' . escapeshellarg($script_path) . ' ' . $escaped_question . ' 2>&1'; // Redirect stderr to stdout
+
+    // --- Execute Command ---
+    // Consider adding timeout logic if the script might hang
+    $output = [];
+    $return_var = -1;
+    exec($command, $output, $return_var);
+
+    $raw_output = implode("\n", $output); // Combine output lines
+
+    // --- Process Output ---
+    if ($return_var !== 0) {
+        // Script exited with an error code
+        return ['error' => "RAG script execution failed (Exit Code: $return_var). Output: " . $raw_output];
+    }
+
+    // Attempt to decode JSON output
+    $json_result = json_decode($raw_output, true);
+
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        // Output was not valid JSON
+        return ['error' => "Failed to decode JSON response from RAG script. Raw output: " . $raw_output];
+    }
+
+    // Return the decoded JSON (should contain 'augmented_prompt' or 'error')
+    return $json_result;
+}
+
+/**
+ * Helper function to process and return standardized error responses.
+ */
+function process_error_response($error_message, $deployment, $chat_id, $original_message, $msg_context) {
+     // Log the error internally if needed
+     error_log("Error in get_gpt_response: $error_message (Deployment: $deployment, ChatID: $chat_id)");
+
+     // Return structure similar to process_api_response but indicating an error
+     // Mimic structure of process_api_response for consistency on the frontend
+     return [
+         'deployment' => $deployment,
+         'error' => true,
+         'message' => $error_message, // Error message for the user
+         'request' => [ // Include some request context for debugging if helpful
+             'original_message' => $original_message,
+             'context_messages' => $msg_context // The attempted message structure
+         ],
+         'usage' => ['prompt_tokens' => 0, 'completion_tokens' => 0, 'total_tokens' => 0], // Default usage
+         'finish_reason' => 'error'
+     ];
+}
+
+/**
+ * Calls the Mocha API.
+ *
+ * @param string $base_url The base URL for the Mocha API.
+ * @param mixed $msg The message payload.
+ * @return string The API response.
+ */
+function call_mocha_api($base_url, $msg) {
+    global $config;
+    
+    $payload = [
+        "model" => "llama3:70b",
+        'messages' => $msg,
+        "max_tokens" => $config['max_tokens'],
+        "temperature" => (float)$_SESSION['temperature'],
+        "frequency_penalty" => 0,
+        "presence_penalty" => 0,
+        "top_p" => 0.95,
+        "stop" => ""
+    ];
+    $headers = ['Content-Type: application/json'];
+    $response = execute_api_call($base_url, $payload, $headers);
+    return $response;
 }
 
 function clean_disclaimer_text() {
