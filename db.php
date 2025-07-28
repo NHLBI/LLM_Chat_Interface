@@ -146,6 +146,7 @@ function create_exchange(
     $insert_id = $pdo->lastInsertId();
 
     if (!empty((int)$workflow_id)) {
+        # add the workflow_exchange record
         $stmtJoin = $pdo->prepare("
             INSERT INTO workflow_exchange (workflow_id, exchange_id)
             VALUES (:workflow_id, :exchange_id)
@@ -153,6 +154,13 @@ function create_exchange(
         $stmtJoin->execute([
             'workflow_id' => $workflow_id,
             'exchange_id' => $insert_id,
+        ]);
+
+        # update the chat record with the correct deployment
+        $stmtJoin = $pdo->prepare("UPDATE chat SET deployment = :deployment WHERE id = :chat_id");
+        $stmtJoin->execute([
+            'deployment' => $deployment,
+            'chat_id' => $chat_id,
         ]);
 
     }

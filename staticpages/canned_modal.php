@@ -10,7 +10,6 @@ if (!empty($workflows['config_label'])) {
         $workflow_config[$config_labels[$i]] = $config_descriptions[$i];
     }
 }
-#echo '<pre>'.print_r($workflow_config,1).'</pre>'; 
 
 ?>
 
@@ -35,6 +34,7 @@ For questions or suggestions on new workflows, please contact <a href="mailto:NH
       <?php foreach($workflows as $workflow): ?>
         <button type="button" 
                 class="canned-option" 
+                data-deployment="<?php echo $config['azure']['workflow_default']; ?>"
                 data-workflow-id="<?php echo htmlspecialchars($workflow['id']); ?>" 
                 data-prompt="<?php echo htmlspecialchars($workflow['description']); ?>" 
                 data-action="summarize"

@@ -523,6 +523,8 @@ code {
     margin: 20px 40px;
     max-width: 512px;
     max-height: 512px;
+    max-width: 150px;
+    max-height: 150px;
 }
 
 .waiting-indicator {

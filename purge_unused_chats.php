@@ -3,14 +3,29 @@ require 'get_config.php';
 require 'db.php';
 $pdo = get_connection();
 
-// ------------------------------------------------------------------
-// Central place to change the log destination
-// ------------------------------------------------------------------
-$logFile = '/var/log/purge_chats.log';
-// ------------------------------------------------------------------
+// Determine log file path based on environment
+$logFile = '/var/log/chat_dev';
+if (isset($config['environment'])) {
+    switch ($config['environment']) {
+        case 'dev':
+            $logFile .= '/purge_chats.log';
+            break;
+        case 'test':
+            $logFile .= '/purge_chats.log';
+            break;
+        case 'prod':
+        default:
+            $logFile .= '/purge_chats.log';
+            break;
+    }
+} else {
+    // Default to prod if environment is not set
+    $logFile .= '/purge_chats.log';
+}
 
 date_default_timezone_set('America/New_York');  // or your TZ
 
+// Log the database being used
 error_log(
     "\n[" . date('Y-m-d H:i:s') . '] Database used: ' . $config['database']['dbname'] . "\n",
     3,

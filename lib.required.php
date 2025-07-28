@@ -143,6 +143,8 @@ if (!isset($_SESSION['temperature']) || (float)$_SESSION['temperature'] < 0 || (
  */
 function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config) {
     global $config;
+    #file_put_contents('assistant_msgs.log', print_r($message, true));
+
    $active_config = load_configuration($deployment);
     if (!$active_config) {
         return [
@@ -241,6 +243,8 @@ function load_configuration($deployment, $hardcoded = false) {
  */
 function get_chat_thread($message, $chat_id, $user, $active_config) {
 
+    #file_put_contents('assistant_msgs.log', print_r($message, true));
+
     if ($active_config['host'] === 'dall-e') {
         return array('prompt'=>$message); // Handle dall-E Image Generation Requests
         
@@ -291,6 +295,7 @@ function get_workflow_thread($message, $chat_id, $user, $active_config, $custom_
 /* =========================================================== */
 function call_assistant_api(array $cfg, string $chat_id, array $messages)
 {
+    #file_put_contents('assistant_msgs.log', print_r($messages, true));
     if (empty($cfg['assistant_id'])) {
         throw new RuntimeException('assistant_id missing from config');
     }
@@ -299,6 +304,11 @@ function call_assistant_api(array $cfg, string $chat_id, array $messages)
 
     /* add *all* messages of this turn (system/doc/user) */
     foreach ($messages as $m) {
+        #file_put_contents('assistant_msgs.log', print_r($m, true));
+        if (!isset($m['content']) || trim($m['content']) === '') {
+            continue;
+        }
+
         rest_json('POST',
                   "/openai/threads/$thread_id/messages",
                   [ 'role'    => $m['role'],
@@ -708,6 +718,8 @@ function save_to_blob(string $chat_id,
  * @return array The messages array for Chat Completion.
  */
 function handle_chat_request($message, $chat_id, $user, $active_config) {
+    #file_put_contents('assistant_msgs.log', print_r($message, true));
+
     // 1) build system message
     $system_message = build_system_message($active_config);
 
@@ -736,6 +748,8 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
             ["role" => "user", "content" => $message]
         ]
     );
+    #file_put_contents('assistant_msgs.log', print_r($messages, true));
+
 
     #die("THESE ARE THE FINAL MESSAGES\n" . print_r($messages,1));
 
@@ -812,6 +826,7 @@ function _rest_core(string $method, string $path, ?array $body, array $cfg,
     }
 
     #print("3. The Final payload: ".print_r($payload,1));
+    #file_put_contents('payload.log', $payload);
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
