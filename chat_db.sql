@@ -29,6 +29,7 @@ CREATE TABLE `chat` (
   `title` varchar(255) DEFAULT NULL,
   `summary` text DEFAULT NULL,
   `deployment` varchar(64) DEFAULT NULL,
+  `azure_thread_id` varchar(64) DEFAULT NULL,
   `temperature` decimal(2,1) DEFAULT NULL,
   `new_title` tinyint(1) NOT NULL DEFAULT 1,
   `deleted` tinyint(4) DEFAULT 0,
@@ -63,7 +64,7 @@ CREATE TABLE `document` (
   PRIMARY KEY (`id`),
   KEY `fk_exchange_chat_docs` (`chat_id`),
   CONSTRAINT `fk_exchange_chat_docs` FOREIGN KEY (`chat_id`) REFERENCES `chat` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=53901 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=53940 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -93,7 +94,7 @@ CREATE TABLE `exchange` (
   PRIMARY KEY (`id`),
   KEY `fk_exchange_chat` (`chat_id`),
   CONSTRAINT `fk_exchange_chat` FOREIGN KEY (`chat_id`) REFERENCES `chat` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=99307 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=99499 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -110,7 +111,7 @@ CREATE TABLE `exchange_document` (
   PRIMARY KEY (`id`),
   KEY `exchange_id` (`exchange_id`),
   KEY `document_id` (`document_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=5253 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=5425 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -181,7 +182,7 @@ CREATE TABLE `workflow_exchange` (
   UNIQUE KEY `exchange_id` (`exchange_id`),
   KEY `workflow_id` (`workflow_id`),
   CONSTRAINT `fk_workflow_exchange` FOREIGN KEY (`exchange_id`) REFERENCES `exchange` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=127 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=130 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -193,4 +194,4 @@ CREATE TABLE `workflow_exchange` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2025-06-24 12:49:04
+-- Dump completed on 2025-07-28 16:05:09

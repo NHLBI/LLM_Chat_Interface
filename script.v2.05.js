@@ -216,7 +216,7 @@ success : function (response, textStatus, jqXHR) {
         eid,
         gpt_response      : rawResponse,
         image_gen_name    : imageGenName,
-        deployment,
+        deployment        : deployment,
         error,
         new_chat_id
     } = json;

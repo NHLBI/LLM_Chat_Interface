@@ -41,26 +41,26 @@ $hard_threshold = (new DateTime())
                     ->format('Y-m-d');
 $soft_threshold = (new DateTime())
                     ->modify("-{$soft_delay_days} days")
-                    ->format('Y-m-d H:i:s');
+                    ->format('Y-m-d');
 
 // 1) Hard delete
 $hardDeleted = hard_delete_old_chats($logFile, $hard_threshold);
 if ($hardDeleted === false) {
     error_log(
-        '[' . date('Y-m-d H:i:s') . "] Hard delete failed using threshold: $hard_threshold\n",
+        '[' . date('Y-m-d') . "] Hard delete failed using threshold: $hard_threshold\n",
         3,
         $logFile
     );
 } elseif (empty($hardDeleted)) {
     error_log(
-        '[' . date('Y-m-d H:i:s') . "] No chats qualified for hard delete using threshold: $hard_threshold\n",
+        '[' . date('Y-m-d') . "] No chats qualified for hard delete using threshold: $hard_threshold\n",
         3,
         $logFile
     );
 } else {
     $pairs = implode(', ', $hardDeleted);
     error_log(
-        '[' . date('Y-m-d H:i:s') . '] Hard-deleted chats (' . count($hardDeleted) .
+        '[' . date('Y-m-d') . '] Hard-deleted chats (' . count($hardDeleted) .
         "): IDs [$pairs] using threshold: $hard_threshold\n",
         3,
         $logFile
@@ -71,20 +71,20 @@ if ($hardDeleted === false) {
 $softDeleted = soft_delete_old_chats($logFile, $soft_threshold);
 if ($softDeleted === false) {
     error_log(
-        '[' . date('Y-m-d H:i:s') . "] Soft delete failed using threshold: $soft_threshold\n",
+        '[' . date('Y-m-d') . "] Soft delete failed using threshold: $soft_threshold\n",
         3,
         $logFile
     );
 } elseif (empty($softDeleted)) {
     error_log(
-        '[' . date('Y-m-d H:i:s') . "] No chats qualified for soft delete using threshold: $soft_threshold\n",
+        '[' . date('Y-m-d') . "] No chats qualified for soft delete using threshold: $soft_threshold\n",
         3,
         $logFile
     );
 } else {
     $pairs = implode(', ', $softDeleted);
     error_log(
-        '[' . date('Y-m-d H:i:s') . '] Soft-deleted chats (' . count($softDeleted) .
+        '[' . date('Y-m-d') . '] Soft-deleted chats (' . count($softDeleted) .
         "): IDs [$pairs] using threshold: $soft_threshold\n",
         3,
         $logFile

@@ -142,8 +142,8 @@ if (!isset($_SESSION['temperature']) || (float)$_SESSION['temperature'] < 0 || (
  * @return array The processed API response.
  */
 function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config) {
-    global $config;
-    #file_put_contents('assistant_msgs.log', print_r($message, true));
+    global $config, $config_file;
+    file_put_contents(__DIR__.'/assistant_msgs.log', "\n\n    -    ASSISTANTLOG - 1 - " . print_r($message, true));
 
    $active_config = load_configuration($deployment);
     if (!$active_config) {
@@ -154,22 +154,45 @@ function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config
         ];
     }
 
-    if (false) {
-        // 1. Call Python script to get augmented prompt
-        $rag_result = call_rag_script($message); // New helper function
 
-        // 2. Check for errors from the script
-        if (isset($rag_result['error'])) {
-            return process_error_response("FAR RAG Error: " . $rag_result['error'], $deployment, $chat_id, $message, []);
+
+
+
+
+
+    // BEFORE building $msg / get_chat_thread:
+    $rag_enabled = true;
+    if ($rag_enabled) {
+        $userForIndex = $_SESSION['user_data']['userid'] ?? '';
+        $r = run_rag($message, $chat_id, $userForIndex, $config_file, 20);
+
+        // Always log the outcome so “spinners” never hide problems
+        error_log("RAG CMD: {$r['cmd']}");
+        error_log("RAG RC: {$r['rc']}");
+        error_log("RAG STDOUT (first 800): ".substr($r['stdout'], 0, 800));
+        error_log("RAG STDERR (first 800): ".substr($r['stderr'] ?? '', 0, 800));
+
+        if ($r['rc'] === 0 && is_array($r['json']) && !empty($r['json']['ok']) && !empty($r['json']['augmented_prompt'])) {
+            $message = $r['json']['augmented_prompt'];
+            $_SESSION['last_rag_citations'] = $r['json']['citations'] ?? [];
+        } else {
+            // Soft-fail: keep original $message and carry on
+            error_log("RAG retrieve failed; falling back to raw message");
         }
-
-        // 3. Prepare messages payload using the augmented prompt
-        // We still use the 'chat' infrastructure but with the special prompt
-        $message = $rag_result['augmented_prompt'];
     }
+
+
+
+
+
+
+
+
+
 
     $isAssistant = ($active_config['host'] === 'assistant');
 
+    #print("this is message: ".print_r($message,1)); die();
     #print("this is custom stuff: ".print_r($custom_config,1)); die();
     if ($custom_config['exchange_type'] == 'chat') {
         $msg = get_chat_thread($message, $chat_id, $user, $active_config);
@@ -214,12 +237,15 @@ function load_configuration($deployment, $hardcoded = false) {
     }
 
     $_SESSION['api_key'] = $config[$deployment]['api_key'];
+    if (empty($config[$deployment]['assistant_id'])) $config[$deployment]['assistant_id'] = '';
 
     $output = [
         'deployment' => $deployment,
-        'assistant_id'   => 'asst_iBl1B7WpHluW0B3D39e0k9Ca',
+        'assistant_id'   => trim($config[$deployment]['assistant_id'], '"'),
+        #'assistant_id'   => 'asst_iBl1B7WpHluW0B3D39e0k9Ca',
         'api_key' => trim($config[$deployment]['api_key'], '"'),
         'host' => $config[$deployment]['host'],
+        'model' => $config[$deployment]['model'] ?? '',
         'base_url' => $config[$deployment]['url'],
         'deployment_name' => $config[$deployment]['deployment_name'],
         'api_version' => $config[$deployment]['api_version'],
@@ -231,6 +257,44 @@ function load_configuration($deployment, $hardcoded = false) {
     return $output;
 }
 
+function run_rag($question, $chat_id, $user, $config_path, $timeoutSec = 20) {
+    $payload = [
+        'question' => $question,
+        'chat_id'  => $chat_id,
+        'user'     => $user,
+        'top_k'    => 12,
+        'max_context_tokens' => 2000,
+        'config_path' => $config_path,
+    ];
+    $tmp = tempnam(sys_get_temp_dir(), 'ragq_').'.json';
+    file_put_contents($tmp, json_encode($payload));
+
+    $python  = __DIR__.'/rag310/bin/python3';
+    $script  = __DIR__.'/rag_retrieve.py';
+    $timeout = '/usr/bin/timeout';
+    $errFile = sys_get_temp_dir().'/rag_retrieve_'.getmypid().'.err';
+
+    $cmd = escapeshellarg($timeout).' '.((int)$timeoutSec).' '
+         . escapeshellarg($python).' '.escapeshellarg($script)
+         .' --json '.escapeshellarg($tmp)
+         .' 2>'.escapeshellarg($errFile);
+
+    $out = [];
+    $rc  = 0;
+    exec($cmd, $out, $rc);
+    @unlink($tmp);
+
+    $raw = implode("\n", $out);
+    $jr  = json_decode($raw, true);
+
+    return [
+        'rc'     => $rc,
+        'cmd'    => $cmd,
+        'stdout' => $raw,
+        'stderr' => (is_file($errFile) ? substr(@file_get_contents($errFile), 0, 4000) : ''),
+        'json'   => $jr,
+    ];
+}
 
 /**
  * Constructs the chat thread based on the active configuration.
@@ -243,9 +307,9 @@ function load_configuration($deployment, $hardcoded = false) {
  */
 function get_chat_thread($message, $chat_id, $user, $active_config) {
 
-    #file_put_contents('assistant_msgs.log', print_r($message, true));
+    file_put_contents(__DIR__.'/assistant_msgs.log', "\n\n    -    ASSISTANTLOG - 2 - " . print_r($message, true), FILE_APPEND);
 
-    if ($active_config['host'] === 'dall-e') {
+    if ($active_config['host'] === 'dall-e' || $active_config['host'] === 'gpt-image-1') {
         return array('prompt'=>$message); // Handle dall-E Image Generation Requests
         
     } else {
@@ -295,7 +359,7 @@ function get_workflow_thread($message, $chat_id, $user, $active_config, $custom_
 /* =========================================================== */
 function call_assistant_api(array $cfg, string $chat_id, array $messages)
 {
-    #file_put_contents('assistant_msgs.log', print_r($messages, true));
+    file_put_contents(__DIR__.'/assistant_msgs.log', "\n\n    -    ASSISTANTLOG - 3 - " . print_r($messages, true), FILE_APPEND);
     if (empty($cfg['assistant_id'])) {
         throw new RuntimeException('assistant_id missing from config');
     }
@@ -304,7 +368,7 @@ function call_assistant_api(array $cfg, string $chat_id, array $messages)
 
     /* add *all* messages of this turn (system/doc/user) */
     foreach ($messages as $m) {
-        #file_put_contents('assistant_msgs.log', print_r($m, true));
+        file_put_contents(__DIR__.'/assistant_msgs.log', "\n\n    -    ASSISTANTLOG - 4 - " . print_r($m, true), FILE_APPEND);
         if (!isset($m['content']) || trim($m['content']) === '') {
             continue;
         }
@@ -402,28 +466,28 @@ function call_azure_api($active_config, $chat_id, $msg) {
     $docs = get_chat_documents($_SESSION['user_data']['userid'], $chat_id);
 
     // 2) total up all document_token_length
-    $doc_tokens = array_sum(array_column($docs, 'document_token_length'));
+    $doc_tokens = 0; #array_sum(array_column($docs, 'document_token_length'));
 
     #echo "this is the document tokens: {$doc_tokens}\n"; die(print_r($docs,1));
 
-    $is_dalle = ($active_config['host'] === 'dall-e');
+    $is_dalle = ($active_config['host'] === 'dall-e' || $active_config['host'] === 'gpt-image-1');
 
     if ($is_dalle) {
         // dall-E Image Generation Endpoint
         $url = $active_config['base_url'] . "/openai/deployments/" . $active_config['deployment_name'] . "/images/generations?api-version=" . $active_config['api_version'];
         
         $payload = [
-            'model' => $active_config['model'] ?? 'dall-e',
+            'model' => $active_config['model'],
             'prompt' => $msg['prompt'],
             'n' => 1,
             'size' => '1024x1024'
         ];
-
+        #print_r($payload); die();
     } else {
         #print_r($active_config); die();
         // Chat Completion Endpoint
         $url = $active_config['base_url'] . "/openai/deployments/" . $active_config['deployment_name'] . "/chat/completions?api-version=" . $active_config['api_version'];
-        $top_p = (preg_match('/o1|o3|o4/',$_SESSION['deployment'])) ? 1 : 0.95;
+        $top_p = (preg_match('/o1|o3|o4|5/',$_SESSION['deployment'])) ? 1 : 0.95;
         
         $payload = [
             'messages' => $msg,
@@ -458,72 +522,197 @@ function call_azure_api($active_config, $chat_id, $msg) {
     return $response;
 }
 
+// Pick the exact string your UI expects as the key
+function ui_deployment_key(array $cfg) {
+    return $cfg['deployment'] ?? $cfg['deployment_name'] ?? 'n/a';
+}
+
+
+
+
+
+
+
+
 /**
- * Processes the API response by handling errors and extracting relevant information.
+ * Unified handler for Assistant, GPT-IMAGE-1 (base-64) and chat completions.
  *
- * @param string $response The raw API response.
- * @param array $active_config The active deployment configuration.
- * @param int $chat_id The chat identifier.
- * @param string $message The user message.
- * @param mixed $msg The message context sent to the API.
- * @return array The processed API response.
+ * @param string $response      Raw JSON returned by Azure/OpenAI
+ * @param array  $active_config Deployment configuration that was used
+ * @param int    $chat_id
+ * @param string $user_prompt   The user-supplied prompt
+ * @param array  $msg_ctx       Messages that were sent to the API
+ * @param array  $custom_config Client-side extras (workflow etc.)
+ *
+ * @return array Canonical structure consumed by your front-end
  */
-/**
- * Normalises every OpenAI/Azure response into the shape
- *   [ 'eid'        => int,
- *     'deployment' => string,
- *     'error'      => bool,
- *     'message'    => string,        // assistant text answer
- *     'links'      => [              // optional download links
- *         [ 'filename' => 'cover.docx',
- *           'url'      => '/download.php?f=cover.docx' ],
- *         …
- *     ]
- *   ]
- */
-function process_api_response($response,
+function process_api_response(
+        $response,
+        $active_config,
+        $chat_id,
+        $user_prompt,
+        $msg_ctx,
+        $custom_config
+) {
+    /* --------------------------------------------------------------
+       Common pre-amble
+    -------------------------------------------------------------- */
+    $wfId         = $custom_config['workflowId'] ?? '';
+    $uiDeployment = ui_deployment_key($active_config);
+    $host         = $active_config['host'] ?? '';
+
+    /* ===================== 1) ASSISTANT ========================= */
+    if ($host === 'assistant') {
+        /* ---- your existing assistant logic remains untouched --- */
+        /* ...                                                      */
+        /* return [...];                                            */
+    }
+
+    /* ================= 2)  GPT-IMAGE-1 (base64) ================= */
+    if ($host === 'gpt-image-1') {
+
+        /* Decode JSON returned by Azure/OpenAI */
+        $data = json_decode($response, true);
+
+        if (!is_array($data) || empty($data['data'][0]['b64_json'])) {
+            return [
+                'deployment' => $uiDeployment,
+                'error'      => true,
+                'message'    => 'Image API did not return valid base64 JSON.'
+            ];
+        }
+
+        /* Decode image bytes ------------------------------------------------ */
+        $b64 = $data['data'][0]['b64_json'];
+        $bin = base64_decode($b64, true);          // strict = true
+
+        if ($bin === false) {
+            return [
+                'deployment' => $uiDeployment,
+                'error'      => true,
+                'message'    => 'Failed to base64-decode image data.'
+            ];
+        }
+
+        /* Build filenames / directories ------------------------------------- */
+        $unique      = uniqid();
+        $imageName   = "{$chat_id}-{$unique}.png";         // gpt-image-1 outputs PNG
+        $image_dir   = dirname(__DIR__) . '/image_gen';
+        $fullsizeDir = $image_dir . '/fullsize';
+        $smallDir    = $image_dir . '/small';
+
+        if (!is_dir($fullsizeDir)) mkdir($fullsizeDir, 0755, true);
+        if (!is_dir($smallDir))    mkdir($smallDir,   0755, true);
+
+        $full  = "$fullsizeDir/$imageName";
+        $small = "$smallDir/$imageName";
+
+        /* Write full-resolution file ---------------------------------------- */
+        if (@file_put_contents($full, $bin) === false) {
+            return [
+                'deployment' => $uiDeployment,
+                'error'      => true,
+                'message'    => 'Cannot write full-size image to disk.'
+            ];
+        }
+
+        /* Create 50 % thumbnail --------------------------------------------- */
+        if (!scale_image_from_path($full, $small, 0.5)) {
+            // not fatal, but log it
+            error_log("Thumbnail generation failed for $full");
+        }
+
+        /* Record the exchange in DB ----------------------------------------- */
+        $eid = create_exchange(
+            $uiDeployment,
+            $chat_id,
+            $user_prompt,
+            '',          // reply text – none for image generation
+            $wfId,
+            $imageName   // store image name so UI can fetch /image_gen/…
+        );
+
+        /* Return canonical success object ----------------------------------- */
+        return [
+            'eid'            => $eid,
+            'deployment'     => $uiDeployment,
+            'error'          => false,
+            'message'        => 'Image generated successfully.',
+            'image_gen_name' => $imageName
+        ];
+    }
+
+    /* ================ 3) Normal chat-completions ========================== */
+    $data = json_decode($response, true);
+
+    /* 3a) JSON or API error */
+    if (!is_array($data)) {
+        return [
+            'deployment' => $uiDeployment,
+            'error'      => true,
+            'message'    => 'Invalid JSON from completions API.'
+        ];
+    }
+    if (isset($data['error'])) {
+        log_error_details(
+            $msg_ctx,
+            $user_prompt,
+            $data['error']['message'] ?? 'Unknown error'
+        );
+        return [
+            'deployment' => $uiDeployment,
+            'error'      => true,
+            'message'    => $data['error']['message'] ?? 'Unknown error'
+        ];
+    }
+
+    /* 3b) Success */
+    $answer_text = $data['choices'][0]['message']['content'] ?? 'No response text found.';
+    $eid = create_exchange($uiDeployment, $chat_id, $user_prompt, $answer_text, $wfId);
+
+    return [
+        'eid'        => $eid,
+        'deployment' => $uiDeployment,
+        'error'      => false,
+        'message'    => $answer_text
+    ];
+}
+
+
+
+
+
+function old_process_api_response($response,
                               $active_config,
                               $chat_id,
                               $user_prompt,
-                              $msg_ctx,                 // whatever you passed to the API
+                              $msg_ctx,
                               $custom_config)
 {
-    /* ==============================================================
-     * 1.   Azure Assistant with Code-Interpreter
-     * ==============================================================*/
-    if ($active_config['host'] === 'assistant') {
+    $wfId = $custom_config['workflowId'] ?? '';
+    $uiDeployment = ui_deployment_key($active_config);
 
-        // call_assistant_api() already returned the *message object*
-        $assistantMsg = $response;          // array (NOT json-string)
+    /* ========================= 1) ASSISTANT ========================= */
+    if (($active_config['host'] ?? '') === 'assistant') {
+        // $response is already the assistant *message object* (array)
+        $assistantMsg = $response;
         $answer_text  = '';
         $links        = [];
-        $seen         = [];                 // file_id => true  (dedupe)
+        $seen         = [];
 
-        /* -------- iterate over top-level “content” parts --------- */
         foreach ($assistantMsg['content'] as $part) {
-
-            /* A. Plain text + inline annotations ------------------ */
             if ($part['type'] === 'text') {
                 $answer_text .= $part['text']['value'];
-
                 foreach ($part['text']['annotations'] as $ann) {
                     if ($ann['type'] === 'file_path') {
                         $fid = $ann['file_path']['file_id'];
-                        if (isset($seen[$fid])) continue;
-
-                        $links[] = fetch_and_save_file(
-                                      $chat_id,
-                                      $fid,
-                                      $active_config,
-                                      $ann['text']          // <-- hint “…/foo.docx”
-                                   );
-                        $seen[$fid] = true;
+                        if (!isset($seen[$fid])) {
+                            $links[]   = fetch_and_save_file($chat_id, $fid, $active_config, $ann['text'] ?? '');
+                            $seen[$fid] = true;
+                        }
                     }
                 }
-            }
-
-            /* B. Rare case: file_path part on its own ------------- */
-            elseif ($part['type'] === 'file_path') {
+            } elseif ($part['type'] === 'file_path') {
                 $fid = $part['file_path']['file_id'];
                 if (!isset($seen[$fid])) {
                     $links[]   = fetch_and_save_file($chat_id, $fid, $active_config);
@@ -532,133 +721,102 @@ function process_api_response($response,
             }
         }
 
-        /* C. Message-level “attachments” (redundant in practice) -- */
-        foreach ($assistantMsg['attachments'] ?? [] as $att) {
-            $fid = $att['file_id'];
-            if (!isset($seen[$fid])) {
-                $links[]   = fetch_and_save_file($chat_id, $fid, $active_config);
-                $seen[$fid] = true;
-            }
-        }
-
-        /* 2.  strip assistant’s own sandbox links ----------------- */
-        $answer_text = preg_replace('/\[[^\]]+\]\(sandbox:[^)]+\)/i',
-                                    '',
-                                    $answer_text);
-
-        /* 3.  append our working download links ------------------- */
+        // strip sandbox links and append our links
+        $answer_text = preg_replace('/\[[^\]]+\]\(sandbox:[^)]+\)/i', '', $answer_text);
         if ($links) {
             $answer_text .= "\n\n---\n**Download:**\n";
             foreach ($links as $l) {
-                // use display_name, fall back to filename
-                $label = $l['display_name'] ?? $l['filename'];   // ← NEW
-                $answer_text .= "- [{$label}]({$l['url']})\n";   // ← CHANGED
+                $label = $l['display_name'] ?? $l['filename'];
+                $answer_text .= "- [{$label}]({$l['url']})\n";
             }
         }
 
-        /* 4.  persist exchange ------------------------------------ */
-        $wfId = $custom_config['workflowId'] ?? '';
-        $eid  = create_exchange(
-                    $active_config['deployment'],   // e.g. azure-gpt4o
-                    $chat_id,
-                    $user_prompt,
-                    $answer_text,
-                    $wfId,
-                    null,                           // no image
-                    json_encode($links)
-                );
+        $eid = create_exchange($uiDeployment, $chat_id, $user_prompt, $answer_text, $wfId, null, json_encode($links));
 
         return [
             'eid'        => $eid,
-            'deployment' => $active_config['deployment'],
+            'deployment' => $uiDeployment,
             'error'      => false,
             'message'    => $answer_text,
             'links'      => $links
         ];
     }
 
-    /* ==============================================================
-     * 2.   Normal Chat-Completion payload
-     * ==============================================================*/
+    /* =========================== 2) DALL·E ========================== */
+    if ($active_config['host'] === 'dall-e' || $active_config['host'] === 'gpt-image-1') {
+        $data = json_decode($response, true);
+        if (!is_array($data)) {
+            return [
+                'deployment' => $uiDeployment,
+                'error'      => true,
+                'message'    => 'Invalid JSON from image API'
+            ];
+        }
+        file_put_contents(__DIR__.'/assistant_msgs.log', "\n\n    -    GPT-IMAGE-1 LOG - r16 - " . print_r($data, true), FILE_APPEND);
+        #print_r($data); 
+        die("\n\nGOT TO THIS POINT dude\n");
+        $image_url = $data['data'][0]['url'] ?? null;
+        if (!$image_url) {
+            return [ 'deployment'=>$uiDeployment, 'error'=>true, 'message'=>'No image URL in response' ];
+        }
+
+        preg_match('#/images/([^/]+)/generated_#', $image_url, $m);
+        $unique_dir    = $m[1] ?? uniqid();
+        $imageName     = $chat_id . '-' . $unique_dir . '.png';
+        $image_dir     = dirname(__DIR__) . '/image_gen';
+        $fullsize_dir  = $image_dir . '/fullsize';
+        $small_dir     = $image_dir . '/small';
+        if (!is_dir($fullsize_dir)) mkdir($fullsize_dir, 0755, true);
+        if (!is_dir($small_dir))   mkdir($small_dir,   0755, true);
+
+        $full = "$fullsize_dir/$imageName";
+        $small= "$small_dir/$imageName";
+
+        $img = @file_get_contents($image_url);
+        if ($img === false || file_put_contents($full, $img) === false) {
+            return [ 'deployment'=>$uiDeployment, 'error'=>true, 'message'=>'Failed to fetch/save image' ];
+        }
+        scale_image_from_path($full, $small, 0.5);
+
+        $eid = create_exchange($uiDeployment, $chat_id, $user_prompt, '', $wfId, $imageName);
+
+        return [
+            'eid'            => $eid,
+            'deployment'     => $uiDeployment,
+            'error'          => false,
+            'message'        => 'Image generated successfully.',
+            'image_gen_name' => $imageName
+        ];
+    }
+
+    /* ========================= 3) COMPLETIONS ======================= */
+    // (OpenAI/Azure chat-completions JSON string)
     $data = json_decode($response, true);
 
-    /* 2a. Hard error from OpenAI/Azure ---------------------------- */
-    if (isset($data['error'])) {
-        log_error_details($msg_ctx,
-                          $user_prompt,
-                          $data['error']['message'] ?? 'Unknown error');
+    // 3a) ERROR branch if JSON invalid or API reported an error
+    if (!is_array($data)) {
         return [
-            'deployment' => $active_config['deployment_name'] ?? 'n/a',
+            'deployment' => $uiDeployment,
+            'error'      => true,
+            'message'    => 'Invalid JSON from completions API'
+        ];
+    }
+    if (isset($data['error'])) {
+        log_error_details($msg_ctx, $user_prompt, $data['error']['message'] ?? 'Unknown error');
+        return [
+            'deployment' => $uiDeployment,
             'error'      => true,
             'message'    => $data['error']['message'] ?? 'Unknown error'
         ];
     }
 
-    /* ==============================================================
-     * 3.   DALL·E flow (unchanged)
-     * ==============================================================*/
-    if ($active_config['host'] === 'dall-e') {
-
-        $image_url = $data['data'][0]['url'] ?? null;
-        if (!$image_url) {
-            return [ 'deployment'=>$active_config['deployment_name'],
-                     'error'=>true,
-                     'message'=>'No image URL in response' ];
-        }
-        if ($image_url) {
-            preg_match('#/images/([^/]+)/generated_#', $image_url, $matches);
-            $unique_dir = $matches[1] ?? uniqid();
-            $image_gen_name = $chat_id . '-' . $unique_dir . '.png';
-
-            $image_gen_dir = dirname(__DIR__) . '/image_gen';
-            $fullsize_dir = $image_gen_dir . '/fullsize';
-            $small_dir = $image_gen_dir . '/small';
-
-            if (!is_dir($fullsize_dir)) mkdir($fullsize_dir, 0755, true);
-            if (!is_dir($small_dir)) mkdir($small_dir, 0755, true);
-
-            $fullsize_path = $fullsize_dir . '/' . $image_gen_name;
-            $small_path = $small_dir . '/' . $image_gen_name;
-
-            $image_data = @file_get_contents($image_url);
-            if ($image_data !== false) {
-                if (file_put_contents($fullsize_path, $image_data) === false) {
-                    error_log("Failed to write fullsize image: $fullsize_path");
-                } else {
-                    scale_image_from_path($fullsize_path, $small_path, 0.5);
-                    if (empty($custom_config['workflowId'])) $custom_config['workflowId'] = '';
-                    $eid = create_exchange($active_config['deployment'], $chat_id, $user_prompt, '', $custom_config['workflowId'], $image_gen_name);
-
-                    return [
-                        'eid' => $eid,
-                        'deployment' => $active_config['deployment_name'],
-                        'error' => false,
-                        'message' => 'Image generated successfully.',
-                        'image_gen_name' => $image_gen_name
-                    ];
-                }
-            } else {
-                error_log("Failed to download image from URL: $image_url");
-            }
-        }
-    }
-
-    /* ==============================================================
-     * 4.   Classic Chat-Completions (unchanged)
-     * ==============================================================*/
-    $answer_text = $data['choices'][0]['message']['content']
-                   ?? 'No response text found.';
-
-    $wfId = $custom_config['workflowId'] ?? '';
-    $eid  = create_exchange($active_config['deployment'],
-                            $chat_id,
-                            $user_prompt,
-                            $answer_text,
-                            $wfId);
+    // 3b) Normal success
+    $answer_text = $data['choices'][0]['message']['content'] ?? 'No response text found.';
+    $eid = create_exchange($uiDeployment, $chat_id, $user_prompt, $answer_text, $wfId);
 
     return [
         'eid'        => $eid,
-        'deployment' => $active_config['deployment_name'],
+        'deployment' => $uiDeployment,
         'error'      => false,
         'message'    => $answer_text
     ];
@@ -718,7 +876,7 @@ function save_to_blob(string $chat_id,
  * @return array The messages array for Chat Completion.
  */
 function handle_chat_request($message, $chat_id, $user, $active_config) {
-    #file_put_contents('assistant_msgs.log', print_r($message, true));
+    file_put_contents(__DIR__.'/assistant_msgs.log', "\n\n    -    ASSISTANTLOG - 5 - " . print_r($message, true), FILE_APPEND);
 
     // 1) build system message
     $system_message = build_system_message($active_config);
@@ -728,7 +886,8 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
     $doc_tokens = array_sum(array_column($docs, 'document_token_length'));
 
     // 3) format docs into messages
-    $document_messages = format_document_messages($docs, $message);
+    # AT THE MOMENT WE HAVE DISABLED PASSING DOCUMENTS TO THE CONTEXT SINCE WE NOW USE RAG
+    $document_messages = []; #format_document_messages($docs, $message);
 
     // 4) pull chat history, *reserving* doc_tokens
     $context_messages = retrieve_context_messages(
@@ -748,7 +907,7 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
             ["role" => "user", "content" => $message]
         ]
     );
-    #file_put_contents('assistant_msgs.log', print_r($messages, true));
+    file_put_contents(__DIR__.'/assistant_msgs.log', "\n\n    -    ASSISTANTLOG - 6 - " . print_r($messages, true), FILE_APPEND);
 
 
     #die("THESE ARE THE FINAL MESSAGES\n" . print_r($messages,1));
@@ -756,11 +915,96 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
     return $messages;
 }
 
+
+/**
+ * Given an array of doc rows and the current user message,
+ * return an array of “messages” that inject each document,
+ * splitting any long text docs into parts under the Azure limit.
+ */
+function format_document_messages(array $docs, string $userMessage): array {
+    $messages = [];
+    $maxLength = 256000;
+
+    foreach ($docs as $i => $doc) {
+        $baseName = $doc['document_name'];
+        $content  = $doc['document_content'];
+
+        // image files: no splitting
+        if (strpos($doc['document_type'], 'image/') === 0) {
+            $messages[] = [
+                "role"    => "user",
+                "content" => "This is document #" . ($i + 1) . ". Filename: " . $baseName
+            ];
+            $messages[] = [
+                "role"    => "user",
+                "content" => [
+                    ["type" => "text",      "text"      => $userMessage],
+                    ["type" => "image_url", "image_url" => ["url" => $content]]
+                ]
+            ];
+            continue;
+        }
+
+        // text docs: possibly split into parts
+        $length = mb_strlen($content, 'UTF-8');
+        if ($length <= $maxLength) {
+            // under limit: send as one message
+            $messages[] = [
+                "role"    => "user",
+                "content" => "This is document #" . ($i + 1) . ". Filename: " . $baseName
+            ];
+            $messages[] = [
+                "role"    => "user",
+                "content" => $content
+            ];
+        } else {
+            // split into parts
+            $parts = [];
+            $offset = 0;
+            while ($offset < $length) {
+                $parts[] = mb_substr($content, $offset, $maxLength, 'UTF-8');
+                $offset += $maxLength;
+            }
+            $totalParts = count($parts);
+
+            foreach ($parts as $k => $partContent) {
+                $partNum = $k + 1;
+                $messages[] = [
+                    "role"    => "user",
+                    "content" => sprintf(
+                        "This is document #%d. Filename: %s (part %d of %d)",
+                        $i + 1,
+                        $baseName,
+                        $partNum,
+                        $totalParts
+                    )
+                ];
+                $messages[] = [
+                    "role"    => "user",
+                    "content" => $partContent
+                ];
+            }
+        }
+    }
+
+    return $messages;
+}
+
+
+
+
+
+
+
+
+
+
+
 /**
  * Given an array of doc rows and the current user message,
  * return an array of “messages” that inject each document.
  */
-function format_document_messages(array $docs, string $userMessage): array {
+function old_format_document_messages(array $docs, string $userMessage): array {
     $messages = [];
     foreach ($docs as $i => $doc) {
         // metadata
@@ -813,6 +1057,7 @@ function rest_raw(string $method, string $path, ?array $body, array $cfg): strin
 function _rest_core(string $method, string $path, ?array $body, array $cfg,
                     &$status = 0, &$ctype = ''): string
 {
+    global $chat_id;
     $url  = rtrim($cfg['base_url'], '/').$path;
     $url .= (str_contains($url, '?') ? '&' : '?')
           . 'api-version='.$cfg['api_version'];
@@ -826,7 +1071,7 @@ function _rest_core(string $method, string $path, ?array $body, array $cfg,
     }
 
     #print("3. The Final payload: ".print_r($payload,1));
-    #file_put_contents('payload.log', $payload);
+    file_put_contents(__DIR__.'/assistant_msgs.log', "\n\n    -    ASSISTANTLOG - 7 - " . print_r($payload, true), FILE_APPEND);
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
@@ -838,6 +1083,18 @@ function _rest_core(string $method, string $path, ?array $body, array $cfg,
     $resp   = curl_exec($ch);
     $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $ctype  = curl_getinfo($ch, CURLINFO_CONTENT_TYPE) ?? '';
+
+    if ($status >= 400) {
+        // try to surface the real error
+        $detail = '';
+        if ($ctype && str_starts_with($ctype, 'application/json')) {
+            $j = json_decode($resp, true);
+            $detail = $j['error']['code'] . ': ' . $j['error']['message'] ?? '';
+        } else {
+            $detail = substr($resp, 0, 300);          // plain‐text fallback
+        }
+        throw new RuntimeException("Chat id: {$chat_id} - Azure REST $method $path HTTP $status – $detail");
+    }
 
     if (curl_errno($ch))  throw new RuntimeException('cURL error: '.curl_error($ch));
     curl_close($ch);
@@ -914,7 +1171,7 @@ function build_system_message($active_config) {
     $system_message = [
         [
             'role' => 'user',
-            'content' => 'You are NHLBI Chat, a helpful assistant for staff at the National Heart Lung and Blood Institute. In this timezone, ' . $date->getTimezone()->getName() . ', the current date and time of this prompt is ' . $date->format('Y-m-d H:i:s') . '. The user\'s browser has the preferred language (HTTP_ACCEPT_LANGUAGE) set to ' . $_SERVER['HTTP_ACCEPT_LANGUAGE'] . ', so please reply in that language if possible, unless directed otherwise. The following is the disclaimer / instruction text we present to users: <<<' . $about . '>>>. '
+            'content' => 'You are NHLBI Chat, a helpful assistant for staff at the National Heart Lung and Blood Institute. In this timezone, ' . $date->getTimezone()->getName() . ', the current date and time of this prompt is ' . $date->format('Y-m-d H:i:s') . '. The user\'s browser has the preferred language (HTTP_ACCEPT_LANGUAGE) set to ' . $_SERVER['HTTP_ACCEPT_LANGUAGE'] . ', so please reply in that language if possible, unless directed otherwise. If you return code, be sure to use the tic-mark (```) notation so that it renders properly in the Chat interface. The following is the disclaimer / instruction text we present to users: <<<' . $about . '>>>. '
         ]
     ];
 
@@ -1260,11 +1517,11 @@ function call_mocha_api($base_url, $msg) {
 }
 
 function clean_disclaimer_text() {
-
-    $html = file_get_contents('staticpages/disclaimer_text.php');
+    global $config;
+    require_once 'staticpages/disclaimer_text.php';
 
     // Step 1: Replace structural tags with line breaks
-    $html = preg_replace('/<\/?(p|ul|ol)>/i', "\n\n", $html);   // Paragraphs/lists → double break
+    $html = preg_replace('/<\/?(p|ul|ol)>/i', "\n\n", $maintext);   // Paragraphs/lists → double break
     $html = preg_replace('/<li>/i', "- ", $html);               // Bullet for list items
     //$html = preg_replace('/<\/li>/i', "\n", $html);             // Line break after list item
     $html = preg_replace('/<br\s*\/?>/i', "\n", $html);         // Single break

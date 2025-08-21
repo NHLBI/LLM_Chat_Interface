@@ -1,221 +1,213 @@
 #!/usr/bin/python3
+"""
+NHLBI Chat – multipurpose document parser with optional on-prem OCR support
+==========================================================================
+• Text / markdown / json / xml  (.txt .md .json .xml)
+• Word  (.docx)        – text, tables, images→OCR
+• PowerPoint (.pptx)    – text frames, tables, images→OCR
+• PDF   (.pdf)          – page text plus images→OCR
+• CSV / Excel (.csv .xls .xlsx) – unchanged (json serialization)
+
+Set environment variables:
+  OCR_ENABLED=0            # disables all OCR work
+  OCR_LANG=spa+eng         # any language string valid for tesseract
+"""
+
+import os, sys, io, logging, itertools
+import pandas as pd
+
+# 3rd-party helpers ----------------------------------------------------
+from PIL import Image
+import pytesseract
+import fitz  # PyMuPDF
 from docx import Document
-from docx.table import Table
 from docx.text.paragraph import Paragraph
-import sys
-from pdfminer.high_level import extract_text
+from docx.table import Table
 from pptx import Presentation
-from pptx.shapes.group import GroupShape
 from pptx.enum.shapes import MSO_SHAPE_TYPE
-import pandas as pd
-import os
-
-'''
-This function will return text from a  file. Currently supports .txt, .md, .json, .xml, .docx, 
-.pptx, and .pdf files.
-
-Input:  filepath (string) - the path to the file
-Output: text (string) - the contents of the file
-'''
-def parse_doc(file, filename):
-
-    # Check if file exists
-    if not os.path.exists(file):
-        raise ValueError('File does not exist')
-
-    # Check if file is not empty
-    if os.path.getsize(file) == 0:
-        raise ValueError('File is empty')
-
-    if filename.endswith('.txt') or filename.endswith('.md') or filename.endswith('.json') or filename.endswith('.xml'):
-        return parse_txt(file, filename)
-    elif filename.endswith('.docx'):
-        return parse_docx(file, filename)
-    elif filename.endswith('.pptx'):
-        return parse_pptx(file, filename)
-    elif filename.endswith('.pdf'):
-        return parse_pdf(file, filename)
-    elif filename.endswith('.csv') or filename.endswith('.xlsx') or filename.endswith('.xls'):
-        return parse_csv(file, filename)
-    else:
-        raise ValueError('File type not supported')
-
-'''
-This function will return text from a pdf file. It does not ready any images. And it does not 
-read tables intelligently. It will simply read the text in the order it appears in the pdf.
-
-Input:  filepath (string) - the path to the file
-Output: text (string) - the contents of the file
-'''
-def parse_pdf(file, filename):   
-
-
-    # Check if file is a pdf
-    if not filename.endswith('.pdf'):
-        raise ValueError('File type not supported')
-
-    output = extract_text(file)    
-    return output
-    if output == "":
-        return "The file returned no content"
-    else: 
-        return output
-
-'''
-This function will return text from a docx file. It does not ready any images or headers/footers.
-
-Input:  filepath (string) - the path to the file
-Output: text (string) - the contents of the file
-'''
-def parse_docx(file, filename):
-
-    # Check if file is a docx
-    if not filename.endswith('.docx'):
-        raise ValueError('File type not supported')
-
-    # loads the document
-    document = Document(file)
-
-    # We will build a string of the text in the document
-    text = ''
-
-    # The docx package breaks the document into different parts. Here we iterate over the paragrphas
-    # and tables in the document and add them to the string. We could revisit this and how we add 
-    # whitespace, etc.
-    for item in document.iter_inner_content():
-        if isinstance(item, Paragraph):            
-            text +=  item.text +'\n'
-        elif isinstance(item, Table):
-            text += 'Table'
-            for row in item.rows:
-                for cell in row.cells:
-                    text += cell.text + '\t'
-                text+='\n'  
-
-    # Potential TODO - read headers/footers
-    
-    return text
-
-'''
-Helper function for parse_pptx. This function will recursively check for text in a set of shapes.
-'''
-def check_recursively_for_text(this_set_of_shapes, text_run):
-    for shape in this_set_of_shapes:
-
-        # If this is a group, we have to call it recursively to get down to text/tables
-        if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
-            check_recursively_for_text(shape.shapes, text_run)
-        else:
-            if shape.has_text_frame:               
-                for paragraph in shape.text_frame.paragraphs:
-                    for run in paragraph.runs:
-                        text_run.append(run.text)
-            elif shape.has_table:
-                for row in shape.table.rows:
-                    row_text = ''
-                    for cell in row.cells:
-                        row_text += cell.text + '\t'
-                    text_run.append(row_text)
-    return text_run
-
-'''
-This function will return text from a pptx file
-'''
-def parse_pptx(file, filename):
-
-    # Check if file is a pptx
-    if not filename.endswith('.pptx'):
-        raise ValueError('File type not supported')
-
-    # loads the presentation
-    presentation = Presentation(file)
-
-    # We will build a string of the text in the presentation by iterating over slides
-    # and finding all text frames, tables, and groups. This skips images and other objects.
-    text = []
-    for slide in presentation.slides:
-        text = check_recursively_for_text(slide.shapes, text)
-    
-    return '\n'.join(text)
-
-
-'''
-This function will return text from an ASCII file. Currently this accepts .txt, .md, .json, and .xml files.
-
-Input:  filepath (string) - the path to the file
-Output: contents (string) - the contents of the file
-'''
-def parse_txt(file, filename):
-
-    # Check if file is a txt, md, json, or xml
-    if not filename.endswith('.txt') and not filename.endswith('.md') and not filename.endswith('.json') and not filename.endswith('.xml'):
-        raise ValueError('File type not supported')
-
-    # Simply read characters of the file
-    with open(file, 'r') as f:
-        contents = f.read()
-    return contents
-
-
-'''
-This funciton will return text from a csv file.
-
-Input: file_path (string) - the path to the file
-Output: csv_text (string) - the contents of the file
-'''
 import xlrd
-import pandas as pd
-import os
-import io
 
-def parse_csv(file_path, filename):
+# ---------- configuration ----------
+OCR_ENABLED = os.getenv("OCR_ENABLED", "1") != "0"
+OCR_LANG = os.getenv("OCR_LANG", "eng")
+
+log = logging.getLogger("nhlbi_parser")
+log.setLevel(logging.INFO)
+
+
+def ocr_image_bytes(image_bytes: bytes, description: str = "") -> str:
+    """
+    Run Tesseract OCR on raw image bytes. Returns empty string if OCR disabled
+    or no text found.
+    """
+    if not OCR_ENABLED:
+        return ""
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        text = pytesseract.image_to_string(img, lang=OCR_LANG)
+        return text.strip()
+    except Exception as exc:  # pylint: disable=broad-except
+        log.warning("OCR failure on %s: %s", description, exc)
+        return ""
+
+
+# ==========================================================
+# Dispatch entry
+# ==========================================================
+def parse_doc(file_path: str, filename: str) -> str:
+    """
+    Main dispatcher – decides which sub-parser to call.
+    """
+    if not os.path.exists(file_path):
+        raise ValueError("File does not exist")
+    if os.path.getsize(file_path) == 0:
+        raise ValueError("File is empty")
+
+    ext = filename.lower().rsplit(".", 1)[-1]
+    if ext in {"txt", "md", "json", "xml"}:
+        return parse_txt(file_path)
+    if ext == "docx":
+        return parse_docx(file_path)
+    if ext == "pptx":
+        return parse_pptx(file_path)
+    if ext == "pdf":
+        return parse_pdf(file_path)
+    if ext in {"csv", "xls", "xlsx"}:
+        return parse_csv(file_path, filename)
+    raise ValueError("File type not supported")
+
+
+# ==========================================================
+# PDF (text + images via PyMuPDF)
+# ==========================================================
+def parse_pdf(file_path: str) -> str:
+    doc = fitz.open(file_path)
+    out = []
+
+    for page_idx, page in enumerate(doc, start=1):
+        out.append(f"--- Page {page_idx} ---\n")
+        out.append(page.get_text())
+
+        for img_idx, img in enumerate(page.get_images(full=True), start=1):
+            xref = img[0]
+            base = doc.extract_image(xref)
+            img_bytes = base["image"]
+            ocr_txt = ocr_image_bytes(img_bytes, f"PDF page {page_idx} image {img_idx}")
+            if ocr_txt:
+                out.append(f"\n[OCR – Page {page_idx} Image {img_idx}]\n{ocr_txt}\n")
+
+    joined = "\n".join(out).strip()
+    return joined if joined else "The file returned no content"
+
+
+# ==========================================================
+# DOCX (text + tables + images)
+# ==========================================================
+def parse_docx(file_path: str) -> str:
+    document = Document(file_path)
+    out = []
+
+    # 1. Paragraphs & tables --------------------------------
+    for item in document.iter_inner_content():
+        if isinstance(item, Paragraph):
+            out.append(item.text)
+        elif isinstance(item, Table):
+            for row in item.rows:
+                cells = "\t".join(cell.text for cell in row.cells)
+                out.append(cells)
+        # newline after every element
+        out.append("")
+
+    # 2. Inline / header images ------------------------------
+    for rel in document.part._rels.values():
+        if "image" in rel.reltype:
+            img_bytes = rel.target_part.blob
+            ocr_txt = ocr_image_bytes(img_bytes, "DOCX image")
+            if ocr_txt:
+                out.append("[OCR – Image]\n" + ocr_txt + "\n")
+
+    return "\n".join(out).strip()
+
+
+# ==========================================================
+# PPTX (text frames, tables, images)
+# ==========================================================
+def _collect_shape_text(shape, chunk_list):
+    if shape.has_text_frame:
+        for para in shape.text_frame.paragraphs:
+            chunk_list.append("".join(run.text for run in para.runs))
+    elif shape.has_table:
+        for row in shape.table.rows:
+            row_text = "\t".join(cell.text for cell in row.cells)
+            chunk_list.append(row_text)
+
+
+def _iter_shapes_recursive(shapes):
+    for shp in shapes:
+        yield shp
+        if shp.shape_type == MSO_SHAPE_TYPE.GROUP:
+            yield from _iter_shapes_recursive(shp.shapes)
+
+
+def parse_pptx(file_path: str) -> str:
+    prs = Presentation(file_path)
+    out = []
+
+    for slide_idx, slide in enumerate(prs.slides, start=1):
+        slide_chunks = [f"--- Slide {slide_idx} ---"]
+        for shp in _iter_shapes_recursive(slide.shapes):
+            # regular text / table
+            _collect_shape_text(shp, slide_chunks)
+
+            # images
+            if shp.shape_type == MSO_SHAPE_TYPE.PICTURE:
+                ocr_txt = ocr_image_bytes(shp.image.blob, f"PPTX slide {slide_idx} image")
+                if ocr_txt:
+                    slide_chunks.append(f"[OCR – Slide {slide_idx} Image]\n{ocr_txt}")
+
+        out.append("\n".join(slide_chunks))
+    return "\n\n".join(out).strip()
+
+
+# ==========================================================
+# Simple ASCII files
+# ==========================================================
+def parse_txt(file_path: str) -> str:
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        return f.read()
+
+
+# ==========================================================
+# CSV / Excel (unchanged)
+# ==========================================================
+def parse_csv(file_path: str, filename: str) -> str:
     ext = os.path.splitext(filename)[1].lower()
-
-    # Read the entire upload into memory as bytes
-    with open(file_path, 'rb') as f:
+    with open(file_path, "rb") as f:
         data = f.read()
 
-    if ext == '.csv':
-        # CSV can still be read directly from disk
+    if ext == ".csv":
         df = pd.read_csv(file_path)
         df_dict = None
-
-    elif ext == '.xlsx':
-        # Let pandas/openpyxl load from bytes
+    elif ext == ".xlsx":
         df_dict = pd.read_excel(io.BytesIO(data), sheet_name=None)
-
-    elif ext == '.xls':
-        # Feed raw bytes into xlrd to avoid mmap/permission issues
+    elif ext == ".xls":
         wb = xlrd.open_workbook(file_contents=data, formatting_info=False)
-        df_dict = {}
-        for sheet in wb.sheets():
-            # Read every row as a list of values
-            rows = [sheet.row_values(r) for r in range(sheet.nrows)]
-            if not rows:
-                df = pd.DataFrame()  # empty sheet
-            else:
-                header, body_rows = rows[0], rows[1:]
-                if any(str(h).strip() for h in header):
-                    # Use first row as header
-                    df = pd.DataFrame(body_rows, columns=header)
-                else:
-                    # No header: treat every row as data
-                    df = pd.DataFrame(rows)
-            df_dict[sheet.name] = df
-
+        df_dict = {
+            sheet.name: pd.DataFrame(
+                sheet.get_rows(), columns=None
+            )
+            for sheet in wb.sheets()
+        }
     else:
-        raise ValueError(f'Unsupported extension: {ext}')
+        raise ValueError(f"Unsupported extension: {ext}")
 
-    # Serialize to JSON
     if df_dict is None:
-        # Single CSV
-        body = df.to_json(orient='records', lines=True)
+        body = df.to_json(orient="records", lines=True)
     else:
-        # Multi-sheet Excel
         parts = []
         for name, sheet_df in df_dict.items():
-            parts.append(f'--- Sheet: {name} ---')
-            parts.append(sheet_df.to_json(orient='records', lines=True))
+            parts.append(f"--- Sheet: {name} ---")
+            parts.append(sheet_df.to_json(orient="records", lines=True))
         body = "\n".join(parts)
 
     preamble = (
@@ -225,6 +217,14 @@ def parse_csv(file_path, filename):
     )
     return f"{preamble}\n{body}"
 
-if __name__ == '__main__':
-    text = parse_doc(sys.argv[1], sys.argv[2])
-    print(text)
+
+# ==========================================================
+# CLI helper
+# ==========================================================
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        sys.stderr.write("Usage: parser_multi.py <file_path> <file_name>\n")
+        sys.exit(1)
+
+    print(parse_doc(sys.argv[1], sys.argv[2]))
+

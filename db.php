@@ -189,6 +189,26 @@ function create_exchange(
     $stmt = $pdo->prepare("UPDATE `chat` SET timestamp = NOW() WHERE id = :id");
     $stmt->execute(['id' => $chat_id]);
 
+
+    if (!empty($_SESSION['last_rag_citations'])) {
+        $stmt = $pdo->prepare("
+            INSERT INTO rag_usage_log
+            (exchange_id, chat_id, user, query_embedding_model, top_k, latency_ms, citations)
+            VALUES (:ex, :chat, :user, :model, :k, :lat, :cites)
+        ");
+        $stmt->execute([
+            'ex'    => $insert_id,
+            'chat'  => $chat_id,
+            'user'  => $_SESSION['user_data']['userid'] ?? '',
+            'model' => $jr['embedding_model_used'] ?? 'unknown',
+            'k'     => (int)($payload['top_k']),
+            'lat'   => (int)($jr['latency_ms'] ?? 0),
+            'cites' => json_encode($_SESSION['last_rag_citations']),
+        ]);
+        unset($_SESSION['last_rag_citations']);
+    }
+
+
     return $insert_id;
 }
 
@@ -743,7 +763,8 @@ function hard_delete_old_chats($logFile, $threshold = null)
         $pdo->prepare("
           UPDATE document
              SET name    = '',
-                 content = ''
+                 content = '',
+                `timestamp`      = `timestamp`
            WHERE chat_id IN ($in)
         ")->execute($ids);
 
@@ -808,7 +829,8 @@ function soft_delete_old_chats($logFile, $threshold = null)
         $pdo->prepare("
           UPDATE chat
              SET deleted          = 1,
-                 soft_delete_date = ?
+                 soft_delete_date = ?,
+                `timestamp`      = `timestamp`
            WHERE id IN ($in)
         ")->execute($params);
 

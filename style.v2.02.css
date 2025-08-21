@@ -881,7 +881,7 @@ code {
   border-radius: 1px;
   width: 90%;
   max-width: 800px;
-  max-height: 700px;
+  max-height: 800px;
   position: relative;
   overflow-y:scroll;
 }
