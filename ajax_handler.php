@@ -82,6 +82,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    if (!empty($gpt_response['deployment'])) {
+        $deployment = $gpt_response['deployment'];
+    }
+
     // Prepare the response data to send back to the client
     $response = [
         'eid' => $gpt_response['eid'] ?? null,
