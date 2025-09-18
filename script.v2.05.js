@@ -119,7 +119,7 @@ $(document).ready(function() {
 
                 // Show specific elements (if needed for 'chat' type)
                 document.getElementById('messageForm').style.display = 'block';
-                document.getElementById('modelSelectButton').style.display = 'block';
+                document.getElementById('modelSelectButton').style.display = 'inline-block';
                 const tempForm = document.getElementById('temperature_select');
                 if (tempForm) {
                     tempForm.style.display = 'block';

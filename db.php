@@ -38,14 +38,56 @@ function createGUID() {
 }
 
 
-// Create a new chat in the database with the given user, title, and summary
+/**
+ * Create a new chat row and return its GUID.
+ *
+ * Pulls current UI prefs for temperature, reasoning_effort, and verbosity from $_SESSION
+ * and persists them in the chat record. Title is truncated to 254 chars to fit VARCHAR(255).
+ *
+ * @param string $user        Username or identifier for the chat owner.
+ * @param string $title       Human-readable title for the chat.
+ * @param string $summary     Optional summary text (nullable in DB).
+ * @param string $deployment  Deployment key (e.g., 'gpt5_prod', 'o3_mini', etc.).
+ *
+ * @return string             The new chat GUID (32-char hex, no dashes).
+ *
+ * @throws PDOException       On database insert failure.
+ *
+ * @sideeffect Inserts a row into `chat` (id, user, title, summary, deployment,
+ *             temperature, reasoning_effort, verbosity, timestamp).
+ * @requires  `chat` columns: temperature, reasoning_effort, verbosity.
+ */
 function create_chat($user, $title, $summary, $deployment) {
     global $pdo;
-    $guid = createGUID();
-    $guid = str_replace('-','',$guid);
-    $temperature= $_SESSION['temperature'];
-    $stmt = $pdo->prepare("INSERT INTO chat (id, user, title, summary, deployment, temperature, timestamp) VALUES (:id, :user, :title, :summary, :deployment, :temperature, NOW())");
-    $stmt->execute(['id' => $guid, 'user' => $user, 'title' => substr($title,0,254), 'summary' => $summary, 'deployment' => $deployment, 'temperature'=>$temperature]);
+
+    $guid = str_replace('-', '', createGUID());
+
+    // Pull current UI prefs (fallbacks keep things safe even if unset)
+    $temperature       = (empty($_SESSION['temperature'])) ? '0.7' : $_SESSION['temperature']; 
+    $reasoning_effort  = (empty($_SESSION['reasoning_effort'])) ? 'medium' : $_SESSION['reasoning_effort'];
+    $verbosity         = (empty($_SESSION['verbosity'])) ? 'medium' : $_SESSION['verbosity'];
+
+    #die(print_r($_SESSION,1));
+
+    // Insert including the two new columns
+    $stmt = $pdo->prepare("
+        INSERT INTO chat
+            (id, user, title, summary, deployment, temperature, reasoning_effort, verbosity, timestamp)
+        VALUES
+            (:id, :user, :title, :summary, :deployment, :temperature, :reasoning_effort, :verbosity, NOW())
+    ");
+
+    $stmt->execute([
+        'id'               => $guid,
+        'user'             => $user,
+        'title'            => substr($title, 0, 254),
+        'summary'          => $summary,
+        'deployment'       => $deployment,
+        'temperature'      => $temperature,
+        'reasoning_effort' => $reasoning_effort,
+        'verbosity'        => $verbosity,
+    ]);
+
     return $guid;
     #return $pdo->lastInsertId();
 }
@@ -322,31 +364,65 @@ function get_all_exchanges($chat_id, $user) {
     return $output;
 }
 
+/**
+ * Fetch all chats for a user (optionally filtered by a search term), with document aggregates.
+ *
+ * Joins documents and exchanges, annotates each chat with its effective exchange_type,
+ * accumulated document token length, and per-chat settings (temperature, reasoning_effort, verbosity).
+ * Result is keyed by chat id; each entry includes a 'document' map keyed by document_id.
+ *
+ * @param string      $user    Username/owner to filter by.
+ * @param string|null $search  Optional substring search across title/prompt/reply.
+ *
+ * @return array               Associative array keyed by chat id:
+ *                             [
+ *                               <chat_id> => [
+ *                                 'id' => string,
+ *                                 'user' => string,
+ *                                 'title' => string,
+ *                                 'deployment' => string,
+ *                                 'azure_thread_id' => string|null,
+ *                                 'exchange_type' => 'workflow'|'chat',
+ *                                 'temperature' => float|null,
+ *                                 'reasoning_effort' => 'minimal'|'low'|'medium'|'high',
+ *                                 'verbosity' => 'low'|'medium'|'high',
+ *                                 'token_length' => int (only if docs found),
+ *                                 'document' => [
+ *                                   <doc_id> => ['name'=>string,'type'=>string,'token_length'=>int]
+ *                                 ]
+ *                               ],
+ *                               ...
+ *                             ]
+ *
+ * @throws PDOException        On query failure.
+ *
+ * @note Uses GROUP BY c.id, d.id to avoid collapsing multiple documents.
+ * @security Title is html_entity_decoded for display convenience.
+ */
 function get_all_chats($user, $search = '') {
     global $pdo;
 
     // Base SQL query
     $sql = "
     SELECT
-        c.id, c.user, c.title, c.deployment, c.azure_thread_id, c.temperature,
+        c.id, c.user, c.title, c.deployment, c.azure_thread_id,
+        c.temperature, c.reasoning_effort, c.verbosity,
         c.new_title, d.id AS `document_id`, d.name AS `document_name`, d.document_token_length,
-        d.type AS `document_type`, d.deleted AS `document_deleted`, c.deleted, 
-        w.workflow_id, c.timestamp AS latest_interaction
+        d.type AS `document_type`, d.deleted AS `document_deleted`,
+        c.deleted, w.workflow_id, c.timestamp AS latest_interaction
     FROM chat c
     LEFT JOIN document d ON c.id = d.chat_id
     LEFT JOIN exchange e ON c.id = e.chat_id
     LEFT JOIN workflow_exchange AS w ON w.exchange_id = e.id
-    WHERE
-        c.user = :user
-        AND c.deleted = 0
+    WHERE c.user = :user AND c.deleted = 0
     ";
 
     // If a search string is provided, add conditions for title
     if (!empty($search)) {
-        $sql .= " AND (c.title LIKE :search OR e.prompt LIKE :search OR e.reply LIKE :search )";
+        $sql .= " AND (c.title LIKE :search OR e.prompt LIKE :search OR e.reply LIKE :search)";
     }
 
-    $sql .= "GROUP BY c.id, d.id ORDER BY c.timestamp DESC, c.id, d.id";
+    $sql .= " GROUP BY c.id, d.id ORDER BY c.timestamp DESC, c.id, d.id";
 
     #echo $sql . "\n";
     $stmt = $pdo->prepare($sql);
@@ -367,20 +443,40 @@ function get_all_chats($user, $search = '') {
     #echo $sql . "<br>\n";
     #echo '<pre>'.print_r($rows,1).'<pre>'; die();
     $output = [];
-    foreach($rows as $r) {
+    foreach ($rows as $r) {
         // Decode HTML entities for the title
         $r['title'] = html_entity_decode($r['title'], ENT_QUOTES, 'UTF-8');
-        #$output[$r['id']][] = $r;
-        $output[$r['id']]['id'] = $r['id'];
-        $output[$r['id']]['user'] = $r['user'];
-        $output[$r['id']]['title'] = $r['title'];
-        $output[$r['id']]['deployment'] = $r['deployment'];
-        $output[$r['id']]['azure_thread_id'] = $r['azure_thread_id'];
-        $output[$r['id']]['exchange_type'] = ($r['workflow_id']) ? 'workflow' : 'chat';
-        if (empty($output[$r['id']]['document'])) $output[$r['id']]['document'] = array();
+
+        // Initialize chat row bucket
+        $cid = $r['id'];
+        if (!isset($output[$cid])) {
+            $output[$cid] = [
+                'id'             => $cid,
+                'user'           => $r['user'],
+                'title'          => $r['title'],
+                'deployment'     => $r['deployment'],
+                'azure_thread_id'=> $r['azure_thread_id'],
+                'exchange_type'  => ($r['workflow_id']) ? 'workflow' : 'chat',
+                'temperature'    => $r['temperature'],
+                'reasoning_effort'=> $r['reasoning_effort'],
+                'verbosity'      => $r['verbosity'],
+                'document'       => [],
+                // we'll accumulate this below if docs exist
+                // 'token_length' => 0,
+            ];
+        }
+
+        // Collect document + token_length
         if ($r['document_deleted'] == 0 && !empty($r['document_name'])) {
-            $output[$r['id']]['token_length'] = (empty($output[$r['id']]['document'])) ? $r['document_token_length'] : $output[$r['id']]['token_length'] += $r['document_token_length']; 
-            $output[$r['id']]['document'][$r['document_id']] = array('name'=>$r['document_name'],'type'=>$r['document_type'],'token_length'=>$r['document_token_length']);
+            $output[$cid]['token_length'] = isset($output[$cid]['token_length'])
+                ? $output[$cid]['token_length'] + (int)$r['document_token_length']
+                : (int)$r['document_token_length'];
+
+            $output[$cid]['document'][$r['document_id']] = [
+                'name'         => $r['document_name'],
+                'type'         => $r['document_type'],
+                'token_length' => (int)$r['document_token_length'],
+            ];
         }
     }
     #echo '<pre>'.print_r($output,1).'<pre>'; die();
@@ -480,7 +576,7 @@ function get_workflow_data($workflow_id) {
     global $pdo;
     if (empty($workflow_id)) return false;
     
-    $stmt = $pdo->prepare("SELECT content, prompt FROM workflow WHERE id = :workflow_id");
+    $stmt = $pdo->prepare("SELECT content, prompt, deployment FROM workflow WHERE id = :workflow_id");
     $stmt->execute(['workflow_id' => $workflow_id]);
     $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
     return $result[0];
@@ -525,7 +621,17 @@ function update_chat_title($user, $chat_id, $updated_title) {
     $stmt->execute(['title' => substr($updated_title,0,254), 'new_title' => '0', 'id' => $chat_id]);
 }
 
-// Update the temperature in the chat table
+/**
+ * Update temperature for a chat (0.0–2.0 typical).
+ *
+ * @param string $user        (Currently unused in the query; kept for parity with other updaters.)
+ * @param string $chat_id     Chat GUID.
+ * @param float  $temperature New temperature value.
+ *
+ * @return void
+ *
+ * @throws PDOException
+ */
 function update_temperature($user, $chat_id, $temperature) {
     global $pdo;
 
@@ -533,6 +639,19 @@ function update_temperature($user, $chat_id, $temperature) {
     $stmt = $pdo->prepare("update chat set temperature = :temperature where id = :id");
     $stmt->execute(['temperature' => $temperature, 'id' => $chat_id]);
 }
+
+function update_reasoning_effort($user, $chat_id, $effort) {
+    global $pdo;
+    $stmt = $pdo->prepare("UPDATE chat SET reasoning_effort = :effort WHERE id = :id");
+    $stmt->execute(['effort' => $effort, 'id' => $chat_id]);
+}
+
+function update_verbosity($user, $chat_id, $verbosity) {
+    global $pdo;
+    $stmt = $pdo->prepare("UPDATE chat SET verbosity = :verbosity WHERE id = :id");
+    $stmt->execute(['verbosity' => $verbosity, 'id' => $chat_id]);
+}
+
 
 /**
  * Insert a document record into the document table, recording its token length.

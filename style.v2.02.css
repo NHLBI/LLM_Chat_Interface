@@ -1,8 +1,16 @@
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
-h3, h4 {
+h1 {
     font-size: 1.25rem;
+    font-weight: 600;
+}
+h2 {
+    font-size: 1.10rem;
+    font-weight: 600;
+}
+h3, h4 {
+    font-size: 1.10rem;
 }
 code {
     color: #993366;
@@ -523,8 +531,8 @@ code {
     margin: 20px 40px;
     max-width: 512px;
     max-height: 512px;
-    max-width: 150px;
-    max-height: 150px;
+    max-width: 350px;
+    max-height: 350px;
 }
 
 .waiting-indicator {

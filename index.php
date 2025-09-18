@@ -66,6 +66,8 @@ foreach(array_keys($models) as $m) {
         var handles_images = "<?php echo $config[$deployment]['handles_images']  ?? ''; ?>";
         var handles_documents = "<?php echo $config[$deployment]['handles_documents']  ?? ''; ?>";
         var temperature = "<?php echo $_SESSION['temperature']  ?? ''; ?>";
+        var reasoning_effort = "<?php echo $_SESSION['reasoning_effort']  ?? ''; ?>";
+        var verbosity = "<?php echo $_SESSION['verbosity']  ?? ''; ?>";
         var context_limit = "<?php echo $context_limit; ?>";
         var chatContainer;
         var currentChat;
@@ -304,6 +306,55 @@ foreach(array_keys($models) as $m) {
                 </form>
 <?php } ?>
 
+
+
+<?php if (!empty($config[$deployment]['handles_reasoning_effort'])) { ?>
+<form onsubmit="saveMessage()" id="reasoning_effort_select" action="" method="post" style="display:inline-block; margin-top:10px;">
+  <label for="reasoning_effort">Reasoning effort</label>:
+  <select
+    title="Controls how much compute the model spends thinking before answering. Higher = better reasoning, slower/costlier. On GPT-5, 'minimal' is fastest and disables parallel tool calls."
+    name="reasoning_effort"
+    id="reasoning_effort"
+    onchange="document.getElementById('reasoning_effort_select').submit();">
+    <?php
+      $efforts = ['minimal','low','medium','high']; // per Azure docs
+      $curr = $_SESSION['reasoning_effort'] ?? 'medium';
+      foreach ($efforts as $e) {
+          $sel = ($e === $curr) ? 'selected="selected"' : '';
+          echo '<option value="'.$e.'" '.$sel.'>'.ucfirst($e).'</option>'."\n";
+      }
+    ?>
+  </select>
+</form>
+<?php } ?>
+
+<?php if (!empty($config[$deployment]['handles_verbosity'])) { ?>
+<form onsubmit="saveMessage()" id="verbosity_select" action="" method="post" style="display:inline-block; margin-top:10px;">
+  <label for="verbosity">Verbosity</label>:
+  <select
+    title="Controls how terse vs. expansive the model's output is."
+    name="verbosity"
+    id="verbosity"
+    onchange="document.getElementById('verbosity_select').submit();">
+    <?php
+      $verbosities = ['low','medium','high']; // per Azure docs
+      $curr = $_SESSION['verbosity'] ?? 'medium';
+      foreach ($verbosities as $v) {
+          $sel = ($v === $curr) ? 'selected="selected"' : '';
+          echo '<option value="'.$v.'" '.$sel.'>'.ucfirst($v).'</option>'."\n";
+      }
+    ?>
+  </select>
+</form>
+<?php } ?>
+
+
+
+
+
+
+
+
 <?php 
                     if(!empty($_SESSION['error'])) {
                         echo "<script>alert('Error: ".$_SESSION['error']."');</script>";
@@ -341,12 +392,12 @@ foreach(array_keys($models) as $m) {
     <script src="session_handler.js"></script>
 
 <!-- Include application-specific scripts -->
-<script src="scripts.v2.05/utilities.js"></script>
-<script src="scripts.v2.05/manage_chats.js"></script>
-<script src="scripts.v2.05/popup.js"></script>
-<script src="scripts.v2.05/ui.js"></script>
-<script src="scripts.v2.05/listeners.js"></script>
-<script src="scripts.v2.05/user_images.js"></script>
+<script src="js/utilities.js"></script>
+<script src="js/manage_chats.js"></script>
+<script src="js/popup.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/listeners.js"></script>
+<script src="js/user_images.js"></script>
 <script src="script.v2.05.js"></script>
 <script>
 function printChat() {

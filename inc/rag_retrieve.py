@@ -1,24 +1,14 @@
 #!/usr/bin/env python3
-import os, sys, json, time
-from typing import Dict, Any, List
-import requests
-import pymysql
-import configparser
-import warnings
+# rag_retrieve.py
 
-import re
+import os, sys, json, time, re, configparser, requests, pymysql, warnings
+from typing import Dict, Any, List
+from qdrant_client import QdrantClient
+from qdrant_client.http.models import Filter, FieldCondition, MatchValue
 import tiktoken
 
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
-
-from qdrant_client import QdrantClient
-from qdrant_client.http.models import Filter, FieldCondition, MatchValue
-
-
-_SENT_SPLIT = re.compile(r'(?<=[\.!\?])\s+|\n+')
-_URL_RE   = re.compile(r'https?://\S+')
-_PAGEMARK = re.compile(r'^\s*-{2,}\s*Page\s+\d+\s*-{2,}\s*$', re.I)
 
 # ---- shared defaults (overridden by INI) ----
 QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION = "http://127.0.0.1:6333", "", "nhlbi"
@@ -26,31 +16,28 @@ AZURE = {"key":"", "endpoint":"", "deployment":"NHLBI-Chat-workflow-text-embeddi
 OPENAI = {"key":"", "base":"https://api.openai.com/v1", "model":"NHLBI-Chat-workflow-text-embedding-3-large"}
 EMBED_DIM = 1536
 
+_SENT_SPLIT = re.compile(r'(?<=[\.!\?])\s+|\n+')
+_URL_RE     = re.compile(r'https?://\S+')
+_PAGEMARK   = re.compile(r'^\s*-{2,}\s*Page\s+\d+\s*-{2,}\s*$', re.I)
+
 def _clean_sentence(s: str) -> str:
-    # strip page markers and naked URLs
     if _PAGEMARK.match(s.strip()):
         return ""
     s = _URL_RE.sub("", s)
-    # collapse whitespace and trim odd leading punctuation
     s = re.sub(r'\s+', ' ', s).strip()
     s = s.lstrip(",;:–—- ")
     return s
 
 def _post_clean(snippet: str) -> str:
-    # light final pass
     snippet = re.sub(r'\s+', ' ', snippet).strip()
     snippet = snippet.lstrip(",;:–—- ")
     return snippet
 
 def _hits_from_query(res):
-    """Return a list of ScoredPoint from query_points() across client versions."""
-    # Newer clients: QueryResponse(points=[...], next_page_offset=...)
     if hasattr(res, "points"):
         return res.points
-    # Some versions return (points, next_page_offset)
     if isinstance(res, tuple) and len(res) >= 1:
         return res[0]
-    # Fallback: assume it's already a list of ScoredPoint
     return res
 
 def _unquote(v:str)->str:
@@ -96,21 +83,17 @@ def read_input() -> Dict[str, Any]:
 def embed_query(text:str)->List[float]:
     if AZURE["key"] and AZURE["endpoint"]:
         url = f"{AZURE['endpoint'].rstrip('/')}/openai/deployments/{AZURE['deployment']}/embeddings?api-version={AZURE['api_version']}"
-        r = requests.post(url, headers={"api-key":AZURE["key"],"Content-Type":"application/json"}, json={"input": text},timeout=15, )
+        r = requests.post(url, headers={"api-key":AZURE["key"],"Content-Type":"application/json"}, json={"input": text},timeout=15)
         r.raise_for_status()
         return r.json()["data"][0]["embedding"]
     elif OPENAI["key"]:
         url = f"{OPENAI['base'].rstrip('/')}/embeddings"
         r = requests.post(url, headers={"Authorization":f"Bearer {OPENAI['key']}", "Content-Type":"application/json"},
-                          json={"model":OPENAI["model"], "input":text}, timeout=15,)
+                          json={"model":OPENAI["model"], "input":text}, timeout=15)
         r.raise_for_status()
         return r.json()["data"][0]["embedding"]
     else:
         raise RuntimeError("No embedding backend configured")
-
-
-
-
 
 def _enc():
     try:
@@ -126,7 +109,6 @@ def _sentences(txt: str):
     return [s.strip() for s in parts if s.strip()]
 
 def _keywords(q: str):
-    # light keyword set for scoring (>=4 chars)
     return {w for w in re.findall(r"[a-zA-Z]+", q.lower()) if len(w) >= 4}
 
 def _score_sentence(sent: str, keys: set):
@@ -136,19 +118,11 @@ def _score_sentence(sent: str, keys: set):
     return len(s & keys)
 
 def assemble_snippet(points, question: str, max_tokens: int):
-    """
-    Build a compact context:
-      - iterate hits by score;
-      - from each, pick 2–5 sentences around the most relevant ones;
-      - stop when token budget is hit.
-    Returns the RAG block string.
-    """
     keys = _keywords(question)
     out = []
     used = set()
     budget = max_tokens
 
-    # supports both query_points() (QueryResponse) and older list results
     hits = getattr(points, "points", points)
 
     for p in hits:
@@ -159,16 +133,16 @@ def assemble_snippet(points, question: str, max_tokens: int):
         used.add(key)
 
         filename = pl.get("filename") or f"doc-{pl.get('document_id')}"
-        cite = []
-        if pl.get("page_range"): cite.append(f"p. {pl['page_range']}")
-        if pl.get("section"):    cite.append(f"sec. {pl['section']}")
-        cite_tag = ", ".join(cite) if cite else ""
+        page = pl.get("page_range")
+        if page:
+            cite_tag = f"【{filename}, p. {page}】"
+        else:
+            cite_tag = f"【{filename}】"
 
         sents = _sentences(pl.get("chunk_text",""))
         if not sents:
             continue
 
-        # score sentences by keyword overlap, take a small window around top ones
         scored = [( _score_sentence(s, keys), idx, s ) for idx, s in enumerate(sents)]
         scored.sort(reverse=True)
 
@@ -177,11 +151,11 @@ def assemble_snippet(points, question: str, max_tokens: int):
         for sc, idx, s in scored:
             if len(chosen) >= 3 and sc == 0:
                 break
-            for j in (idx-1, idx, idx+1):  # small window
+            for j in (idx-1, idx, idx+1):
                 if 0 <= j < len(sents) and j not in taken_idx:
                     taken_idx.add(j)
                     chosen.append(sents[j])
-            if len(chosen) >= 5:  # cap per chunk
+            if len(chosen) >= 5:
                 break
 
         cleaned = [_clean_sentence(x) for x in chosen]
@@ -190,7 +164,7 @@ def assemble_snippet(points, question: str, max_tokens: int):
         if not snippet:
             continue
 
-        candidate = _post_clean(snippet) + "\n"
+        candidate = f"{cite_tag} " + _post_clean(snippet) + "\n"
 
         need = _token_len(candidate)
         if need > budget:
@@ -220,7 +194,6 @@ def main():
         print(json.dumps({"error":"missing question/chat_id/user"})); sys.exit(1)
 
     load_ini(ini_path)
-
     vec = embed_query(question)
 
     client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=15.0)
@@ -234,18 +207,16 @@ def main():
 
     res = client.query_points(
         collection_name=QDRANT_COLLECTION,
-        query=vec,                        # <- pass vector directly
+        query=vec,
         query_filter=flt,
         limit=top_k,
         with_payload=True,
         with_vectors=False,
     )
 
-
-    hits = _hits_from_query(res)
+    hits = res.points if hasattr(res, "points") else res
     context = assemble_snippet(hits, question, max_tokens=max_ctx)
 
-    # keep simple point-level citations if you want them
     citations = []
     for p in hits:
         pl = getattr(p, "payload", {}) or {}
@@ -268,12 +239,11 @@ def main():
         "ok": True,
         "augmented_prompt": augmented_prompt,
         "citations": citations,
-        "retrieved": len(hits),   # <-- was len(res)
+        "retrieved": len(hits),
         "latency_ms": int((time.time()-t0)*1000),
-        "embedding_model_used": AZURE["deployment"] if AZURE["key"] else OPENAI["model"],
+        "embedding_model_used": AZURE['deployment'] if AZURE["key"] else OPENAI["model"],
         "collection": QDRANT_COLLECTION
     }
-
     print(json.dumps(out))
 
 if __name__ == "__main__":

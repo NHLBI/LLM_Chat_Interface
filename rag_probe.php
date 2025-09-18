@@ -16,7 +16,7 @@ file_put_contents($tmp, json_encode($payload));
 
 // 2) Paths
 $python = __DIR__.'/rag310/bin/python3';
-$script = __DIR__.'/rag_retrieve.py';
+$script = __DIR__.'/inc/rag_retrieve.py';
 
 // 3) Use proc_open to capture both streams
 $cmd = escapeshellarg($python).' '.escapeshellarg($script).' --json '.escapeshellarg($tmp);

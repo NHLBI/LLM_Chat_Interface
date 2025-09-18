@@ -10,6 +10,11 @@ if (empty($user)) {
 $_SESSION['searchr_term'] = '';
 unset($_SESSION['search_term']);
 
+
+$_SESSION['temperature'] = '';
+$_SESSION['reasoning_effort'] = '';
+$_SESSION['verbosity'] = '';
+
 $deployment = $config['azure']['default'];
 
 // Check if the request method is POST
