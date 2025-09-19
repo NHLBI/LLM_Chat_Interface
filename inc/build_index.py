@@ -410,4 +410,11 @@ def main():
                 DBG(f"cleanup tmp removed {file_path}")
             except Exception as _:
                 DBG(f"cleanup tmp failed {file_path}")
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as exc:
+        DBG("FATAL: %s" % exc)
+        print(json.dumps({"ok": False, "error": str(exc)}))
+        sys.exit(1)
 

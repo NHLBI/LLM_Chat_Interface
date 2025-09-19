@@ -106,8 +106,8 @@ if (isset($_FILES['uploadDocument'])) {
         // Ensure the upload temp is readable
         @chmod($tmpName, 0640);
 
-        // Run parser once
-        $parseCmd = sprintf('%s %s %s %s 2>&1',
+        // Run parser once, streaming stdout directly to disk so large documents don't exhaust PHP memory
+        $parseCmd = sprintf('%s %s %s %s',
             escapeshellarg($python),
             escapeshellarg($parser),
             escapeshellarg($tmpName),
@@ -115,12 +115,65 @@ if (isset($_FILES['uploadDocument'])) {
         );
         error_log("PARSE CMD: $parseCmd");
 
-        $output = [];
-        $rc = 0;
-        exec($parseCmd, $output, $rc);
+        $parseHandle = fopen($txtPath, 'w');
+        if ($parseHandle === false) {
+            error_log("Unable to open parsed output path: {$txtPath}");
+            @unlink($tmpName);
+            continue;
+        }
+
+        $descriptorSpec = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+
+        $parsePipes = [];
+        $parseProc = proc_open($parseCmd, $descriptorSpec, $parsePipes, __DIR__);
+        if (!is_resource($parseProc)) {
+            fclose($parseHandle);
+            error_log("Failed to start parser process for {$originalName}");
+            @unlink($tmpName);
+            continue;
+        }
+
+        fclose($parsePipes[0]);           // no stdin
+        stream_set_blocking($parsePipes[1], true);
+        stream_set_blocking($parsePipes[2], true);
+
+        $preview     = '';
+        $maxPreview  = 800;
+        $stdout      = $parsePipes[1];
+        while (!feof($stdout)) {
+            $chunk = fread($stdout, 8192);
+            if ($chunk === false) {
+                break;
+            }
+            if ($chunk === '') {
+                continue;
+            }
+            fwrite($parseHandle, $chunk);
+            if (strlen($preview) < $maxPreview) {
+                $preview .= $chunk;
+                if (strlen($preview) > $maxPreview) {
+                    $preview = substr($preview, 0, $maxPreview);
+                }
+            }
+        }
+
+        $stderrOutput = stream_get_contents($parsePipes[2]);
+
+        fclose($stdout);
+        fclose($parsePipes[2]);
+        fclose($parseHandle);
+
+        $rc = proc_close($parseProc);
         error_log("PARSE RC: $rc");
-        if (!empty($output)) {
-            error_log("PARSE OUT (first 800): " . substr(implode("\n", $output), 0, 800));
+        if ($stderrOutput !== false && $stderrOutput !== '') {
+            error_log("PARSE STDERR: " . substr($stderrOutput, 0, 400));
+        }
+        if ($preview !== '') {
+            error_log("PARSE OUT (first 800): " . $preview);
         }
 
         if ($rc !== 0) {
@@ -129,20 +182,41 @@ if (isset($_FILES['uploadDocument'])) {
             continue;
         }
 
-        // Write captured stdout to $txtPath
-        $written = @file_put_contents($txtPath, implode("\n", $output));
-        if ($written === false || !is_file($txtPath) || filesize($txtPath) === 0) {
+        if (!is_file($txtPath) || filesize($txtPath) === 0) {
             error_log("Parser produced no output file for {$originalName}");
             @unlink($tmpName);
             continue;
         }
 
-        // Store parsed text in DB
-        $parsedText = @file_get_contents($txtPath);
-        if ($parsedText === false) { $parsedText = ''; }
+        // Store parsed text in DB (but avoid loading extremely large payloads fully into memory)
+        $parsedSize      = filesize($txtPath);
+        $maxDbBytes      = 2 * 1024 * 1024; // 2 MB cap for DB storage
+        $parsedText      = '';
+        $insertOptions   = [];
+
+        if ($parsedSize === false) {
+            $parsedSize = 0;
+        }
+
+        if ($parsedSize > $maxDbBytes) {
+            $fh = fopen($txtPath, 'r');
+            if ($fh !== false) {
+                $parsedText = stream_get_contents($fh, $maxDbBytes);
+                fclose($fh);
+            }
+            if ($parsedText === false || $parsedText === null) {
+                $parsedText = '';
+            }
+            $parsedText .= "\n\n[Content truncated for preview; full text indexed via RAG.]";
+            $insertOptions = ['compute_tokens' => false, 'token_length' => 0];
+            error_log("Parsed output truncated for database storage (size={$parsedSize} bytes)");
+        } else {
+            $parsedText = @file_get_contents($txtPath);
+            if ($parsedText === false) { $parsedText = ''; }
+        }
 
         // Create the document row and update file_sha256
-        $document_id = insert_document($user, $chat_id, $originalName, $mimeType, $parsedText);
+        $document_id = insert_document($user, $chat_id, $originalName, $mimeType, $parsedText, $insertOptions);
 
         try {
             $file_sha256 = hash_file('sha256', $tmpName);
@@ -186,7 +260,7 @@ if (isset($_FILES['uploadDocument'])) {
         error_log("DEBUG: Python version test - RC: $testRc, Output: " . implode(' ', $testOut));
 
         // Test if the indexer script can be accessed
-        $syntaxCmd = sprintf('%s -m py_compile %s 2>&1', escapeshellarg($python), escapeshellarg($indexer));
+        $syntaxCmd = sprintf('%s -B -m py_compile %s 2>&1', escapeshellarg($python), escapeshellarg($indexer));
         exec($syntaxCmd, $syntaxOut, $syntaxRc);
         error_log("DEBUG: Python syntax check - RC: $syntaxRc, Output: " . implode(' ', $syntaxOut));
 

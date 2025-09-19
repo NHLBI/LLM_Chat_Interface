@@ -47,7 +47,7 @@ function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config
 
     $isAssistant = ($active_config['host'] === 'assistant');
 
-    print("this is message: ".print_r($message,1)); die();
+    #print("this is message: ".print_r($message,1)); die();
     #print("this is custom stuff: ".print_r($custom_config,1)); die();
     if ($custom_config['exchange_type'] == 'chat') {
         $msg = get_chat_thread($message, $chat_id, $user, $active_config);
@@ -473,7 +473,7 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
     );
     file_put_contents(dirname(__DIR__).'/assistant_msgs.log', "\n\n    -    ASSISTANTLOG - 6 - " . print_r($messages, true), FILE_APPEND);
 
-    die("THESE ARE THE final/FINAL MESSAGES\n" . print_r($messages,1));
+    #die("THESE ARE THE final/FINAL MESSAGES\n" . print_r($messages,1));
 
     return $messages;
 }

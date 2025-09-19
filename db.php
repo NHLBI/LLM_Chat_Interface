@@ -668,13 +668,19 @@ function insert_document(
     $chat_id,
     $document_name,
     $document_type,
-    $document_text
+    $document_text,
+    array $options = []
 ) {
     global $pdo;
 
     // 1) compute token length (chunks and all)
     //    you can pass an encoding if desired, e.g. "cl100k_base"
-    $doc_token_length = get_token_count($document_text, "cl100k_base");
+    $computeTokens = $options['compute_tokens'] ?? true;
+    if ($computeTokens) {
+        $doc_token_length = get_token_count($document_text, "cl100k_base");
+    } else {
+        $doc_token_length = $options['token_length'] ?? 0;
+    }
 
     // 2) insert with the new column
     $stmt = $pdo->prepare("
@@ -964,4 +970,3 @@ function soft_delete_old_chats($logFile, $threshold = null)
         return false;
     }
 }
-
