@@ -285,7 +285,7 @@ def main():
 
     file_path = inp.get("file_path")
     filename_override = inp.get("filename") or None
-    chunk_tok = int(inp.get("chunk_tokens", 450))
+    chunk_tok = int(inp.get("chunk_tokens", 8000))
     chunk_ovl = int(inp.get("chunk_overlap", 50))
     cleanup_tmp = bool(inp.get("cleanup_tmp", False))
 
@@ -355,8 +355,27 @@ def main():
             cur.execute("UPDATE rag_index SET chunk_count=%s WHERE id=%s", (total_chunks, rag_index_id))
         batch_texts, batch_payloads = [], []
 
+    CHECK_CANCEL_INTERVAL = 0.5
+    next_cancel_check = time.time()
+    cancelled = False
+
+    def is_document_cancelled() -> bool:
+        with db_conn() as conn, conn.cursor() as cur_cancel:
+            cur_cancel.execute("SELECT deleted FROM document WHERE id=%s", (document_id,))
+            row = cur_cancel.fetchone()
+        if not row:
+            return True
+        deleted_flag = row.get("deleted") if isinstance(row, dict) else row[0]
+        return bool(deleted_flag)
+
     try:
         for ch in stream_text_chunks(file_path, max_tokens=chunk_tok, overlap=chunk_ovl):
+            if time.time() >= next_cancel_check:
+                if is_document_cancelled():
+                    DBG("document cancellation detected; aborting index build")
+                    cancelled = True
+                    break
+                next_cancel_check = time.time() + CHECK_CANCEL_INTERVAL
             if _SHOULD_STOP:
                 raise RuntimeError("Indexing interrupted")
             virtual_page += 1
@@ -378,8 +397,24 @@ def main():
             chunk_idx += 1
             if len(batch_texts) >= FLUSH_EVERY:
                 flush_batch()
+                if time.time() >= next_cancel_check:
+                    if is_document_cancelled():
+                        DBG("document cancellation detected after batch flush")
+                        cancelled = True
+                        break
+                    next_cancel_check = time.time() + CHECK_CANCEL_INTERVAL
+
+        if cancelled:
+            with db_conn() as conn, conn.cursor() as cur:
+                cur.execute("UPDATE rag_index SET ready=0 WHERE id=%s", (rag_index_id,))
+            raise RuntimeError("document cancelled during indexing")
 
         flush_batch()
+        if is_document_cancelled():
+            DBG("document cancellation detected before finalization")
+            with db_conn() as conn, conn.cursor() as cur:
+                cur.execute("UPDATE rag_index SET ready=0 WHERE id=%s", (rag_index_id,))
+            raise RuntimeError("document cancelled during indexing")
         with db_conn() as conn, conn.cursor() as cur:
             cur.execute("UPDATE rag_index SET chunk_count=%s, ready=1, content_sha256=%s WHERE id=%s",
                         (total_chunks, new_content_sha, rag_index_id))
@@ -417,4 +452,3 @@ if __name__ == "__main__":
         DBG("FATAL: %s" % exc)
         print(json.dumps({"ok": False, "error": str(exc)}))
         sys.exit(1)
-

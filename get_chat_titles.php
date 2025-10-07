@@ -2,7 +2,7 @@
 header('Content-Type: application/json');
 
 try {
-    require_once 'lib.required.php';
+    require_once 'bootstrap.php';
 
     if (!isset($_SESSION['user_data']['userid'])) {
         throw new Exception("User not authenticated.");

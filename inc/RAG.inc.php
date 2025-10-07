@@ -64,7 +64,7 @@ function run_rag($question, $chat_id, $user, $config_path, $timeoutSec = 20) {
         'chat_id'  => $chat_id,
         'user'     => $user,
         'top_k'    => 12,
-        'max_context_tokens' => 2000,
+        'max_context_tokens' => 50000,
         'config_path' => $config_path,
     ];
     $tmp = tempnam(sys_get_temp_dir(), 'ragq_').'.json';
@@ -89,11 +89,12 @@ function run_rag($question, $chat_id, $user, $config_path, $timeoutSec = 20) {
     $jr  = json_decode($raw, true);
 
     return [
-        'rc'     => $rc,
-        'cmd'    => $cmd,
-        'stdout' => $raw,
-        'stderr' => (is_file($errFile) ? substr(@file_get_contents($errFile), 0, 4000) : ''),
-        'json'   => $jr,
+        'rc'      => $rc,
+        'cmd'     => $cmd,
+        'stdout'  => $raw,
+        'stderr'  => (is_file($errFile) ? substr(@file_get_contents($errFile), 0, 4000) : ''),
+        'json'    => $jr,
+        'payload' => $payload,
     ];
 }
 

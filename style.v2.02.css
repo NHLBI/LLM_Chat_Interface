@@ -544,6 +544,118 @@ code {
     background-color: rgba(255, 255, 255, 0.7); /* Optional: semi-transparent background */
  
 }
+
+.doc-processing-banner {
+    background: #111827;
+    border: 1px solid #374151;
+    border-radius: 6px;
+    color: #f9fafb;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    display: none;
+    align-items: center;
+    gap: 12px;
+}
+
+.doc-processing-banner.active {
+    display: flex;
+}
+
+.doc-processing-spinner {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 3px solid rgba(255, 255, 255, 0.25);
+    border-top-color: #38bdf8;
+    animation: spin 1s linear infinite;
+}
+
+.doc-processing-content {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.doc-processing-message {
+    font-weight: 600;
+}
+
+.doc-processing-subtext {
+    font-size: 0.85rem;
+    color: #d1d5db;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.doc-processing-timer {
+    font-variant-numeric: tabular-nums;
+}
+
+.doc-processing-estimate {
+    color: #9ca3af;
+}
+
+.doc-processing-cancel {
+    display: none;
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid #4b5563;
+    color: #f9fafb;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.doc-processing-cancel:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.document-status {
+    font-size: 0.75rem;
+    margin-left: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.document-status.status-ready {
+    color: #34d399;
+}
+
+.document-status.ready-icon {
+    font-size: 1rem;
+    line-height: 1;
+    font-weight: 600;
+}
+
+.document-status.status-processing {
+    color: #fbbf24;
+}
+
+.document-item.doc-processing .document-title {
+    opacity: 0.85;
+}
+
+.doc-processing-banner.pulse {
+    animation: docPulse 1s ease-out 2;
+}
+
+@keyframes docPulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.65);
+    }
+    100% {
+        box-shadow: 0 0 0 16px rgba(59, 130, 246, 0);
+    }
+}
+
+.upload-button[disabled],
+.submit-button[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed !important;
+}
 .openai-icon {
     width: 30px;
     /*height: 30px;*/
@@ -998,4 +1110,3 @@ overflow: visible !important;
     font-size: 14pt;
 }
 }
-

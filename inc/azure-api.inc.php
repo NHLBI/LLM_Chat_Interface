@@ -39,9 +39,15 @@ function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config
         if ($r['rc'] === 0 && is_array($r['json']) && !empty($r['json']['ok']) && !empty($r['json']['augmented_prompt'])) {
             $message = $r['json']['augmented_prompt'];
             $_SESSION['last_rag_citations'] = $r['json']['citations'] ?? [];
+            $_SESSION['last_rag_meta'] = [
+                'top_k'           => $r['payload']['top_k'] ?? null,
+                'latency_ms'      => $r['json']['latency_ms'] ?? null,
+                'embedding_model' => $r['json']['embedding_model_used'] ?? ($r['json']['embedding_model'] ?? null),
+            ];
         } else {
             // Soft-fail: keep original $message and carry on
             error_log("RAG retrieve failed; falling back to raw message");
+            unset($_SESSION['last_rag_meta']);
         }
     }
 
@@ -444,9 +450,9 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
     // 1) build system message
     $system_message = build_system_message($active_config);
 
-    // 2) pull docs and compute their total tokens
+    // 2) pull docs (token counts are no longer tracked in UI budgets)
     $docs       = get_chat_documents($user, $chat_id);
-    $doc_tokens = array_sum(array_column($docs, 'document_token_length'));
+    $doc_tokens = 0;
 
     // 3) format docs into messages
     # AT THE MOMENT WE HAVE DISABLED PASSING DOCUMENTS TO THE CONTEXT SINCE WE NOW USE RAG
@@ -473,7 +479,7 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
     );
     file_put_contents(dirname(__DIR__).'/assistant_msgs.log', "\n\n    -    ASSISTANTLOG - 6 - " . print_r($messages, true), FILE_APPEND);
 
-    #die("THESE ARE THE final/FINAL MESSAGES\n" . print_r($messages,1));
+    die("THESE ARE THE final/FINAL MESSAGES\n" . print_r($messages,1));
 
     return $messages;
 }

@@ -105,16 +105,19 @@ def _token_len(text: str) -> int:
     return len(_enc().encode(text))
 
 def _sentences(txt: str):
-    parts = _SENT_SPLIT.split(txt.strip())
+    parts = _SENT_SPLIT.split((txt or "").strip())
     return [s.strip() for s in parts if s.strip()]
 
 def _keywords(q: str):
-    return {w for w in re.findall(r"[a-zA-Z]+", q.lower()) if len(w) >= 4}
+    return {
+        w for w in re.findall(r"[0-9a-zA-Z-]+", (q or "").lower())
+        if len(w.replace('-', '')) >= 4
+    }
 
 def _score_sentence(sent: str, keys: set):
     if not keys:
         return 0
-    s = set(re.findall(r"[a-zA-Z]+", sent.lower()))
+    s = set(re.findall(r"[0-9a-zA-Z-]+", sent.lower()))
     return len(s & keys)
 
 def assemble_snippet(points, question: str, max_tokens: int):
@@ -133,30 +136,45 @@ def assemble_snippet(points, question: str, max_tokens: int):
         used.add(key)
 
         filename = pl.get("filename") or f"doc-{pl.get('document_id')}"
-        page = pl.get("page_range")
-        if page:
-            cite_tag = f"【{filename}, p. {page}】"
-        else:
-            cite_tag = f"【{filename}】"
+        cite_bits = []
+        if pl.get("page_range"):
+            cite_bits.append(f"p. {pl['page_range']}")
+        if pl.get("section"):
+            cite_bits.append(f"sec. {pl['section']}")
+        cite_suffix = ", ".join(cite_bits)
+        cite_tag = f"【{filename}"
+        if cite_suffix:
+            cite_tag += f", {cite_suffix}"
+        cite_tag += "】"
 
-        sents = _sentences(pl.get("chunk_text",""))
+        sents = _sentences(pl.get("chunk_text", ""))
         if not sents:
             continue
 
-        scored = [( _score_sentence(s, keys), idx, s ) for idx, s in enumerate(sents)]
+        scored = [(_score_sentence(s, keys), idx) for idx, s in enumerate(sents)]
         scored.sort(reverse=True)
 
-        chosen = []
-        taken_idx = set()
-        for sc, idx, s in scored:
-            if len(chosen) >= 3 and sc == 0:
-                break
-            for j in (idx-1, idx, idx+1):
-                if 0 <= j < len(sents) and j not in taken_idx:
-                    taken_idx.add(j)
-                    chosen.append(sents[j])
-            if len(chosen) >= 5:
-                break
+        span_start = 0
+        span_end = min(len(sents), 5)
+
+        if scored:
+            top_score, top_idx = scored[0]
+            if top_score > 0:
+                span_start = max(0, top_idx - 6)
+                span_end = min(len(sents), top_idx + 7)
+                if len(scored) > 1 and scored[1][0] > 0:
+                    second_idx = scored[1][1]
+                    span_start = max(0, min(span_start, second_idx - 6))
+                    span_end = min(len(sents), max(span_end, second_idx + 7))
+            else:
+                top_idx = scored[0][1]
+                span_start = max(0, top_idx - 4)
+                span_end = min(len(sents), top_idx + 5)
+
+        chosen = sents[span_start:span_end]
+        if len(chosen) < 6 and span_end < len(sents):
+            extra = min(len(sents), span_end + (6 - len(chosen)))
+            chosen = sents[span_start:extra]
 
         cleaned = [_clean_sentence(x) for x in chosen]
         cleaned = [x for x in cleaned if x]
@@ -164,7 +182,7 @@ def assemble_snippet(points, question: str, max_tokens: int):
         if not snippet:
             continue
 
-        candidate = f"{cite_tag} " + _post_clean(snippet) + "\n"
+        candidate = f"{cite_tag} {_post_clean(snippet)}\n"
 
         need = _token_len(candidate)
         if need > budget:
@@ -251,4 +269,3 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         print(json.dumps({"ok": False, "error": str(e)})); sys.exit(1)
-

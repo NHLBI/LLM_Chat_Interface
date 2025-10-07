@@ -56,9 +56,11 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
             // Clear the current chat titles
             $('.chat-titles-container').empty();
 
+            const chatData = response || {};
+
             if (searchString.trim() !== '') {
                 // Handle the case where no results are found
-                if (Object.keys(response).length === 0) {
+                if (Object.keys(chatData).length === 0) {
                     $('.chat-titles-container').append(`
                         <div class="no-results">
                             <p>No results found for "${searchString}".</p>
@@ -200,7 +202,7 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
             });
 
             // In your AJAX success callback, when iterating over chats:
-            Object.values(response).forEach(function(chat, index) {
+            Object.values(chatData).forEach(function(chat, index) {
     //console.log("this is the full chat item: ");
     //console.log(chat);
                 const isCurrentChat = chat.id === window.location.pathname.split('/')[2];
@@ -249,112 +251,63 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                 // Now docEntries is an array of [ [docKey, docTitle], ... ] for valid docs only
 
                 if (deployment != 'azure-dall-e-3' && docEntries.length > 0) {
+                    const totalDocs = docEntries.length;
 
+                    const headingRow = $('<div>', {
+                        class: 'heading-row',
+                        css: { display: 'flex', alignItems: 'center', flexWrap: 'nowrap' }
+                    }).append(
+                        $('<label>', {
+                            class: 'paperclip-icon',
+                            for: 'uploadTrigger',
+                            css: { cursor: 'pointer', marginRight: '10px', marginLeft: '10px' },
+                            onclick: 'openUploadModal()'
+                        }).append(
+                            $('<img>', {
+                                src: 'images/paperclip.white.svg',
+                                alt: 'Upload Document',
+                                title: 'Document types accepted: PDF, Word, PPT, text, markdown, images, etc.',
+                                css: { height: '20px', transform: 'rotate(45deg)' }
+                            })
+                        ),
+                        $('<span>', {
+                            class: 'document-heading',
+                            text: `Documents (${totalDocs})`,
+                            css: { whiteSpace: 'nowrap' }
+                        }).attr('title', `${totalDocs} document${totalDocs === 1 ? '' : 's'}`)
+                    );
 
+                    const docHeadingContainer = $('<div>', {
+                        class: 'document-heading-container',
+                        css: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }
+                    }).append(headingRow);
 
-
-
-// -----------------------------
-// 1.  Total document‑token count
-// -----------------------------
-const totalDocTokens = Object.values(chat.document || {})
-  .reduce((sum, d) => sum + (Number(d.token_length) || 0), 0);
-
-// -------------------------------------------------------------
-// 2.  Helpers (human‑readable numbers)
-// -------------------------------------------------------------
-const prettyTotal = prettyTokens(totalDocTokens);   // e.g. 4.1 M
-const maxTokens   = prettyTokens(context_limit);    // e.g. 1 M
-
-// -------------------------------------------------------------
-// 5.  Assemble icon + heading on one row (replaces steps 3-5)
-// -------------------------------------------------------------
-const headingRow = $('<div>', {
-  class: 'heading-row',
-  css  : { display: 'flex', alignItems: 'center', flexWrap: 'nowrap' }
-}).append(
-  $('<label>', {
-    class: 'paperclip-icon',
-    for  : 'uploadTrigger',
-    css  : { cursor: 'pointer', marginRight: '10px', marginLeft: '10px' },
-    onclick: 'openUploadModal()'
-  }).append(
-    $('<img>', {
-      src  : 'images/paperclip.white.svg',
-      alt  : 'Upload Document',
-      title: 'Document types accepted: PDF, Word, PPT, text, markdown, images, etc.',
-      css  : { height: '20px', transform: 'rotate(45deg)' }
-    })
-  ),
-  $('<span>', {
-    class: 'document-heading',
-    text : `Documents (${prettyTotal} tokens)`,
-    css  : { whiteSpace: 'nowrap' }
-  }).attr('title', `${totalDocTokens.toLocaleString()} tokens total`)
-);
-
-// -------------------------------------------------------------
-// 6.  Container (column; headingRow first, warning below)
-// -------------------------------------------------------------
-const docHeadingContainer = $('<div>', {
-  class: 'document-heading-container',
-  css  : { display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }
-}).append(headingRow);
-
-// -------------------------------------------------------------
-// 7.  Append red warning if over the limit
-// -------------------------------------------------------------
-if (totalDocTokens > context_limit) {
-  const warning = $('<span>', {
-    class: 'token-warning',
-    //text : `Exceeds this model's max ${maxTokens} tokens.`,
-    text : `Exceeds ${deployment_label}'s max of ${maxTokens} tokens. Change models or remove documents.`,
-    title: 'Mouse over document titles to reveal their individual token lengths.',
-    css  : { color: 'yellow', marginTop: '4px', marginLeft: '10px' }
-  });
-  docHeadingContainer.append(warning);
-}
-
-
-
-
-
-
-                    // Append the icon and heading to the container
-                    //docHeadingContainer.append(paperclipIcon, docHeading);
-
-                    // Create the document list container (docList)
                     docList = $('<ol>', {
                         class: 'document-list',
                         id: `doclist-${chat.id}`,
                         style: `margin-left: 20px; display: ${isCurrentChat ? 'block' : 'none'};`
                     });
-                    // Append the container with the paperclip icon and heading
                     docList.append(docHeadingContainer);
 
                     if (chatId == chat.id) {
                         currentChat = chat;
                     }
 
-                    //console.log("this is the handle images: ");
-                    //console.log(chat.document);
-                    //console.log("this is the handle images: " + handles_images);
-
-                    var itemNum = 1;
-                    Object.entries(chat.document).forEach(([docKey, docData]) => {
-                        const docTitle = docData.name; 
-                        const docTokens = docData.token_length;
-
-                        const isImage = docData.type.startsWith('image/');
-                        
-                        // Strikethrough only if handles_images is false AND the document is an image
-                        //const displayTitle = (!handles_images && isImage) ? `<s style="color: #CCC;cursor: pointer;" title="This model does not support uploaded images">${docTitle}</s>` : docTitle;
+                    let itemNum = 1;
+                    docEntries.forEach(([docKey, docData]) => {
+                        const numericDocId = parseInt(docKey, 10);
+                        const docTitle = docData.name;
                         const displayTitle = docTitle;
+                        const docType = docData.type || '';
+                        const isImage = docType.startsWith('image/');
+                        const isReady = isImage || docData.ready === true || docData.ready === 1 || docData.ready === '1';
+                        const isProcessingTracked = (typeof window.isDocumentProcessingForChat === 'function')
+                            ? window.isDocumentProcessingForChat(chat.id, numericDocId)
+                            : false;
 
-                        const docItem = $('<li>', { 
-                            class: 'document-item',
-                            title: docTokens + ' tokens'
- 
+                        const docItem = $('<li>', {
+                            class: `document-item ${isReady ? 'doc-ready' : 'doc-processing'}`,
+                            title: docType
                         });
 
                         const docTitleSpan = $('<span>', {
@@ -362,22 +315,44 @@ if (totalDocTokens > context_limit) {
                             html: `${itemNum}. ${displayTitle}`
                         });
 
-                        //const exchange_type = $('#exchange_type').val()
-                        //console.log(chat.exchange_type);
+                        let statusLabel;
+                        if (!isReady) {
+                            statusLabel = $('<span>', {
+                                class: 'document-status status-processing',
+                                text: 'Processing…'
+                            });
+                        } else if (isProcessingTracked) {
+                            statusLabel = $('<span>', {
+                                class: 'document-status status-ready',
+                                text: 'Ready'
+                            });
+                        } else {
+                            statusLabel = $('<span>', {
+                                class: 'document-status status-ready ready-icon',
+                                role: 'img',
+                                'aria-label': 'Ready',
+                                title: 'Ready'
+                            });
+                            statusLabel.html('&#10003;');
+                        }
+
                         var showTrash = '';
                         if (chat.exchange_type == 'workflow') {
                             showTrash = 'display:none'; // show or hide the trashcan
                         }
+
                         const deleteBtn = $('<button>', {
+                            type: 'button',
                             class: 'delete-document-button',
                             style: showTrash,
                             'data-doc-key': docKey,
                             'data-chat-id': chat.id,
-                            title: 'Delete this document',
-                            html: TRASH_SVG
+                            'data-cancel': (!isReady && !isImage),
+                            title: isReady ? 'Delete this document' : 'Cancel processing',
+                            html: isReady ? TRASH_SVG : 'Cancel'
                         });
 
-                        docItem.append(docTitleSpan, ' ', deleteBtn);
+                        docItem.append(docTitleSpan, ' ', statusLabel, ' ', deleteBtn);
                         docList.append(docItem);
                         itemNum += 1;
                     });
@@ -434,6 +409,10 @@ if (totalDocTokens > context_limit) {
                 }
             });
 
+            if (typeof window.syncProcessingStateFromServer === 'function') {
+                window.syncProcessingStateFromServer(chatData);
+            }
+
             // Update global documentsLength from currentChat's documents (if any)
             if (currentChat && currentChat.document) {
                 documentsLength = Object.keys(currentChat.document).length;
@@ -449,7 +428,26 @@ if (totalDocTokens > context_limit) {
                 e.preventDefault();
                 const docKey = $(this).data('doc-key');
                 const chatId = $(this).data('chat-id');
+                const isCancel = $(this).data('cancel') === true || $(this).data('cancel') === 'true' || $(this).data('cancel') === 1;
                 console.log(`Documents Length 4: ${documentsLength}`);
+
+                if (isCancel) {
+                    if (!confirm('Cancel processing for this document?')) {
+                        return;
+                    }
+                    const $button = $(this);
+                    $button.prop('disabled', true);
+                    cancelProcessingDocuments([parseInt(docKey, 10)], chatId)
+                        .catch(function(err) {
+                            console.error('Error cancelling document:', err);
+                            alert('Unable to cancel this upload. Please try again.');
+                        })
+                        .finally(function() {
+                            $button.prop('disabled', false);
+                        });
+                    return;
+                }
+
                 if (confirm('Are you sure you want to delete this document?')) {
                     $.ajax({
                         url: 'delete-document.php',

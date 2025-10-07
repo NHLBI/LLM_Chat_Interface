@@ -1,6 +1,6 @@
 <?php
 // Include the database connection file
-require_once 'lib.required.php';
+require_once 'bootstrap.php';
 
 // Check if the user is authenticated (i.e. if the username is not empty)
 if (empty($user)) {

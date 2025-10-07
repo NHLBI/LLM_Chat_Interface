@@ -4,7 +4,7 @@ ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
 // Include necessary libraries
-require_once 'lib.required.php';
+require_once 'bootstrap.php';
 
 // Ensure $user and $config_file are available
 $user = $_SESSION['user_data']['userid'] ?? '';
@@ -47,12 +47,15 @@ if (!empty($_REQUEST['selected_workflow'])) {
 }
 
 // === Workspace strictly under web root ===
-$workRoot  = __DIR__ . '/var/rag';
-$parsedDir = $workRoot . '/parsed';
-$queueDir  = $workRoot . '/queue';
-$logsDir   = $workRoot . '/logs';
+$ragPaths     = rag_workspace_paths($config ?? null);
+$workRoot     = $ragPaths['root'];
+$parsedDir    = $ragPaths['parsed'];
+$queueDir     = $ragPaths['queue'];
+$logsDir      = $ragPaths['logs'];
+$completedDir = $ragPaths['completed'];
+$failedDir    = $ragPaths['failed'];
 
-$dirs = [$workRoot, $parsedDir, $queueDir, $logsDir];
+$dirs = [$workRoot, $parsedDir, $queueDir, $logsDir, $completedDir, $failedDir];
 foreach ($dirs as $d) {
     if (!is_dir($d)) {
         @mkdir($d, 0775, true);
@@ -64,9 +67,9 @@ foreach ($dirs as $d) {
 }
 
 // === Tooling paths (under your app) ===
-$python  = __DIR__ . '/rag310/bin/python3';
-$parser  = __DIR__ . '/parser_multi.py';
-$indexer = __DIR__ . '/inc/build_index.py';
+$python  = rag_python_binary($config ?? null);
+$parser  = rag_parser_script($config ?? null);
+$indexer = rag_indexer_script($config ?? null);
 
 // Add validation for required files
 if (!file_exists($python)) {
@@ -80,6 +83,8 @@ if (!file_exists($indexer)) {
 }
 
 if (isset($_FILES['uploadDocument'])) {
+    $uploadedDocuments = [];
+    $queuedDocuments   = [];
     $fileCount = count($_FILES['uploadDocument']['name']);
 
     for ($i = 0; $i < $fileCount; $i++) {
@@ -87,15 +92,24 @@ if (isset($_FILES['uploadDocument'])) {
             continue;
         }
 
-        $tmpName      = $_FILES['uploadDocument']['tmp_name'][$i];
-        $originalName = basename($_FILES['uploadDocument']['name'][$i]);
-        $mimeType     = mime_content_type($tmpName);
+        $tmpName       = $_FILES['uploadDocument']['tmp_name'][$i];
+        $originalName  = basename($_FILES['uploadDocument']['name'][$i]);
+        $mimeType      = mime_content_type($tmpName);
+        $originalSize  = @filesize($tmpName);
 
         // ===== IMAGES: store as before; NO indexing =====
         if (strpos($mimeType, 'image/') === 0) {
             $base64Image = local_image_to_data_url($tmpName, $mimeType);
             $document_id = insert_document($user, $chat_id, $originalName, $mimeType, $base64Image);
             @unlink($tmpName);
+            $uploadedDocuments[] = [
+                'id'                => (int)$document_id,
+                'name'              => $originalName,
+                'type'              => $mimeType,
+                'queued'            => false,
+                'original_size'     => $originalSize !== false ? (int)$originalSize : null,
+                'parsed_size'       => null,
+            ];
             continue;
         }
 
@@ -228,7 +242,9 @@ if (isset($_FILES['uploadDocument'])) {
             error_log("Failed to set file_sha256 for document_id {$document_id}: ".$e->getMessage());
         }
 
-        // ===== Build the RAG index =====
+        $parsedSizeBytes = @filesize($txtPath);
+
+        // ===== Queue the RAG index =====
         $payload = [
             'document_id'     => (int)$document_id,
             'chat_id'         => $chat_id,
@@ -238,187 +254,58 @@ if (isset($_FILES['uploadDocument'])) {
             'file_path'       => $txtPath,
             'filename'        => $originalName,
             'mime'            => $mimeType,
-            'cleanup_tmp'     => false
+            'cleanup_tmp'     => false,
+            'original_size_bytes' => $originalSize !== false ? (int)$originalSize : null,
+            'parsed_size_bytes'   => $parsedSizeBytes !== false ? (int)$parsedSizeBytes : null,
+            'queue_timestamp'     => time(),
         ];
-        $json_file = $queueDir . '/job_' . uniqid('', true) . '.json';
-        file_put_contents($json_file, json_encode($payload));
 
-        $logPath = $logsDir . '/index_' . $document_id . '_' . time() . '.log';
+        $jobPath = $queueDir . '/job_' . uniqid('', true) . '.json';
+        $encoded = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 
-        // Enhanced debugging for the indexer command
-        error_log("DEBUG: Checking indexer prerequisites");
-        error_log("DEBUG: Python path exists: " . (file_exists($python) ? 'YES' : 'NO'));
-        error_log("DEBUG: Python is executable: " . (is_executable($python) ? 'YES' : 'NO'));
-        error_log("DEBUG: Indexer script exists: " . (file_exists($indexer) ? 'YES' : 'NO'));
-        error_log("DEBUG: JSON file exists: " . (file_exists($json_file) ? 'YES' : 'NO'));
-        error_log("DEBUG: JSON file content: " . file_get_contents($json_file));
-        error_log("DEBUG: Working directory: " . getcwd());
-
-        // Test the Python environment first
-        $testCmd = sprintf('%s --version 2>&1', escapeshellarg($python));
-        exec($testCmd, $testOut, $testRc);
-        error_log("DEBUG: Python version test - RC: $testRc, Output: " . implode(' ', $testOut));
-
-        // Test if the indexer script can be accessed
-        $syntaxCmd = sprintf('%s -B -m py_compile %s 2>&1', escapeshellarg($python), escapeshellarg($indexer));
-        exec($syntaxCmd, $syntaxOut, $syntaxRc);
-        error_log("DEBUG: Python syntax check - RC: $syntaxRc, Output: " . implode(' ', $syntaxOut));
-
-        $cmd = sprintf(
-            '%s -u %s --json %s 2>&1',
-            escapeshellarg($python),
-            escapeshellarg($indexer),
-            escapeshellarg($json_file)
-        );
-        error_log("INDEX CMD: $cmd");
-
-        // Alternative approach: Use exec first to see if there are immediate errors
-        $execOutput = [];
-        $execRc = 0;
-        exec($cmd, $execOutput, $execRc);
-        error_log("DEBUG: Direct exec result - RC: $execRc");
-        if (!empty($execOutput)) {
-            error_log("DEBUG: Direct exec output: " . implode("\n", $execOutput));
-        }
-
-        // If exec works, continue with proc_open for better control
-        if ($execRc === 0 && !empty($execOutput)) {
-            // Use the exec output
-            $captured = implode("\n", $execOutput);
-            $rc = $execRc;
+        $queued = false;
+        if ($encoded === false || file_put_contents($jobPath, $encoded) === false) {
+            error_log("Failed to enqueue RAG job for document_id {$document_id}");
         } else {
-            // Fall back to proc_open with enhanced error handling
-            $descs = [
-                0 => ['pipe', 'r'], // stdin
-                1 => ['pipe', 'w'], // stdout
-                2 => ['pipe', 'w'], // stderr
-            ];
-            $pipes = [];
-            $env = [
-                'PYTHONPATH' => dirname($indexer),
-                'PATH' => getenv('PATH')
-            ];
-            
-            $proc = proc_open($cmd, $descs, $pipes, __DIR__, $env);
-
-            $captured = '';
-            $rc = 1;
-
-            if (is_resource($proc)) {
-                fclose($pipes[0]); // no stdin
-
-                // Set streams to non-blocking
-                stream_set_blocking($pipes[1], false);
-                stream_set_blocking($pipes[2], false);
-
-                $start = microtime(true);
-                $timeoutSec = 600;
-
-                while (true) {
-                    $outChunk = stream_get_contents($pipes[1]);
-                    $errChunk = stream_get_contents($pipes[2]);
-                    if ($outChunk !== false && $outChunk !== '') {
-                        $captured .= $outChunk;
-                        error_log("DEBUG: Got stdout chunk: " . substr($outChunk, 0, 200));
-                    }
-                    if ($errChunk !== false && $errChunk !== '') {
-                        $captured .= $errChunk;
-                        error_log("DEBUG: Got stderr chunk: " . substr($errChunk, 0, 200));
-                    }
-
-                    $status = proc_get_status($proc);
-                    if (!$status['running']) {
-                        error_log("DEBUG: Process finished with exit code: " . $status['exitcode']);
-                        break;
-                    }
-
-                    if ((microtime(true) - $start) > $timeoutSec) {
-                        proc_terminate($proc, 9);
-                        $captured .= "\n[php] indexer timeout after {$timeoutSec}s";
-                        error_log("DEBUG: Process timed out");
-                        break;
-                    }
-                    usleep(50_000);
-                }
-
-                // Final drain
-                stream_set_blocking($pipes[1], true);
-                stream_set_blocking($pipes[2], true);
-                $finalOut = stream_get_contents($pipes[1]);
-                $finalErr = stream_get_contents($pipes[2]);
-                if ($finalOut !== false && $finalOut !== '') {
-                    $captured .= $finalOut;
-                    error_log("DEBUG: Final stdout: " . substr($finalOut, 0, 200));
-                }
-                if ($finalErr !== false && $finalErr !== '') {
-                    $captured .= $finalErr;
-                    error_log("DEBUG: Final stderr: " . substr($finalErr, 0, 200));
-                }
-
-                fclose($pipes[1]);
-                fclose($pipes[2]);
-
-                $rc = proc_close($proc);
-                error_log("DEBUG: Final return code: $rc");
-            } else {
-                $captured = "[php] proc_open failed";
-                error_log("DEBUG: proc_open failed to start");
-            }
+            error_log("Queued RAG indexing job for document_id {$document_id}: {$jobPath}");
+            $queued = true;
+            $queuedDocuments[] = (int)$document_id;
         }
 
-        if ($captured === '') {
-            $captured = "[empty stdout/stderr]";
-            error_log("DEBUG: No output captured from indexer");
-        }
-        
-        @file_put_contents($logPath, $captured);
+        $uploadedDocuments[] = [
+            'id'                => (int)$document_id,
+            'name'              => $originalName,
+            'type'              => $mimeType,
+            'queued'            => $queued,
+            'original_size'     => $originalSize !== false ? (int)$originalSize : null,
+            'parsed_size'       => $parsedSizeBytes !== false ? (int)$parsedSizeBytes : null,
+        ];
 
-        // Parse the last JSON object from the captured text
-        $resultJson = null;
-        if ($captured !== '' && $captured !== "[empty stdout/stderr]") {
-            $lines = preg_split("/\r\n|\n|\r/", $captured);
-            for ($k = count($lines) - 1; $k >= 0; $k--) {
-                $line = trim($lines[$k]);
-                if ($line === '') continue;
-
-                $decoded = json_decode($line, true);
-                if (is_array($decoded)) { 
-                    $resultJson = $decoded; 
-                    error_log("DEBUG: Found JSON result: " . json_encode($decoded));
-                    break; 
-                }
-
-                if (preg_match('/\{(?:[^{}]|(?R))*\}\s*$/s', $line, $m)) {
-                    $decoded = json_decode($m[0], true);
-                    if (is_array($decoded)) { 
-                        $resultJson = $decoded; 
-                        error_log("DEBUG: Found JSON result (regex): " . json_encode($decoded));
-                        break; 
-                    }
-                }
-            }
-        }
-
-        // Drop the temp upload file
+        // Upload temp file is no longer needed once parsed
         @unlink($tmpName);
 
-        if ($rc !== 0 || !$resultJson || empty($resultJson['ok'])) {
-            $preview = substr($captured, 0, 1200);
-            error_log("RAG indexing failed for document_id {$document_id} (rc=$rc). Log=$logPath Preview:\n$preview");
-        } else {
-            error_log("RAG indexing DONE for document_id {$document_id}: chunks=".$resultJson['chunk_count']." (log=$logPath)");
-        }
+        continue;
     }
 
     // Use JSON response for AJAX requests, else do a header redirect
     if (isAjaxRequest()) {
-        echo json_encode(['chat_id' => $chat_id, 'new_chat' => $new_chat_created]);
+        echo json_encode([
+            'chat_id'              => $chat_id,
+            'new_chat'             => $new_chat_created,
+            'uploaded_documents'   => $uploadedDocuments ?? [],
+            'processing_documents' => $queuedDocuments ?? [],
+        ]);
     } else {
         header('Location: ' . urlencode($chat_id));
     }
 } else {
     if (isAjaxRequest()) {
-        echo json_encode(['chat_id' => $chat_id, 'new_chat' => false]);
+        echo json_encode([
+            'chat_id'              => $chat_id,
+            'new_chat'             => false,
+            'uploaded_documents'   => [],
+            'processing_documents' => [],
+        ]);
     } else {
         header('Location: ' . urlencode($chat_id));
     }

@@ -1,7 +1,8 @@
 <?php
 // Include the database connection file
-require_once 'lib.required.php';
+require_once 'bootstrap.php';
 require_once 'db.php';
+require_once __DIR__ . '/inc/rag_cleanup.php';
 
 // Check if the 'chat_id' is set in the POST data
 if(isset($_POST['chat_id'])) {
@@ -12,24 +13,35 @@ if(isset($_POST['chat_id'])) {
         die("Invalid input");
     }
 
-    // Begin a transaction
     $pdo->beginTransaction();
+    $docIds = [];
 
     try {
-        // Prepare a SQL statement to update the chat table
+        $docStmt = $pdo->prepare("SELECT id FROM document WHERE chat_id = :chat_id AND deleted = 0");
+        $docStmt->execute(['chat_id' => $chat_id]);
+        $docIds = array_map('intval', $docStmt->fetchAll(PDO::FETCH_COLUMN));
+
+        $stmtDocs = $pdo->prepare("UPDATE document SET `deleted` = 1 WHERE chat_id = :chat_id");
+        $stmtDocs->execute(['chat_id' => $chat_id]);
+
         $stmt1 = $pdo->prepare("UPDATE chat SET `deleted` = 1 WHERE id = :id");
         $stmt1->execute(['id' => $chat_id]);
 
-        // Prepare a SQL statement to update the exchange table
         $stmt2 = $pdo->prepare("UPDATE exchange SET `deleted` = 1 WHERE chat_id = :chat_id");
         $stmt2->execute(['chat_id' => $chat_id]);
 
-        // Commit the transaction if both statements executed successfully
         $pdo->commit();
     } catch (Exception $e) {
-        // An error occurred, rollback any changes made during this transaction
         $pdo->rollBack();
         throw $e;
     }
-}
 
+    if (!empty($docIds)) {
+        try {
+            $qdrantCfg = $config['qdrant'] ?? [];
+            ragCleanupProcessDocuments($pdo, $docIds, $qdrantCfg);
+        } catch (Throwable $cleanupError) {
+            error_log('delete_chat rag cleanup warning: ' . $cleanupError->getMessage());
+        }
+    }
+}

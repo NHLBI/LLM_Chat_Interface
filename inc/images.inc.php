@@ -34,3 +34,25 @@ function scale_image_from_path($src_path, $dest_path, $scaleFactor) {
 
     return $success;
 }
+
+/**
+ * Convert a local image file into a data URL for inline storage.
+ */
+function local_image_to_data_url(string $image_path, ?string $mimeType = null): string
+{
+    if (!is_file($image_path)) {
+        error_log("local_image_to_data_url: missing file $image_path");
+        return '';
+    }
+
+    $mimeType = $mimeType ?: 'application/octet-stream';
+
+    $binary = @file_get_contents($image_path);
+    if ($binary === false) {
+        error_log("local_image_to_data_url: unable to read $image_path");
+        return '';
+    }
+
+    $encoded = base64_encode($binary);
+    return 'data:' . $mimeType . ';base64,' . $encoded;
+}

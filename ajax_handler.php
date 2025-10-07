@@ -1,9 +1,11 @@
 <?php
 // Include required files and establish the database connection
-require_once 'lib.required.php';
+require_once 'bootstrap.php';
 require_once 'db.php';
 
 define('HARDCODED_DEPLOYMENT','azure-gpt4.1-mini');
+
+$chatTitleService = new ChatTitleService();
 
 $user = $_SESSION['user_data']['userid'] ?? null; // Assuming you have a session variable for username
 
@@ -72,12 +74,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($custom_config['exchange_type'] == 'workflow' && !empty($custom_config['config']['chat-title-replacement'])) {
             $chat_title = $custom_config['config']['chat-title-replacement'];
-        } else {        
-            $chat_title = generate_chat_title($user_message, $gpt_response['message'], HARDCODED_DEPLOYMENT);
+        } else {
+            $chat_title = $chatTitleService->generate(
+                $user_message,
+                $gpt_response['message'] ?? '',
+                HARDCODED_DEPLOYMENT,
+                $id
+            );
         }
         // Update the chat title in the database if the title was successfully generated
         if ($chat_title !== null) {
-            $chat_title = substringWords($chat_title,6); 
             update_chat_title($user, $id, $chat_title);
         }
     }
@@ -103,59 +109,3 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     echo json_encode($response);
     exit();
 }
-
-/**
- * Generates a concise chat title using the Azure API.
- *
- * @param string $user_message The user's initial message in the chat.
- * @param string $gpt_response The GPT's response to the user's message.
- * @param array $active_config The active configuration settings for the API call.
- * @return string|null The generated chat title or null if an error occurs.
- */
-function generate_chat_title($user_message, $gpt_response, $config_key) {
-    global $chat_id;
-    // Prepare the message for generating a chat title
-    $msg = [
-        ["role" => "system", "content" => "You are an AI assistant that creates concise, friently, title summaries for chats. Use no more than 5 words. Never include code or punctuation. Never include mathematical notation. Only use words and if needed, numbers."],
-        ["role" => "user", "content" =>  substringWords($user_message,300)],
-        ["role" => "assistant", "content" => substringWords($gpt_response,300)],
-        ["role" => "user", "content" => "Pleae create a concise, friently, title, summarizing this chat. Use no more than 5 words. Never include code or punctuation. Never include mathematical notation. Only use words and if needed, numbers."],
-    ];
-    $active_config = load_configuration($config_key, true);
-    #die(print_r($active_config,1));
-
-    // Call Azure API to generate the chat title
-    $title_response = call_azure_api($active_config, $chat_id, $msg);
-    $title_response_data = json_decode($title_response, true);
-    #die(print_r($title_response_data,1));
-
-    // Check if the title generation was successful and return the generated title
-    if (empty($title_response_data['error'])) {
-        return substr($title_response_data['choices'][0]['message']['content'],0,254);
-    } else {
-        // Log the error and return null
-        error_log("Error generating chat title: " . $title_response);
-        return null;
-    }
-}
-
-/**
- * Substrings the text to the specified number of words.
- *
- * @param string $text The input text.
- * @param int $numWords The number of words to keep.
- * @return string The truncated text.
- */
-function substringWords($text, $numWords) {
-    // Split the text into words
-    $words = explode(' ', $text);
-    
-    // Select a subset of words based on the specified number
-    $selectedWords = array_slice($words, 0, $numWords);
-    
-    // Join the selected words back together into a string
-    $subString = implode(' ', $selectedWords);
-    
-    return $subString;
-}
-

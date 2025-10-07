@@ -2,7 +2,7 @@
 
 #die("<h2>NHLBI Chat is down for a very brief maintenance.</h2>");
 // Include the library functions and the database connection
-require_once 'lib.required.php'; 
+require_once 'bootstrap.php'; 
 # phpinfo();
 
 $username = $_SESSION['user_data']['name'];
@@ -232,6 +232,19 @@ foreach(array_keys($models) as $m) {
 
             <div class="maincolumn maincol-bottom"><!-- Chat body bottom -->
 
+                <div id="doc-processing-banner" class="doc-processing-banner" role="status" aria-live="polite" style="display:none;">
+                    <div class="doc-processing-spinner" aria-hidden="true"></div>
+                    <div class="doc-processing-content">
+                        <div id="doc-processing-message">Processing uploaded documents…</div>
+                        <div class="doc-processing-subtext">
+                            <span id="doc-processing-files"></span>
+                            <span id="doc-processing-estimate" class="doc-processing-estimate"></span>
+                            <span id="doc-processing-timer" class="doc-processing-timer">00:00</span>
+                        </div>
+                    </div>
+                    <button type="button" id="doc-processing-cancel" class="doc-processing-cancel" style="display:none;">Cancel Uploads</button>
+                </div>
+
                 <form id="messageForm" class="chat-input-form">
                   <div class="input-container">
                     <textarea class="form-control" id="userMessage" aria-label="Main chat textarea" 
@@ -398,7 +411,7 @@ foreach(array_keys($models) as $m) {
 <script src="js/ui.js"></script>
 <script src="js/listeners.js"></script>
 <script src="js/user_images.js"></script>
-<script src="script.v2.05.js"></script>
+    <script src="js/chat-interface.js"></script>
 <script>
 function printChat() {
     // Prevent the default form submission behavior
@@ -414,5 +427,3 @@ function printChat() {
 
 </body>
 </html>
-
-

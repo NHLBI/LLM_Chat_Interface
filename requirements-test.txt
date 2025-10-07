@@ -1,0 +1,4 @@
+pymysql>=1.0.3
+qdrant-client>=1.7.3
+requests>=2.31.0
+tiktoken>=0.7.0

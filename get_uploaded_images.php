@@ -1,6 +1,6 @@
 <?php
 // Include required files and database connection
-require_once 'lib.required.php';
+require_once 'bootstrap.php';
 
 $chat_id     = filter_input(INPUT_GET, 'chat_id');
 $images_only = filter_input(INPUT_GET, 'images_only', FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);

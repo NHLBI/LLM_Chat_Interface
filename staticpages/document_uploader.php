@@ -362,55 +362,123 @@ fetch('upload.php', {
     return;
   }
 
-  // 2) Grab the filenames straight from uploadedFiles
   const docNames = uploadedFiles.map(file => file.name);
   console.log("Docs just uploaded:", docNames);
+
+  const uploadedDocs = Array.isArray(result.uploaded_documents) ? result.uploaded_documents : [];
+  const queuedDocs   = uploadedDocs.filter(doc => doc && doc.queued);
 
   // 3) Close the upload modal
   closeUploadModal();
   console.log("Upload complete; modal closed.");
   fetchAndUpdateChatTitles($('#search-input').val(), false);
 
-  // 4) If we're in workflow mode, build & submit the workflow prompt
-  if ($('#exchange_type').val() === 'workflow') {
-    console.log("Workflow mode detected. Preparing to auto-submit chat form...");
+  const workflowMode = ($('#exchange_type').val() === 'workflow');
+  let workflowPrompt = '';
+  let workflowCallback = null;
 
-    // 4a) Base replacement prompt
-    let autoChatPrompt = 
-        window.selectedWorkflow?.config["prompt-replacement-text"] 
-      || window.selectedWorkflow?.prompt 
+  if (workflowMode) {
+    console.log("Workflow mode detected. Preparing follow-up prompt logic...");
+
+    workflowPrompt =
+        window.selectedWorkflow?.config["prompt-replacement-text"]
+      || window.selectedWorkflow?.prompt
       || "";
 
-    console.log("Base workflow prompt:", autoChatPrompt);
-
-    // 4b) Append uploaded filenames, if any
     if (docNames.length) {
-      autoChatPrompt += "" 
-                      //+ (docNames.length > 1 ? "s:" : ":") 
-                      + " " + docNames.join(", ");
-      console.log("Extended prompt with docs:", autoChatPrompt);
+      workflowPrompt += " " + docNames.join(", ");
+      console.log("Extended workflow prompt with docs:", workflowPrompt);
     }
 
-    // 4c) Pre-fill the chat textarea
-    const userMessageElem = document.getElementById('userMessage');
-    if (userMessageElem) {
-      userMessageElem.value = autoChatPrompt;
-      console.log("Pre-filled userMessage with:", autoChatPrompt);
-    } else {
-      console.error("userMessage element not found!");
-    }
-
-    // 4d) Auto-submit the chat form
-    setTimeout(() => {
-      const $messageForm = $('#messageForm');
-      if ($messageForm.length) {
-        console.log("Triggering submit on messageForm");
-        $messageForm.trigger("submit");
-        console.log("--------- submitUploadForm() END (workflow auto-submit) ---------");
+    workflowCallback = () => {
+      const userMessageElem = document.getElementById('userMessage');
+      if (userMessageElem) {
+        userMessageElem.value = workflowPrompt;
+        console.log("Pre-filled userMessage with workflow prompt:", workflowPrompt);
       } else {
-        console.error("messageForm not found!");
+        console.error("userMessage element not found!");
       }
-    }, 500);
+
+      setTimeout(() => {
+        const $messageForm = $('#messageForm');
+        if ($messageForm.length) {
+          console.log("Triggering submit on messageForm after document processing");
+          $messageForm.trigger("submit");
+          console.log("--------- submitUploadForm() queued workflow submission ---------");
+        } else {
+          console.error("messageForm not found!");
+        }
+      }, 100);
+    };
+  }
+
+  if (queuedDocs.length && typeof window.startDocumentProcessingWatch === 'function') {
+    console.log("Documents queued for background processing:", queuedDocs);
+
+    const docNamesForWatcher = queuedDocs.map(doc => doc.name || '');
+    const startWatcher = (estimatedSeconds, estimateMeta) => {
+      window.startDocumentProcessingWatch(queuedDocs, {
+        docNames: docNamesForWatcher,
+        onReady: workflowCallback,
+        estimatedSeconds: estimatedSeconds,
+        estimateMeta: estimateMeta || null
+      });
+
+      if (!workflowMode) {
+        console.log("Prompt entry disabled until documents finish processing.");
+        console.log("--------- submitUploadForm() END (documents queued) ---------");
+      } else {
+        console.log("Workflow submission deferred until documents finish processing.");
+        console.log("--------- submitUploadForm() END (workflow deferred) ---------");
+      }
+    };
+
+    const estimatePayload = {
+      documents: queuedDocs.map(doc => ({
+        id: doc.id,
+        mime: doc.type || '',
+        original_size: doc.original_size ?? null,
+        parsed_size: doc.parsed_size ?? null
+      }))
+    };
+
+    fetch('document_estimate.php', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify(estimatePayload)
+    })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Estimate request failed with status ' + response.status);
+        }
+        return response.json();
+      })
+      .then(data => {
+        const estimated = Number(data.total_estimate_sec);
+        const estimateMeta = {
+          source: data.estimate_source || null,
+          total_data_points: data.total_data_points || null
+        };
+        if (Array.isArray(data.documents)) {
+          estimateMeta.per_doc = data.documents;
+        }
+        if (!Number.isFinite(estimated) || estimated <= 0) {
+          startWatcher(null, estimateMeta);
+        } else {
+          startWatcher(estimated, estimateMeta);
+        }
+      })
+      .catch(error => {
+        console.warn('Falling back to default processing estimate:', error);
+        startWatcher(null, null);
+      });
+
+  } else if (workflowMode && typeof workflowCallback === 'function') {
+    workflowCallback();
+    console.log("--------- submitUploadForm() END (workflow auto-submit) ---------");
   } else {
     console.log("Workflow mode not active; no auto-submit.");
     console.log("--------- submitUploadForm() END (normal flow) ---------");
@@ -462,4 +530,3 @@ dropZone.addEventListener('dragleave', unhighlight, false);
 dropZone.addEventListener('drop', unhighlight, false);
 dropZone.addEventListener('drop', handleDrop, false);
 </script>
-

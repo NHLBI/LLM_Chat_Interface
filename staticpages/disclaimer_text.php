@@ -1,12 +1,19 @@
 <?php
 
+$appConfig = isset($config['app']) && is_array($config['app']) ? $config['app'] : [];
+
+$helpText   = $appConfig['help_text1']   ?? '';
+$teamsLink  = $appConfig['teams_link']   ?? '#';
+$intraLink  = $appConfig['intranet_link']?? '#';
+$videoLink  = $appConfig['video_link']   ?? '#';
+
 $topbox = '
-<p style="margin-top: 20px;">'.$config['app']['help_text1'].'</p>
+<p style="margin-top: 20px;">'.htmlspecialchars($helpText, ENT_QUOTES, 'UTF-8').'</p>
 <p class="borderedbox" style="text-align: center;">
     <span style="display: flex; justify-content: space-between; width: 90%; margin: 20px auto;">
-        <a title="Open a link to the Teams interface" href="'.$config['app']['teams_link'].'" target="_blank">Connect in Teams</a>
-        <a title="Open a link to the NHLBI Intranet interface" href="'.$config['app']['intranet_link'].'" target="_blank">Overview and Instructions</a>
-        <a title="Open the training video in a new window" href="'.$config['app']['video_link'].'" target="_blank">Training Video</a>
+        <a title="Open a link to the Teams interface" href="'.htmlspecialchars($teamsLink, ENT_QUOTES, 'UTF-8').'" target="_blank">Connect in Teams</a>
+        <a title="Open a link to the NHLBI Intranet interface" href="'.htmlspecialchars($intraLink, ENT_QUOTES, 'UTF-8').'" target="_blank">Overview and Instructions</a>
+        <a title="Open the training video in a new window" href="'.htmlspecialchars($videoLink, ENT_QUOTES, 'UTF-8').'" target="_blank">Training Video</a>
     </span>
 </p>
 ';

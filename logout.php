@@ -1,6 +1,6 @@
 <?php
 // Include required files and database connection
-require_once 'lib.required.php';
+require_once 'bootstrap.php';
 
 $idToken = $_SESSION['tokens']['id_token']; // Retrieve the ID token from session
 

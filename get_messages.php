@@ -1,6 +1,6 @@
 <?php
 // Include required files and database connection
-require_once 'lib.required.php';
+require_once 'bootstrap.php';
 
 #print_r($_SESSION);
 #print_r($_REQUEST);

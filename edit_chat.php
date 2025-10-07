@@ -1,6 +1,6 @@
 <?php
 // Include the database connection file
-require_once 'lib.required.php';
+require_once 'bootstrap.php';
 require_once 'db.php';
 
 // Check if the 'chat_id' and 'title' variables are set in the $_POST array

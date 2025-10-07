@@ -23,3 +23,7 @@ db.cli.php
 delete_chat.php.new
 
 githubtoken.txt
+
+# Python bytecode
+__pycache__/
+*/__pycache__/
