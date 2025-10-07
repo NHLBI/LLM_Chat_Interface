@@ -1,0 +1,7 @@
+Grant 5R01HL148207-04 Specific Aims
+
+Aim 1: Determine the molecular basis for miR-615-5p control of AKT/eNOS signaling in endothelial cells following ischemic injury.
+Aim 2: Evaluate the therapeutic potential of miR-615-5p inhibition to restore perfusion and angiogenesis in preclinical models of cardiovascular disease.
+Aim 3: Map safety, dose, and delivery parameters for clinical translation using primary human endothelial cultures and advanced imaging readouts.
+
+These aims summarize the validation document used to confirm automated ingestion for the NHLBI chat platform.
