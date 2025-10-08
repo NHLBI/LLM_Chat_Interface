@@ -976,8 +976,19 @@ $(document).ready(function() {
                 beforeSend: function() {
                     $('.waiting-indicator').show();
                 },
-                error: function() {
+                error: function(jqXHR, textStatus, errorThrown) {
                     $('.waiting-indicator').hide();
+                    console.error('Prompt submission failed', textStatus, errorThrown, jqXHR);
+                    recordClientEvent('ajax_prompt_failure', {
+                        text_status: textStatus,
+                        error: errorThrown,
+                        status: jqXHR ? jqXHR.status : null,
+                        ready_state: jqXHR ? jqXHR.readyState : null,
+                        response_length: jqXHR && jqXHR.responseText ? jqXHR.responseText.length : null,
+                        response_preview: jqXHR && jqXHR.responseText ? jqXHR.responseText.slice(0, 500) : null,
+                        message_preview: sanitizedPrompt ? sanitizedPrompt.slice(0, 120) : null,
+                        message_length: sanitizedPrompt ? sanitizedPrompt.length : null
+                    });
                 },
 
            
@@ -1390,6 +1401,31 @@ if (typeof fetchAndUpdateChatTitles === 'function') {
     }
 
 });
+
+function recordClientEvent(eventType, data) {
+    try {
+        const payload = Object.assign({
+            event: eventType,
+            timestamp: new Date().toISOString(),
+            chat_id: typeof chatId !== 'undefined' ? chatId : null
+        }, data || {});
+
+        const json = JSON.stringify(payload);
+        if (navigator.sendBeacon) {
+            const blob = new Blob([json], { type: 'application/json' });
+            navigator.sendBeacon('log_client_event.php', blob);
+        } else {
+            fetch('log_client_event.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                keepalive: true,
+                body: json
+            }).catch((err) => console.error('recordClientEvent fetch error', err));
+        }
+    } catch (err) {
+        console.error('recordClientEvent failed', err);
+    }
+}
 
 window.startDocumentProcessingWatch = startDocumentProcessingWatch;
 window.notifyDocumentProcessingInProgress = notifyDocumentProcessingInProgress;

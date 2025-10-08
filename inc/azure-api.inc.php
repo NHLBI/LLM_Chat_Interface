@@ -11,6 +11,19 @@
  * @param string $deployment The deployment identifier.
  * @return array The processed API response.
  */
+function using_mock_completion_backend(): bool {
+    $flag = getenv('PLAYWRIGHT_FAKE_COMPLETIONS');
+    if ($flag === false || $flag === '') {
+        $flag = getenv('FAKE_CHAT_COMPLETIONS');
+    }
+    if ($flag === false || $flag === null) {
+        return false;
+    }
+
+    $flag = strtolower(trim((string)$flag));
+    return in_array($flag, ['1', 'true', 'yes', 'on'], true);
+}
+
 function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config) {
     global $config, $config_file;
     file_put_contents(dirname(__DIR__).'/assistant_msgs.log', "\n\n    -    ASSISTANTLOG - 1 - " . print_r($message, true));
@@ -21,6 +34,33 @@ function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config
             'deployment' => $deployment,
             'error' => true,
             'message' => 'Invalid deployment configuration.'
+        ];
+    }
+
+    if (using_mock_completion_backend()) {
+        $uiDeployment = ui_deployment_key($active_config);
+        $workflowId   = $custom_config['workflowId'] ?? null;
+        if (function_exists('mb_substr')) {
+            $preview = trim(mb_substr($message, 0, 160));
+        } else {
+            $preview = trim(substr($message, 0, 160));
+        }
+        $replyText    = "Automated test reply\n\nPrompt preview: {$preview}";
+
+        $eid = create_exchange(
+            $uiDeployment,
+            $chat_id,
+            $message,
+            $replyText,
+            $workflowId,
+            null
+        );
+
+        return [
+            'eid'        => $eid,
+            'deployment' => $uiDeployment,
+            'error'      => false,
+            'message'    => $replyText,
         ];
     }
 
@@ -479,7 +519,7 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
     );
     file_put_contents(dirname(__DIR__).'/assistant_msgs.log', "\n\n    -    ASSISTANTLOG - 6 - " . print_r($messages, true), FILE_APPEND);
 
-    die("THESE ARE THE final/FINAL MESSAGES\n" . print_r($messages,1));
+    #die("THESE ARE THE final/FINAL MESSAGES\n" . print_r($messages,1));
 
     return $messages;
 }

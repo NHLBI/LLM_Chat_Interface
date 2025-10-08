@@ -6,6 +6,17 @@ error_reporting(E_ALL);
 // Include necessary libraries
 require_once 'bootstrap.php';
 
+if (!defined('UPLOAD_SHOULD_EXIT')) {
+    define('UPLOAD_SHOULD_EXIT', true);
+}
+
+if (!function_exists('isAjaxRequest')) {
+    function isAjaxRequest() {
+        return !empty($_SERVER['HTTP_X_REQUESTED_WITH']) &&
+               strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+    }
+}
+
 // Ensure $user and $config_file are available
 $user = $_SESSION['user_data']['userid'] ?? '';
 if (!isset($config_file) || !$config_file) {
@@ -42,6 +53,13 @@ if (!empty($_REQUEST['selected_workflow'])) {
         $configDescriptions = explode(',', $workflow['configDescription']);
         for ($i = 0; $i < count($configLabels); $i++) {
             $workflow_config[$configLabels[$i]] = $configDescriptions[$i];
+        }
+    }
+
+    if (json_last_error() === JSON_ERROR_NONE && is_array($workflow)) {
+        $_SESSION['selected_workflow'] = json_encode($workflow);
+        if (!empty($workflow_config['execution']) && $workflow_config['execution'] === 'auto-prompt-submit') {
+            $_SESSION['workflow_auto_prompt'] = true;
         }
     }
 }
@@ -311,12 +329,11 @@ if (isset($_FILES['uploadDocument'])) {
     }
 }
 
-exit();
+if (UPLOAD_SHOULD_EXIT) {
+    exit();
+}
+return;
 
 /**
  * Helper function to detect AJAX requests.
  */
-function isAjaxRequest() {
-    return !empty($_SERVER['HTTP_X_REQUESTED_WITH']) &&
-           strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
-}
