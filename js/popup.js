@@ -253,6 +253,12 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                 if (deployment != 'azure-dall-e-3' && docEntries.length > 0) {
                     const totalDocs = docEntries.length;
 
+                    const documentHeadingSpan = $('<span>', {
+                        class: 'document-heading',
+                        text: `Documents (${totalDocs})`,
+                        css: { whiteSpace: 'nowrap' }
+                    }).attr('title', `${totalDocs} document${totalDocs === 1 ? '' : 's'}`);
+
                     const headingRow = $('<div>', {
                         class: 'heading-row',
                         css: { display: 'flex', alignItems: 'center', flexWrap: 'nowrap' }
@@ -270,11 +276,7 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                                 css: { height: '20px', transform: 'rotate(45deg)' }
                             })
                         ),
-                        $('<span>', {
-                            class: 'document-heading',
-                            text: `Documents (${totalDocs})`,
-                            css: { whiteSpace: 'nowrap' }
-                        }).attr('title', `${totalDocs} document${totalDocs === 1 ? '' : 's'}`)
+                        documentHeadingSpan
                     );
 
                     const docHeadingContainer = $('<div>', {
@@ -293,6 +295,10 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                         currentChat = chat;
                     }
 
+                    let inlineTokenTotal = 0;
+                    let ragTokenTotal = 0;
+                    const contextLimit = Number.parseInt(window.context_limit ?? window.contextLimit ?? window.contextLimitTokens ?? 0, 10) || 0;
+
                     let itemNum = 1;
                     docEntries.forEach(([docKey, docData]) => {
                         const numericDocId = parseInt(docKey, 10);
@@ -305,33 +311,96 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                             ? window.isDocumentProcessingForChat(chat.id, numericDocId)
                             : false;
 
+                        let docSourceRaw = ((docData.source || docData.document_source || '') + '').toLowerCase();
+                        const docFullText = docData.full_text_available === true
+                            || docData.full_text_available === 1
+                            || docData.full_text_available === '1';
+                        const docTokensRaw = docData.token_length ?? docData.document_token_length;
+                        const docTokenLength = Number.isFinite(docTokensRaw)
+                            ? docTokensRaw
+                            : parseInt(docTokensRaw, 10);
+
+                        if (!docSourceRaw) {
+                            if (docFullText) {
+                                docSourceRaw = 'inline';
+                            } else if (isReady) {
+                                docSourceRaw = 'rag';
+                            }
+                        }
+
+                        let provenanceLabel = '';
+                        if (docSourceRaw === 'image') {
+                            provenanceLabel = 'Image stored inline (not indexed).';
+                        } else if (docSourceRaw === 'inline') {
+                            if (docFullText) {
+                                provenanceLabel = 'Full document stored inline; no vector search.';
+                            } else {
+                                provenanceLabel = 'Inline preview stored; remaining text handled via prompt.';
+                            }
+                        } else if (docSourceRaw === 'rag') {
+                            provenanceLabel = isReady
+                                ? 'Vector indexed for RAG retrieval.'
+                                : 'Queued for RAG indexing…';
+                        } else {
+                            provenanceLabel = isReady ? 'Document ready.' : 'Processing…';
+                        }
+
+                        const tooltipParts = [];
+                        if (docType) {
+                            tooltipParts.push(docType);
+                        }
+                        if (provenanceLabel) {
+                            tooltipParts.push(provenanceLabel);
+                        }
+                        /*
+                        if (docFullText && docSourceRaw !== 'image') {
+                            tooltipParts.push('Full text available in database.');
+                        }
+                        */
+                        if (Number.isFinite(docTokenLength) && docTokenLength > 0) {
+                            tooltipParts.push(`≈ ${prettyTokens(docTokenLength)} tokens`);
+                        }
+                        const tooltip = tooltipParts.filter(Boolean).join('\n').trim();
+
+                        if (Number.isFinite(docTokenLength) && docTokenLength > 0) {
+                            if (docSourceRaw === 'inline') {
+                                inlineTokenTotal += docTokenLength;
+                            } else if (docSourceRaw === 'rag') {
+                                ragTokenTotal += docTokenLength;
+                            }
+                        }
+
                         const docItem = $('<li>', {
                             class: `document-item ${isReady ? 'doc-ready' : 'doc-processing'}`,
-                            title: docType
+                            title: tooltip || docType
                         });
 
                         const docTitleSpan = $('<span>', {
                             class: 'document-title',
-                            html: `${itemNum}. ${displayTitle}`
+                            html: `${itemNum}. ${displayTitle}`,
+                            title: tooltip || docType
                         });
 
                         let statusLabel;
+                        const statusTitle = provenanceLabel || (isReady ? 'Ready' : 'Processing…');
                         if (!isReady) {
                             statusLabel = $('<span>', {
                                 class: 'document-status status-processing',
-                                text: 'Processing…'
+                                text: 'Processing…',
+                                title: statusTitle
                             });
                         } else if (isProcessingTracked) {
                             statusLabel = $('<span>', {
                                 class: 'document-status status-ready',
-                                text: 'Ready'
+                                text: docSourceRaw === 'rag' ? 'RAG ready' : 'Ready',
+                                title: statusTitle
                             });
                         } else {
                             statusLabel = $('<span>', {
                                 class: 'document-status status-ready ready-icon',
                                 role: 'img',
-                                'aria-label': 'Ready',
-                                title: 'Ready'
+                                'aria-label': statusTitle,
+                                title: statusTitle
                             });
                             statusLabel.html('&#10003;');
                         }
@@ -356,6 +425,32 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                         docList.append(docItem);
                         itemNum += 1;
                     });
+
+                    if (totalDocs > 0) {
+                        const inlineLabel = inlineTokenTotal > 0 ? `${prettyTokens(inlineTokenTotal)} inline` : null;
+                        const ragLabel = (ragTokenTotal > 0 && inlineTokenTotal === 0) ? `${prettyTokens(ragTokenTotal)} via RAG` : null;
+                        const summaryParts = [`${totalDocs} document${totalDocs === 1 ? '' : 's'}`];
+                        if (inlineLabel) summaryParts.push(inlineLabel);
+                        if (ragLabel) summaryParts.push(ragLabel);
+
+                        const summaryText = summaryParts.join(' · ');
+                        if (documentHeadingSpan) {
+                            documentHeadingSpan.text(`Documents (${summaryText})`);
+                            documentHeadingSpan.attr('title', summaryText);
+                        }
+
+                        docHeadingContainer.find('.token-warning').remove();
+                        if (inlineTokenTotal > 0 && contextLimit > 0 && inlineTokenTotal > contextLimit) {
+                            const warningText = `Inline total ${prettyTokens(inlineTokenTotal)} exceeds context limit of ${prettyTokens(contextLimit)}.`;
+                            const warning = $('<span>', {
+                                class: 'token-warning',
+                                text: warningText,
+                                title: 'Document tokens exceed selected model context.'
+                            });
+                            warning.css({ color: 'yellow', marginTop: '4px', marginLeft: '10px' });
+                            docHeadingContainer.append(warning);
+                        }
+                    }
 
                 }
 

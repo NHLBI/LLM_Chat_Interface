@@ -34,6 +34,60 @@ async function newAuthenticatedPage(browser) {
     viewport: { width: 1280, height: 720 },
   });
 
+  await context.addInitScript(() => {
+    const originalFetch = window.fetch.bind(window);
+    window.__lastUploadResult = null;
+    window.fetch = async (...args) => {
+      const response = await originalFetch(...args);
+      try {
+        const requestUrl = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+        if (requestUrl.includes('upload.php')) {
+          response
+            .clone()
+            .text()
+            .then((body) => {
+              try {
+                window.__lastUploadResult = JSON.parse(body);
+              } catch (err) {
+                window.__lastUploadResult = null;
+              }
+            })
+            .catch(() => {
+              window.__lastUploadResult = null;
+            });
+        }
+      } catch (err) {
+        console.warn('fetch wrapper error', err);
+      }
+      return response;
+    };
+
+    const originalSend = window.XMLHttpRequest.prototype.send;
+    window.XMLHttpRequest.prototype.send = function (...args) {
+      try {
+        this.addEventListener(
+          'loadend',
+          function () {
+            try {
+              if (this.responseURL && this.responseURL.includes('upload.php')) {
+                window.__lastUploadResultRaw = this.responseText;
+                window.__lastUploadResult = JSON.parse(this.responseText);
+                console.log('captured upload result', this.status);
+              }
+            } catch (err) {
+              window.__lastUploadResult = null;
+              console.warn('failed to capture upload result', err);
+            }
+          },
+          { once: true }
+        );
+      } catch (err) {
+        console.warn('xhr wrapper error', err);
+      }
+      return originalSend.apply(this, args);
+    };
+  });
+
   const domain = new URL(BASE_URL).hostname;
   await context.addCookies([
     {
@@ -241,6 +295,10 @@ async function cleanupChat(page) {
 
       await expect(page.locator('#preview')).toContainText('preview-test.png', { timeout: 5000 });
 
+      await page.evaluate(() => {
+        window.__lastUploadResult = null;
+      });
+
       const [uploadResponse] = await Promise.all([
         page.waitForResponse(
           (response) => response.url().includes('upload.php') && response.request().method() === 'POST'
@@ -249,30 +307,15 @@ async function cleanupChat(page) {
       ]);
 
       expect(uploadResponse.ok()).toBeTruthy();
-      await waitForChatNavigation(page, null);
+      const uploadJsonHandle = await page.waitForFunction(() => window.__lastUploadResult, null, {
+        timeout: 5000,
+      });
+      const uploadJson = await uploadJsonHandle.jsonValue();
 
-      const chatMatch = page.url().match(/\/chat\/([0-9A-Fa-f]+)/);
-      expect(chatMatch).toBeTruthy();
-      const chatId = chatMatch ? chatMatch[1] : null;
+      expect(uploadJson.uploaded_documents?.[0]?.name).toBe('preview-test.png');
+      expect(uploadJson.uploaded_documents?.[0]?.queued).toBeFalsy();
 
-      const docs = await page.evaluate(async ({ chatId }) => {
-        if (!chatId) {
-          return [];
-        }
-        const params = new URLSearchParams();
-        params.set('chat_id', chatId);
-        params.set('images_only', 'false');
-        const response = await fetch(`get_uploaded_images.php?${params.toString()}`, {
-          headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        });
-        return response.ok ? await response.json() : [];
-      }, { chatId });
-
-      const uploadedDoc = Array.isArray(docs)
-        ? docs.find((doc) => doc.document_name === 'preview-test.png')
-        : null;
-      expect(uploadedDoc).toBeTruthy();
-      expect(uploadedDoc?.document_type).toContain('image/png');
+      await waitForChatNavigation(page, uploadJson.new_chat ? uploadJson.chat_id : null);
     } finally {
       await cleanupChat(page);
       await context.close();

@@ -111,7 +111,8 @@ SCRIPT;
             }
             $docPath = $tmpBase . '.txt';
             rename($tmpBase, $docPath);
-            file_put_contents($docPath, "Workflow upload integration test.");
+            $largePayload = str_repeat("Workflow integration paragraph for testing.\n", 2000);
+            file_put_contents($docPath, $largePayload);
 
             $_FILES = [
                 'uploadDocument' => [
@@ -142,17 +143,21 @@ SCRIPT;
 
             $documentInfo = $payload['uploaded_documents'][0];
             assert_true(($documentInfo['queued'] ?? false) === true, 'Document should be queued for indexing');
+            assert_true(($documentInfo['inline_only'] ?? true) === false, 'Queued documents should not be flagged inline_only');
 
             $jobFiles = glob($workspaceRoot . '/queue/job_*.json');
             assert_true(!empty($jobFiles), 'Queue should contain a job file');
             $jobPayload = json_decode(file_get_contents($jobFiles[0]), true);
             assert_equals($documentInfo['id'], $jobPayload['document_id'], 'Job should reference uploaded document');
 
-            $stmt = $pdo->prepare('SELECT content FROM document WHERE id = :id');
+            $stmt = $pdo->prepare('SELECT content, document_token_length, full_text_available, source FROM document WHERE id = :id');
             $stmt->execute(['id' => $documentInfo['id']]);
             $docRow = $stmt->fetch(PDO::FETCH_ASSOC);
             assert_true(is_array($docRow), 'Document row should exist');
-            assert_true(strpos($docRow['content'], 'Parsed:Workflow upload integration test.') === 0, 'Parsed text should match stub output');
+            assert_true(strpos($docRow['content'], 'Parsed:Workflow integration paragraph for testing.') === 0, 'Parsed text should match stub output');
+            assert_true((int)$docRow['document_token_length'] > 0, 'Token length should be populated');
+            assert_equals('1', (string)$docRow['full_text_available']);
+            assert_equals('rag', (string)$docRow['source']);
 
             $serializedWorkflow = $_SESSION['selected_workflow'] ?? null;
             assert_equals(
@@ -169,8 +174,9 @@ SCRIPT;
             unset($_FILES, $_REQUEST);
             unset($_SERVER['HTTP_X_REQUESTED_WITH']);
 
-                session_write_close();
-            });
+            session_write_close();
+
+        });
         } finally {
             set_env_var('RAG_PARSER', $previousParser === false ? null : $previousParser);
             set_env_var('RAG_PYTHON_BIN', $previousPython === false ? null : $previousPython);
@@ -234,13 +240,16 @@ register_test('upload_image_stores_base64_document', function (): void {
             assert_true(is_array($docInfo), 'Uploaded document metadata should be present');
             assert_equals('preview-test.png', $docInfo['name'], 'Document name should match upload');
             assert_true(($docInfo['queued'] ?? true) === false, 'Images should not be queued for RAG');
+            assert_true(($docInfo['inline_only'] ?? false) === true, 'Images should be treated as inline-only assets');
 
-            $stmt = $pdo->prepare('SELECT content, type FROM document WHERE id = :id');
+            $stmt = $pdo->prepare('SELECT content, type, full_text_available, source FROM document WHERE id = :id');
             $stmt->execute(['id' => $docInfo['id']]);
             $docRow = $stmt->fetch(PDO::FETCH_ASSOC);
             assert_true(is_array($docRow), 'Image document row should exist');
             assert_equals('image/png', $docRow['type']);
             assert_true(strpos($docRow['content'], 'data:image/png;base64,') === 0, 'Image content should be stored as data URL');
+            assert_equals('0', (string)$docRow['full_text_available']);
+            assert_equals('image', (string)$docRow['source']);
 
             $chatId = $payload['chat_id'];
             $pdo->prepare('DELETE FROM document WHERE id = :id')->execute(['id' => $docInfo['id']]);
@@ -248,8 +257,9 @@ register_test('upload_image_stores_base64_document', function (): void {
 
             unset($_FILES, $_REQUEST);
             unset($_SERVER['HTTP_X_REQUESTED_WITH']);
-                session_write_close();
-            });
+            session_write_close();
+
+        });
         } finally {
             set_env_var('RAG_WORKSPACE_ROOT', $previousWorkspace === false ? null : $previousWorkspace);
             rrmdir($workspaceRoot);

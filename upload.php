@@ -118,13 +118,26 @@ if (isset($_FILES['uploadDocument'])) {
         // ===== IMAGES: store as before; NO indexing =====
         if (strpos($mimeType, 'image/') === 0) {
             $base64Image = local_image_to_data_url($tmpName, $mimeType);
-            $document_id = insert_document($user, $chat_id, $originalName, $mimeType, $base64Image);
+            $document_id = insert_document($user, $chat_id, $originalName, $mimeType, $base64Image, [
+                'compute_tokens' => false,
+                'token_length'   => 0,
+            ]);
+            try {
+                $stmt = $pdo->prepare("UPDATE document SET source = :source, full_text_available = 0 WHERE id = :id");
+                $stmt->execute([
+                    'source' => 'image',
+                    'id'     => $document_id,
+                ]);
+            } catch (Throwable $e) {
+                error_log("Failed to set image source for document_id {$document_id}: " . $e->getMessage());
+            }
             @unlink($tmpName);
             $uploadedDocuments[] = [
                 'id'                => (int)$document_id,
                 'name'              => $originalName,
                 'type'              => $mimeType,
                 'queued'            => false,
+                'inline_only'      => true,
                 'original_size'     => $originalSize !== false ? (int)$originalSize : null,
                 'parsed_size'       => null,
             ];
@@ -224,13 +237,13 @@ if (isset($_FILES['uploadDocument'])) {
         $parsedSize      = filesize($txtPath);
         $maxDbBytes      = 2 * 1024 * 1024; // 2 MB cap for DB storage
         $parsedText      = '';
-        $insertOptions   = [];
+        $tokenLength     = 0;
+        $fullTextAvailable = 1;
 
         if ($parsedSize === false) {
             $parsedSize = 0;
         }
 
-        $fullTextAvailable = 1;
         if ($parsedSize > $maxDbBytes) {
             $fh = fopen($txtPath, 'r');
             if ($fh !== false) {
@@ -241,16 +254,20 @@ if (isset($_FILES['uploadDocument'])) {
                 $parsedText = '';
             }
             $parsedText .= "\n\n[Content truncated for preview; full text indexed via RAG.]";
-            $insertOptions = ['compute_tokens' => false, 'token_length' => 0];
+            $tokenLength = 0;
             $fullTextAvailable = 0;
             error_log("Parsed output truncated for database storage (size={$parsedSize} bytes)");
         } else {
             $parsedText = @file_get_contents($txtPath);
             if ($parsedText === false) { $parsedText = ''; }
+            $tokenLength = get_token_count($parsedText, 'cl100k_base');
         }
 
         // Create the document row and update file_sha256
-        $document_id = insert_document($user, $chat_id, $originalName, $mimeType, $parsedText, $insertOptions);
+        $document_id = insert_document($user, $chat_id, $originalName, $mimeType, $parsedText, [
+            'compute_tokens' => false,
+            'token_length'   => $tokenLength,
+        ]);
 
         try {
             $stmt = $pdo->prepare("UPDATE document SET full_text_available = :flag WHERE id = :id");
@@ -274,32 +291,56 @@ if (isset($_FILES['uploadDocument'])) {
 
         $parsedSizeBytes = @filesize($txtPath);
 
-        // ===== Queue the RAG index =====
-        $payload = [
-            'document_id'     => (int)$document_id,
-            'chat_id'         => $chat_id,
-            'user'            => $user,
-            'embedding_model' => "NHLBI-Chat-workflow-text-embedding-3-large",
-            'config_path'     => $config_file,
-            'file_path'       => $txtPath,
-            'filename'        => $originalName,
-            'mime'            => $mimeType,
-            'cleanup_tmp'     => false,
-            'original_size_bytes' => $originalSize !== false ? (int)$originalSize : null,
-            'parsed_size_bytes'   => $parsedSizeBytes !== false ? (int)$parsedSizeBytes : null,
-            'queue_timestamp'     => time(),
-        ];
+        $ragInlineThreshold = isset($config['rag']['inline_fulltext_tokens'])
+            ? (int)$config['rag']['inline_fulltext_tokens']
+            : 4000;
 
-        $jobPath = $queueDir . '/job_' . uniqid('', true) . '.json';
-        $encoded = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $shouldQueueRag = true;
+        if ($fullTextAvailable && $tokenLength > 0 && $tokenLength <= $ragInlineThreshold) {
+            $shouldQueueRag = false;
+        }
 
         $queued = false;
-        if ($encoded === false || file_put_contents($jobPath, $encoded) === false) {
-            error_log("Failed to enqueue RAG job for document_id {$document_id}");
+        if ($shouldQueueRag) {
+            $payload = [
+                'document_id'     => (int)$document_id,
+                'chat_id'         => $chat_id,
+                'user'            => $user,
+                'embedding_model' => "NHLBI-Chat-workflow-text-embedding-3-large",
+                'config_path'     => $config_file,
+                'file_path'       => $txtPath,
+                'filename'        => $originalName,
+                'mime'            => $mimeType,
+                'cleanup_tmp'     => false,
+                'original_size_bytes' => $originalSize !== false ? (int)$originalSize : null,
+                'parsed_size_bytes'   => $parsedSizeBytes !== false ? (int)$parsedSizeBytes : null,
+                'queue_timestamp'     => time(),
+            ];
+
+            $jobPath = $queueDir . '/job_' . uniqid('', true) . '.json';
+            $encoded = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+            if ($encoded === false || file_put_contents($jobPath, $encoded) === false) {
+                error_log("Failed to enqueue RAG job for document_id {$document_id}");
+            } else {
+                error_log("Queued RAG indexing job for document_id {$document_id}: {$jobPath}");
+                $queued = true;
+                $queuedDocuments[] = (int)$document_id;
+            }
         } else {
-            error_log("Queued RAG indexing job for document_id {$document_id}: {$jobPath}");
-            $queued = true;
-            $queuedDocuments[] = (int)$document_id;
+            error_log("Skipped RAG queueing for document_id {$document_id}; inline tokens={$tokenLength}");
+            @unlink($txtPath);
+        }
+
+        $docSource = $shouldQueueRag ? 'rag' : 'inline';
+        try {
+            $stmt = $pdo->prepare("UPDATE document SET source = :source WHERE id = :id");
+            $stmt->execute([
+                'source' => $docSource,
+                'id'     => $document_id,
+            ]);
+        } catch (Throwable $e) {
+            error_log("Failed to set source={$docSource} for document_id {$document_id}: " . $e->getMessage());
         }
 
         $uploadedDocuments[] = [
@@ -307,6 +348,7 @@ if (isset($_FILES['uploadDocument'])) {
             'name'              => $originalName,
             'type'              => $mimeType,
             'queued'            => $queued,
+            'inline_only'      => !$queued,
             'original_size'     => $originalSize !== false ? (int)$originalSize : null,
             'parsed_size'       => $parsedSizeBytes !== false ? (int)$parsedSizeBytes : null,
         ];

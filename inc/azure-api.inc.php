@@ -24,6 +24,75 @@ function using_mock_completion_backend(): bool {
     return in_array($flag, ['1', 'true', 'yes', 'on'], true);
 }
 
+/**
+ * Returns a document snippet that fits within the provided token budget.
+ *
+ * @param string   $content          The document body.
+ * @param int      $tokenBudget      Maximum tokens allowed for the snippet.
+ * @param int|null $knownTokenLength Optional precomputed token length for the full content.
+ *
+ * @return array{text:string,tokens:int,truncated:bool}
+ */
+function truncate_document_for_budget(string $content, int $tokenBudget, ?int $knownTokenLength = null): array {
+    $tokenBudget = max(0, (int)$tokenBudget);
+    $totalTokens = $knownTokenLength ?? estimate_tokens($content);
+
+    if ($tokenBudget <= 0) {
+        return ['text' => '', 'tokens' => 0, 'truncated' => $totalTokens > 0];
+    }
+    if ($totalTokens <= $tokenBudget) {
+        return ['text' => $content, 'tokens' => $totalTokens, 'truncated' => false];
+    }
+
+    $length = mb_strlen($content, 'UTF-8');
+    if ($length === 0) {
+        return ['text' => '', 'tokens' => 0, 'truncated' => false];
+    }
+
+    $low = 0;
+    $high = $length;
+    $best = '';
+    $bestTokens = 0;
+
+    while ($low <= $high) {
+        $mid = (int)floor(($low + $high) / 2);
+        if ($mid <= 0) {
+            $candidate = '';
+            $tokens = 0;
+        } else {
+            $candidate = mb_substr($content, 0, $mid, 'UTF-8');
+            $tokens = estimate_tokens($candidate);
+        }
+
+        if ($tokens <= $tokenBudget) {
+            $best = $candidate;
+            $bestTokens = $tokens;
+            $low = $mid + 1;
+        } else {
+            $high = $mid - 1;
+        }
+    }
+
+    if ($best === '') {
+        $best = mb_substr($content, 0, min(160, $length), 'UTF-8');
+        $bestTokens = estimate_tokens($best);
+    }
+
+    $best = rtrim($best);
+    $note = "\n\n[Content truncated to fit available context.]";
+    $noteTokens = estimate_tokens($note);
+    if ($best !== '' && ($bestTokens + $noteTokens) <= $tokenBudget) {
+        $best .= $note;
+        $bestTokens += $noteTokens;
+    }
+
+    return [
+        'text'      => $best,
+        'tokens'    => min($bestTokens, $tokenBudget),
+        'truncated' => true,
+    ];
+}
+
 function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config) {
     global $config, $config_file;
     file_put_contents(dirname(__DIR__).'/assistant_msgs.log', "\n\n    -    ASSISTANTLOG - 1 - " . print_r($message, true));
@@ -62,33 +131,6 @@ function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config
             'error'      => false,
             'message'    => $replyText,
         ];
-    }
-
-    // BEFORE building $msg / get_chat_thread:
-    $rag_enabled = true;
-    if ($rag_enabled) {
-        $userForIndex = $_SESSION['user_data']['userid'] ?? '';
-        $r = run_rag($message, $chat_id, $userForIndex, $config_file, 20);
-
-        // Always log the outcome so “spinners” never hide problems
-        error_log("RAG CMD: {$r['cmd']}");
-        error_log("RAG RC: {$r['rc']}");
-        error_log("RAG STDOUT (first 800): ".substr($r['stdout'], 0, 800));
-        error_log("RAG STDERR (first 800): ".substr($r['stderr'] ?? '', 0, 800));
-
-        if ($r['rc'] === 0 && is_array($r['json']) && !empty($r['json']['ok']) && !empty($r['json']['augmented_prompt'])) {
-            $message = $r['json']['augmented_prompt'];
-            $_SESSION['last_rag_citations'] = $r['json']['citations'] ?? [];
-            $_SESSION['last_rag_meta'] = [
-                'top_k'           => $r['payload']['top_k'] ?? null,
-                'latency_ms'      => $r['json']['latency_ms'] ?? null,
-                'embedding_model' => $r['json']['embedding_model_used'] ?? ($r['json']['embedding_model'] ?? null),
-            ];
-        } else {
-            // Soft-fail: keep original $message and carry on
-            error_log("RAG retrieve failed; falling back to raw message");
-            unset($_SESSION['last_rag_meta']);
-        }
     }
 
     $isAssistant = ($active_config['host'] === 'assistant');
@@ -485,32 +527,168 @@ function process_api_response(
  * @return array The messages array for Chat Completion.
  */
 function handle_chat_request($message, $chat_id, $user, $active_config) {
+    global $config_file;
     file_put_contents(dirname(__DIR__).'/assistant_msgs.log', "\n\n    -    ASSISTANTLOG - 5 - " . print_r($message, true), FILE_APPEND);
 
     // 1) build system message
     $system_message = build_system_message($active_config);
 
-    // 2) pull docs (token counts are no longer tracked in UI budgets)
-    $docs       = get_chat_documents($user, $chat_id);
-    $doc_tokens = 0;
+    // 2) gather document inventory
+    $docs = get_chat_documents($user, $chat_id);
 
     // 3) decide whether to inject full documents or rely on RAG
     $document_messages = [];
-    $docTokenBudget = max(0, (int)$active_config['context_limit'] - estimate_tokens($message) - 1024); // leave buffer
+    $initialDocBudget = max(0, (int)$active_config['context_limit'] - estimate_tokens($message) - 1024); // leave buffer
+    $docTokenBudget = $initialDocBudget;
     $docsNeedingRag = [];
+    $decisions = [];
 
+    $inlineCandidates = [];
+    $remainingDocs = [];
     foreach ($docs as $doc) {
-        $docTokens = (int)($doc['document_token_length'] ?? 0);
-        $hasFull = !empty($doc['full_text_available']) && !empty($doc['document_content']);
-
-        if ($hasFull && $docTokens > 0 && $docTokens <= $docTokenBudget) {
-            $docTokenBudget -= $docTokens;
-            $content = "Document: {$doc['document_name']}\n{$doc['document_content']}";
-            $document_messages[] = ['role' => 'system', 'content' => $content];
+        $isImage = isset($doc['document_type']) && strpos($doc['document_type'], 'image/') === 0;
+        $fullAvailable = !empty($doc['full_text_available']) && !$isImage && !empty($doc['document_content']);
+        if ($fullAvailable) {
+            $inlineCandidates[] = $doc;
         } else {
-            $docsNeedingRag[] = (int)$doc['document_id'];
+            $remainingDocs[] = $doc;
         }
     }
+
+    usort($inlineCandidates, function ($a, $b) {
+        $aTokens = (int)($a['document_token_length'] ?? 0);
+        $bTokens = (int)($b['document_token_length'] ?? 0);
+        if ($aTokens === $bTokens) {
+            return ((int)($a['document_id'] ?? 0)) <=> ((int)($b['document_id'] ?? 0));
+        }
+        return $aTokens <=> $bTokens;
+    });
+
+    $orderedDocs = array_merge($inlineCandidates, $remainingDocs);
+
+    foreach ($orderedDocs as $doc) {
+        $docId = (int)($doc['document_id'] ?? 0);
+        if ($docId <= 0) {
+            continue;
+        }
+
+        $docName   = (string)($doc['document_name'] ?? ('Document ' . $docId));
+        $docType   = (string)($doc['document_type'] ?? '');
+        $docReady  = !empty($doc['document_ready']);
+        $docContent = (string)($doc['document_content'] ?? '');
+        $docTokens  = (int)($doc['document_token_length'] ?? 0);
+
+        $fullAvailable = !empty($doc['full_text_available']) && strpos($docType, 'image/') !== 0 && $docContent !== '';
+        if ($fullAvailable && $docTokens <= 0 && $docContent !== '') {
+            $docTokens = estimate_tokens($docContent);
+        }
+
+        $decision = [
+            'id'                    => $docId,
+            'name'                  => $docName,
+            'type'                  => $docType,
+            'full_text_available'   => (bool)$fullAvailable,
+            'document_ready'        => (bool)$docReady,
+            'document_token_length' => $docTokens,
+            'mode'                  => 'pending',
+        ];
+
+        if ($fullAvailable) {
+            $header = "Document: {$docName}";
+            $headerTokens = estimate_tokens($header . "\n");
+
+            if ($docTokenBudget >= ($headerTokens + $docTokens)) {
+                $content = $header . "\n" . $docContent;
+                $tokensSpent = $headerTokens + $docTokens;
+                $document_messages[] = ['role' => 'system', 'content' => $content];
+                $docTokenBudget = max(0, $docTokenBudget - $tokensSpent);
+
+                $decision['mode'] = 'inline';
+                $decision['tokens_used'] = $tokensSpent;
+                $decision['remaining_budget'] = $docTokenBudget;
+                $decisions[] = $decision;
+                continue;
+            }
+
+            $availableForBody = max(0, $docTokenBudget - $headerTokens);
+            if ($availableForBody > 0 && !$docReady) {
+                $clip = truncate_document_for_budget($docContent, $availableForBody, $docTokens);
+                if ($clip['text'] !== '') {
+                    $content = $header . "\n" . $clip['text'];
+                    $tokensSpent = $headerTokens + $clip['tokens'];
+                    $document_messages[] = ['role' => 'system', 'content' => $content];
+                    $docTokenBudget = max(0, $docTokenBudget - $tokensSpent);
+
+                    $decision['mode'] = 'inline_truncated';
+                    $decision['tokens_used'] = $tokensSpent;
+                    $decision['remaining_budget'] = $docTokenBudget;
+                    $decision['truncated'] = true;
+                    $decisions[] = $decision;
+                    continue;
+                }
+            }
+
+            if ($docReady) {
+                $docsNeedingRag[] = $docId;
+                $decision['mode'] = 'rag';
+                $decision['reason'] = 'token_budget';
+            } else {
+                $decision['mode'] = 'pending_index';
+                $decision['reason'] = ($availableForBody <= 0) ? 'no_budget' : 'awaiting_index';
+            }
+
+            $decisions[] = $decision;
+            continue;
+        }
+
+        if ($docReady) {
+            $docsNeedingRag[] = $docId;
+            $decision['mode'] = 'rag';
+            $decision['reason'] = 'no_fulltext';
+        } else {
+            $decision['mode'] = 'pending_index';
+            $decision['reason'] = 'awaiting_index';
+        }
+
+        $decisions[] = $decision;
+    }
+
+    $docsNeedingRag = array_values(array_unique(array_filter($docsNeedingRag)));
+
+    $_SESSION['last_document_strategy'] = [
+        'initial_budget'  => $initialDocBudget,
+        'remaining_budget'=> $docTokenBudget,
+        'documents'       => $decisions,
+        'rag_document_ids'=> $docsNeedingRag,
+    ];
+
+    $shouldRunRag = !empty($docsNeedingRag);
+    if ($shouldRunRag) {
+        $userForIndex = $_SESSION['user_data']['userid'] ?? $user;
+        $ragResponse = run_rag($message, $chat_id, $userForIndex, $config_file, 20, $docsNeedingRag);
+
+        error_log("RAG CMD: {$ragResponse['cmd']}");
+        error_log("RAG RC: {$ragResponse['rc']}");
+        error_log("RAG STDOUT (first 800): " . substr($ragResponse['stdout'], 0, 800));
+        error_log("RAG STDERR (first 800): " . substr($ragResponse['stderr'] ?? '', 0, 800));
+
+        if ($ragResponse['rc'] === 0 && is_array($ragResponse['json']) && !empty($ragResponse['json']['ok']) && !empty($ragResponse['json']['augmented_prompt'])) {
+            $message = $ragResponse['json']['augmented_prompt'];
+            $_SESSION['last_rag_citations'] = $ragResponse['json']['citations'] ?? [];
+            $_SESSION['last_rag_meta'] = [
+                'top_k'           => $ragResponse['payload']['top_k'] ?? null,
+                'latency_ms'      => $ragResponse['json']['latency_ms'] ?? null,
+                'embedding_model' => $ragResponse['json']['embedding_model_used'] ?? ($ragResponse['json']['embedding_model'] ?? null),
+            ];
+        } else {
+            error_log("RAG retrieve failed; falling back to raw message");
+            unset($_SESSION['last_rag_citations'], $_SESSION['last_rag_meta']);
+        }
+    } else {
+        unset($_SESSION['last_rag_citations'], $_SESSION['last_rag_meta']);
+    }
+
+    $tokensUsedByDocs = max(0, $initialDocBudget - $docTokenBudget);
 
     // 4) pull chat history, *reserving* doc_tokens still available
     $context_messages = retrieve_context_messages(
@@ -518,7 +696,7 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
         $user,
         $active_config,
         $message,
-        $reserved_tokens = (int)($active_config['context_limit'] - $docTokenBudget)
+        $reserved_tokens = $tokensUsedByDocs
     );
 
     // 5) stitch everything together
