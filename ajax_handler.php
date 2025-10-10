@@ -1,6 +1,17 @@
 <?php
 // Include required files and establish the database connection
 require_once 'bootstrap.php';
+
+if (empty($_SESSION['user_data']['userid']) || empty($_SESSION['authorized'])) {
+    http_response_code(401);
+    header('Content-Type: application/json');
+    echo json_encode([
+        'error' => true,
+        'message' => 'Session expired. Please refresh the page.',
+        'code' => 'session_expired'
+    ]);
+    exit;
+}
 require_once 'db.php';
 
 define('HARDCODED_DEPLOYMENT','azure-gpt4.1-mini');

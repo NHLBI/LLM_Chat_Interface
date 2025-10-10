@@ -63,7 +63,7 @@ code {
 .message {
     margin: 0px 0 0px 0;
     padding: 20px;
-    padding-bottom: 30px;
+    padding-bottom: 10px;
     /*border-radius: 10px;*/
 }
 .assistant-message {
@@ -365,12 +365,13 @@ code {
 }
 
 .copy-chat-button {
-        position: absolute;
+        /*position: absolute;*/
         background: none;
         border: none;
         color: #a5803b;
         cursor: pointer;
-        padding: 6px;
+        padding: 0px;
+        margin: 0px;
         border-radius: 4px;
         transition: background-color 0.3s;
     bottom: 4px;

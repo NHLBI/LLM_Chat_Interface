@@ -9,6 +9,7 @@ NHLBI Chat is a chat front-end interface designed to provide staff with a secure
 - Basic chat interface similar to popular AI chat tools.
 - File upload capability for document analysis. Accepted file formats include .pdf,.docx,.pptx,.txt,.md,.json, and .xml.
 - Uses Azure OpenAI API for generating responses.
+- Optional speech playback of assistant replies using the browser's SpeechSynthesis API (Chrome, Edge, Safari).
 
 ## Building and Launching
 
@@ -188,6 +189,7 @@ The Playwright suite replaces the manual regression steps for authenticated chat
    - The suite automatically mints a session via `scripts/create_dev_session.php`, posts a prompt, verifies the assistant response, and exercises the upload modal.
 4. Playwright artifacts (traces, screenshots) land in `test-results/` or `playwright-report/` when a failure occurs, providing context for debugging.
 5. If your database instance has not yet been migrated to include the `rag_index` table, the application will still load but document readiness will report as `false`; apply the latest DDL from `chat_db.sql` for full retrieval metadata.
+6. When running locally, the suite also asserts image upload previews and verifies that prompt sanitization prevents script execution while leaving the new speech playback control unaffected.
 
 ### Accessibility/session helpers and client event logs
 

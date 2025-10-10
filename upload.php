@@ -230,6 +230,7 @@ if (isset($_FILES['uploadDocument'])) {
             $parsedSize = 0;
         }
 
+        $fullTextAvailable = 1;
         if ($parsedSize > $maxDbBytes) {
             $fh = fopen($txtPath, 'r');
             if ($fh !== false) {
@@ -241,6 +242,7 @@ if (isset($_FILES['uploadDocument'])) {
             }
             $parsedText .= "\n\n[Content truncated for preview; full text indexed via RAG.]";
             $insertOptions = ['compute_tokens' => false, 'token_length' => 0];
+            $fullTextAvailable = 0;
             error_log("Parsed output truncated for database storage (size={$parsedSize} bytes)");
         } else {
             $parsedText = @file_get_contents($txtPath);
@@ -249,6 +251,16 @@ if (isset($_FILES['uploadDocument'])) {
 
         // Create the document row and update file_sha256
         $document_id = insert_document($user, $chat_id, $originalName, $mimeType, $parsedText, $insertOptions);
+
+        try {
+            $stmt = $pdo->prepare("UPDATE document SET full_text_available = :flag WHERE id = :id");
+            $stmt->execute([
+                'flag' => $fullTextAvailable ? 1 : 0,
+                'id'   => $document_id,
+            ]);
+        } catch (Throwable $e) {
+            error_log("Failed to set full_text_available for document_id {$document_id}: " . $e->getMessage());
+        }
 
         try {
             $file_sha256 = hash_file('sha256', $tmpName);

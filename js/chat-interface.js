@@ -12,6 +12,11 @@ var docProcessingCancelEl;
 var originalMessagePlaceholder = '';
 
 var PROCESSING_STORAGE_KEY = 'chat_processing_jobs';
+var speechEnabled = typeof window !== 'undefined'
+    && 'speechSynthesis' in window
+    && typeof window.SpeechSynthesisUtterance !== 'undefined';
+var activeUtterance = null;
+var activeSpeakButton = null;
 
 var docProcessingState = {
     active: false,
@@ -1007,6 +1012,16 @@ success : function (response, textStatus, jqXHR) {
         json = JSON.parse(response);
     } catch (parseErr) {
         console.error('❌ JSON.parse failed:', parseErr);
+        recordClientEvent('ajax_response_parse_failure', {
+            error: parseErr.message || String(parseErr),
+            status: jqXHR ? jqXHR.status : null,
+            text_status: textStatus,
+            content_type: jqXHR ? jqXHR.getResponseHeader('Content-Type') : null,
+            response_preview: typeof response === 'string' ? response.slice(0, 500) : null,
+            message_preview: sanitizedPrompt ? sanitizedPrompt.slice(0, 120) : null,
+            message_length: sanitizedPrompt ? sanitizedPrompt.length : null
+        });
+        alert('We were unable to process the assistant response. Please retry.');
         return;               // bail – the rest of the handler needs real JSON
     }
 
@@ -1017,8 +1032,20 @@ success : function (response, textStatus, jqXHR) {
         image_gen_name    : imageGenName,
         deployment        : deployment,
         error,
-        new_chat_id
+        new_chat_id,
+        code
     } = json;
+
+    if (code === 'session_expired') {
+        recordClientEvent('ajax_session_expired', {
+            status: jqXHR ? jqXHR.status : null,
+            text_status: textStatus,
+            message_preview: sanitizedPrompt ? sanitizedPrompt.slice(0, 120) : null
+        });
+        alert('Your session has expired. Please refresh the page to continue.');
+        window.location.href = window.location.href;
+        return;
+    }
 
     if (error) {
         alert('Error: ' + rawResponse);
@@ -1069,6 +1096,8 @@ success : function (response, textStatus, jqXHR) {
         const formattedHTML = formatCodeBlocks(rawResponse);
         assistantMessageElement.append(formattedHTML);
         addCopyButton(assistantMessageElement, rawResponse);
+        const plainResponse = $('<div>').html(formattedHTML).text();
+        addSpeakButton(assistantMessageElement, plainResponse);
     }
 
     /* ---------- inject & post-process ---------- */
@@ -1126,7 +1155,7 @@ if (typeof fetchAndUpdateChatTitles === 'function') {
     }
 
     // Copy button for text
-    function addCopyButton(messageElement, rawMessageContent) {
+function addCopyButton(messageElement, rawMessageContent) {
         // Create the copy button without the onclick attribute
         var copyButton = $(`
             <button class="copy-chat-button" title="Copy Raw Reply" aria-label="Copy the current reply to clipboard">
@@ -1137,36 +1166,146 @@ if (typeof fetchAndUpdateChatTitles === 'function') {
             </button>
         `);
 
-        // Append the copy button to the message element
-        messageElement.append(copyButton);
-
-        // Set the position of the message element to relative
-        messageElement.css('position', 'relative');
-
-        // Copy the raw content to clipboard on click
-        copyButton.on('click', function() {
-            // Use the rawMessageContent directly
-            navigator.clipboard.writeText(rawMessageContent).then(function() {
-                // Create a subtle popup message
-                var popup = $('<span class="copied-chat-popup show">Copied!</span>');
-
-                popup.css({
-                    position: 'absolute',
-                    top: copyButton.position().top + 4, // Adjust this value as needed
-                    left: copyButton.position().left + 150,
-                });
-
-                // Append the popup to the message element
-                messageElement.append(popup);
-
-                // Remove the popup after 2 seconds
-                setTimeout(function() {
-                    popup.remove();
-                }, 2000);
-            }, function(err) {
-                console.error('Could not copy text: ', err);
-            });
+    var controlsWrapper = messageElement.find('.reply-controls');
+    if (!controlsWrapper.length) {
+        controlsWrapper = $('<div class="reply-controls"></div>').css({
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '8px',
+            marginTop: '8px'
         });
+        messageElement.append(controlsWrapper);
+    }
+
+    copyButton.css({
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px'
+    });
+
+    controlsWrapper.append(copyButton);
+
+    // Copy the raw content to clipboard on click
+    copyButton.on('click', function() {
+        // Use the rawMessageContent directly
+        navigator.clipboard.writeText(rawMessageContent).then(function() {
+            // Create a subtle popup message
+            var popup = $('<span class="copied-chat-popup show">Copied!</span>').css({
+                marginLeft: '12px',
+                fontSize: '12px'
+            });
+            copyButton.after(popup);
+            setTimeout(function() {
+                popup.remove();
+            }, 2000);
+        }, function(err) {
+            console.error('Could not copy text: ', err);
+        });
+    });
+}
+
+    function resetSpeakButton(button) {
+        if (!button) {
+            return;
+        }
+        button.attr('aria-label', 'Play audio for this reply');
+        button.html(`
+            <span style="font-size:12px;">Play Audio</span>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path d="M3 9v6h4l5 5V4L7 9H3z"></path>
+                <path d="M14 9.23v5.54c1.19-.69 2-.98 3-.98s2.25.31 3 1.01V9.2c-.75.69-1.75 1.02-3 1.02s-1.81-.28-3-.99z"></path>
+            </svg>
+        `);
+        button.removeClass('speak-playing');
+    }
+
+    function setSpeakButtonPlaying(button) {
+        button.attr('aria-label', 'Stop audio playback');
+        button.html(`
+            <span style="font-size:12px;">Stop Audio</span>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path d="M6 5h4v14H6zM14 5h4v14h-4z"></path>
+            </svg>
+        `);
+        button.addClass('speak-playing');
+    }
+
+    function addSpeakButton(messageElement, rawMessageContent) {
+        if (!speechEnabled) {
+            return;
+        }
+
+        var plain = (rawMessageContent || '').replace(/\s+/g, ' ').trim();
+        if (!plain) {
+            return;
+        }
+
+        var speakButton = $(`
+            <button class="copy-chat-button speak-chat-button" title="Play audio for this reply" aria-label="Play audio for this reply">
+                <span style="font-size:12px;">Play Audio</span>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path d="M3 9v6h4l5 5V4L7 9H3z"></path>
+                <path d="M14 9.23v5.54c1.19-.69 2-.98 3-.98s2.25.31 3 1.01V9.2c-.75.69-1.75 1.02-3 1.02s-1.81-.28-3-.99z"></path>
+            </svg>
+        </button>
+    `);
+
+        var controls = messageElement.find('.reply-controls');
+        if (!controls.length) {
+            controls = $('<div class="reply-controls"></div>').css({
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '8px',
+                marginTop: '8px'
+            });
+            messageElement.append(controls);
+        }
+
+        speakButton.css({
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px'
+        });
+
+        speakButton.on('click', function () {
+            if (!speechEnabled) {
+                return;
+            }
+
+            var sameButtonActive = activeSpeakButton && activeSpeakButton[0] === speakButton[0];
+            if (activeUtterance) {
+                window.speechSynthesis.cancel();
+                resetSpeakButton(activeSpeakButton);
+                activeUtterance = null;
+                activeSpeakButton = null;
+                if (sameButtonActive) {
+                    return;
+                }
+            }
+
+            var utterance = new window.SpeechSynthesisUtterance(plain.replace(/[*_`]/g, ''));
+            utterance.onend = function () {
+                if (activeSpeakButton && activeSpeakButton[0] === speakButton[0]) {
+                    resetSpeakButton(speakButton);
+                    activeUtterance = null;
+                    activeSpeakButton = null;
+                }
+            };
+            utterance.onerror = function () {
+                if (activeSpeakButton && activeSpeakButton[0] === speakButton[0]) {
+                    resetSpeakButton(speakButton);
+                    activeUtterance = null;
+                    activeSpeakButton = null;
+                }
+            };
+
+            activeUtterance = utterance;
+            activeSpeakButton = speakButton;
+            setSpeakButtonPlaying(speakButton);
+            window.speechSynthesis.speak(utterance);
+        });
+
+        controls.append(speakButton);
     }
 
     // Load old messages
@@ -1280,11 +1419,13 @@ if (typeof fetchAndUpdateChatTitles === 'function') {
                 chatContainer.append(assistantMessageElement);
 
                 // If there's a text reply, handle it
-                if (message.reply) {
-                    var sanitizedReply = formatCodeBlocks(message.reply);
-                    assistantMessageElement.append(sanitizedReply);
-                    addCopyButton(assistantMessageElement, message.reply);
-                }
+        if (message.reply) {
+            var sanitizedReply = formatCodeBlocks(message.reply);
+            assistantMessageElement.append(sanitizedReply);
+            addCopyButton(assistantMessageElement, message.reply);
+            var plainReply = $('<div>').html(sanitizedReply).text();
+            addSpeakButton(assistantMessageElement, plainReply);
+        }
             }
 
             //------------------------------------------------

@@ -494,18 +494,31 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
     $docs       = get_chat_documents($user, $chat_id);
     $doc_tokens = 0;
 
-    // 3) format docs into messages
-    # AT THE MOMENT WE HAVE DISABLED PASSING DOCUMENTS TO THE CONTEXT SINCE WE NOW USE RAG
-    $document_messages = []; #format_document_messages($docs, $message);
-    #$document_messages = format_document_messages($docs, $message);
+    // 3) decide whether to inject full documents or rely on RAG
+    $document_messages = [];
+    $docTokenBudget = max(0, (int)$active_config['context_limit'] - estimate_tokens($message) - 1024); // leave buffer
+    $docsNeedingRag = [];
 
-    // 4) pull chat history, *reserving* doc_tokens
+    foreach ($docs as $doc) {
+        $docTokens = (int)($doc['document_token_length'] ?? 0);
+        $hasFull = !empty($doc['full_text_available']) && !empty($doc['document_content']);
+
+        if ($hasFull && $docTokens > 0 && $docTokens <= $docTokenBudget) {
+            $docTokenBudget -= $docTokens;
+            $content = "Document: {$doc['document_name']}\n{$doc['document_content']}";
+            $document_messages[] = ['role' => 'system', 'content' => $content];
+        } else {
+            $docsNeedingRag[] = (int)$doc['document_id'];
+        }
+    }
+
+    // 4) pull chat history, *reserving* doc_tokens still available
     $context_messages = retrieve_context_messages(
         $chat_id,
         $user,
         $active_config,
         $message,
-        $reserved_tokens = $doc_tokens
+        $reserved_tokens = (int)($active_config['context_limit'] - $docTokenBudget)
     );
 
     // 5) stitch everything together
@@ -517,10 +530,6 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
             ["role" => "user", "content" => $message]
         ]
     );
-    file_put_contents(dirname(__DIR__).'/assistant_msgs.log', "\n\n    -    ASSISTANTLOG - 6 - " . print_r($messages, true), FILE_APPEND);
-
-    #die("THESE ARE THE final/FINAL MESSAGES\n" . print_r($messages,1));
-
     return $messages;
 }
 

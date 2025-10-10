@@ -22,8 +22,16 @@ images/testimage.jpg
 db.cli.php
 delete_chat.php.new
 
+logs/
+node_modules/
+playwright-report/
+test-results/
+
 githubtoken.txt
 
 # Python bytecode
 __pycache__/
 */__pycache__/
+/rag310/
+/var/
+rag_retrieve.err
