@@ -25,9 +25,12 @@ if ($raw === false || $raw === '') {
 
 $logDir = __DIR__ . '/logs';
 if (!is_dir($logDir) && !mkdir($logDir, 0775, true) && !is_dir($logDir)) {
-    http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => 'Unable to prepare log directory']);
-    exit;
+    $logDir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . '/chat_logs';
+    if (!is_dir($logDir) && !mkdir($logDir, 0775, true) && !is_dir($logDir)) {
+        error_log('log_client_event: unable to create log directory');
+        echo json_encode(['ok' => false]);
+        exit;
+    }
 }
 
 $entry = [
@@ -40,6 +43,6 @@ $entry = [
 ];
 
 $logLine = json_encode($entry, JSON_UNESCAPED_SLASHES) . PHP_EOL;
-file_put_contents($logDir . '/client_events.log', $logLine, FILE_APPEND | LOCK_EX);
+@file_put_contents($logDir . '/client_events.log', $logLine, FILE_APPEND | LOCK_EX);
 
 echo json_encode(['ok' => true]);

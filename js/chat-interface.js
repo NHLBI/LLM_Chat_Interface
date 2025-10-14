@@ -957,7 +957,15 @@ $(document).ready(function() {
 
             // Clear the textarea and localStorage right after form submission
             userMessage.val("");
-            localStorage.removeItem('chatDraft_' + chatId);
+            if (typeof safeRemoveChatDraft === 'function') {
+                safeRemoveChatDraft('chatDraft_' + chatId);
+            } else {
+                try {
+                    localStorage.removeItem('chatDraft_' + chatId);
+                } catch (err) {
+                    console.warn('Unable to clear chat draft cache', err);
+                }
+            }
         }
 
 
@@ -1068,10 +1076,13 @@ success : function (response, textStatus, jqXHR) {
         '<div class="message assistant-message" style="margin-bottom:30px;"></div>'
     );
 
-    // avatar
+    const deploymentMeta = (deployments && deployment && deployments[deployment]) ? deployments[deployment] : null;
+    const avatarSrc = deploymentMeta && deploymentMeta.image ? `images/${deploymentMeta.image}` : 'images/openai_logo.svg';
+    const avatarAlt = deploymentMeta && deploymentMeta.image_alt ? deploymentMeta.image_alt : 'Assistant avatar';
+
     assistantMessageElement.prepend(`
-        <img src="images/${deployments[deployment].image}"
-             alt="${deployments[deployment].image_alt}"
+        <img src="${avatarSrc}"
+             alt="${avatarAlt}"
              class="openai-icon">
     `);
 
@@ -1119,6 +1130,12 @@ success : function (response, textStatus, jqXHR) {
 if (typeof fetchAndUpdateChatTitles === 'function') {
     fetchAndUpdateChatTitles(typeof search_term !== 'undefined' ? search_term : '', 0);
 }
+
+setTimeout(function () {
+    if (typeof loadMessages === 'function') {
+        loadMessages();
+    }
+}, 150);
 
 }
  
@@ -1310,22 +1327,23 @@ function addCopyButton(messageElement, rawMessageContent) {
 
     // Load old messages
     function loadMessages() {
-        $.ajax({
-            url: "get_messages.php",
-            data: { chat_id: chatId, user: user },
-            dataType: 'json',
-            success: function(chatMessages) {
-                console.log("this is chatMessages to show we're actually getting them");
-                console.log(chatMessages);
-                displayMessages(chatMessages);
-                //scrollToBottom();
-                debounceScroll();
-            }
-        });
-    }
+    $.ajax({
+        url: "get_messages.php",
+        data: { chat_id: chatId, user: user },
+        dataType: 'json',
+        success: function(chatMessages) {
+            console.log("this is chatMessages to show we're actually getting them");
+            console.log(chatMessages);
+            displayMessages(chatMessages);
+            //scrollToBottom();
+            debounceScroll();
+        }
+    });
+}
 
     // Show older chat messages
     function displayMessages(chatMessages) {
+        chatContainer.empty();
         // Since chatMessages is an object, iterate over its values
         Object.values(chatMessages).forEach(function (message) {
 

@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/chat_summary.inc.php';
 # inc/azure-api.inc.php 
 # AZURE API
 
@@ -11,6 +12,25 @@
  * @param string $deployment The deployment identifier.
  * @return array The processed API response.
  */
+function azure_debug_log($label, $payload) {
+    static $targets = null;
+    if ($targets === null) {
+        $base = dirname(__DIR__) . '/assistant_msgs.log';
+        $tmp  = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . '/assistant_msgs.log';
+        $targets = [$base];
+        if ($tmp !== $base) {
+            $targets[] = $tmp;
+        }
+    }
+
+    $entry = "\n\n" . $label . ' ' . print_r($payload, true);
+    foreach ($targets as $target) {
+        if (@file_put_contents($target, $entry, FILE_APPEND) !== false) {
+            break;
+        }
+    }
+}
+
 function using_mock_completion_backend(): bool {
     $flag = getenv('PLAYWRIGHT_FAKE_COMPLETIONS');
     if ($flag === false || $flag === '') {
@@ -95,7 +115,7 @@ function truncate_document_for_budget(string $content, int $tokenBudget, ?int $k
 
 function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config) {
     global $config, $config_file;
-    file_put_contents(dirname(__DIR__).'/assistant_msgs.log', "\n\n    -    ASSISTANTLOG - 1 - " . print_r($message, true));
+    azure_debug_log('    -    ASSISTANTLOG - 1 -', $message);
 
    $active_config = load_configuration($deployment);
     if (!$active_config) {
@@ -175,7 +195,7 @@ function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config
  */
 function get_chat_thread($message, $chat_id, $user, $active_config) {
 
-    file_put_contents(dirname(__DIR__).'/assistant_msgs.log', "\n\n    -    ASSISTANTLOG - 2 - " . print_r($message, true), FILE_APPEND);
+    azure_debug_log('    -    ASSISTANTLOG - 2 -', $message);
 
     if ($active_config['host'] === 'dall-e' || $active_config['host'] === 'gpt-image-1') {
         return array('prompt'=>$message); // Handle dall-E Image Generation Requests
@@ -303,6 +323,7 @@ function process_api_response(
     $wfId         = $custom_config['workflowId'] ?? '';
     $uiDeployment = ui_deployment_key($active_config);
     $host         = $active_config['host'] ?? '';
+    $summaryUser  = $_SESSION['user_data']['userid'] ?? '';
 
     /* small helper: robust URL fetch (uses cURL if available) */
     if (!function_exists('http_fetch_bytes')) {
@@ -373,6 +394,14 @@ function process_api_response(
         }
 
         $eid = create_exchange($uiDeployment, $chat_id, $user_prompt, $answer_text, $wfId, null, json_encode($links));
+
+        if ($summaryUser !== '' && $chat_id !== '') {
+            chat_summary_maybe_enqueue($chat_id, $summaryUser, ['min_exchanges' => 5]);
+            register_shutdown_function(function () {
+                $cfg = $GLOBALS['config'] ?? [];
+                chat_summary_process_pending_jobs($cfg, ['max_jobs' => 1]);
+            });
+        }
 
         return [
             'eid'        => $eid,
@@ -509,6 +538,14 @@ function process_api_response(
     $answer_text = $data['choices'][0]['message']['content'] ?? 'No response text found.';
     $eid = create_exchange($uiDeployment, $chat_id, $user_prompt, $answer_text, $wfId);
 
+    if ($summaryUser !== '' && $chat_id !== '') {
+        chat_summary_maybe_enqueue($chat_id, $summaryUser, ['min_exchanges' => 5]);
+        register_shutdown_function(function () {
+            $cfg = $GLOBALS['config'] ?? [];
+            chat_summary_process_pending_jobs($cfg, ['max_jobs' => 1]);
+        });
+    }
+
     return [
         'eid'        => $eid,
         'deployment' => $uiDeployment,
@@ -528,7 +565,7 @@ function process_api_response(
  */
 function handle_chat_request($message, $chat_id, $user, $active_config) {
     global $config_file;
-    file_put_contents(dirname(__DIR__).'/assistant_msgs.log', "\n\n    -    ASSISTANTLOG - 5 - " . print_r($message, true), FILE_APPEND);
+    azure_debug_log('    -    ASSISTANTLOG - 5 -', $message);
 
     // 1) build system message
     $system_message = build_system_message($active_config);
@@ -688,6 +725,14 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
         unset($_SESSION['last_rag_citations'], $_SESSION['last_rag_meta']);
     }
 
+    $summary_message = chat_summary_format_message($chat_id, $user);
+    $summary_block = [];
+    if ($summary_message) {
+        $summaryTokens = estimate_tokens($summary_message['content']);
+        $docTokenBudget = max(0, $docTokenBudget - $summaryTokens);
+        $summary_block[] = $summary_message;
+    }
+
     $tokensUsedByDocs = max(0, $initialDocBudget - $docTokenBudget);
 
     // 4) pull chat history, *reserving* doc_tokens still available
@@ -703,6 +748,7 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
     $messages = array_merge(
         $system_message,
         $document_messages,
+        $summary_block,
         $context_messages,
         [
             ["role" => "user", "content" => $message]
@@ -778,8 +824,8 @@ function retrieve_context_messages(
         if ($total_tokens + $needed > $token_budget) {
             break;
         }
-        $formatted[] = ['role' => 'user',      'content' => $msg['prompt']];
         $formatted[] = ['role' => 'assistant', 'content' => $msg['reply']];
+        $formatted[] = ['role' => 'user',      'content' => $msg['prompt']];
         $total_tokens += $needed;
     }
 

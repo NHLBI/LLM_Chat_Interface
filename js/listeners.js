@@ -1,6 +1,67 @@
 // Run on window resize
 window.addEventListener('resize', adjustChatTitlesHeight);
 
+let chatDraftStorageEnabled = true;
+
+function isQuotaExceededError(error) {
+    if (!error) {
+        return false;
+    }
+    if (typeof error === 'object') {
+        if (error.code === 22 || error.code === 1014) {
+            return true;
+        }
+        var name = error.name;
+        return name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED';
+    }
+    return false;
+}
+
+function safeGetChatDraft(key) {
+    if (!chatDraftStorageEnabled || !window.localStorage) {
+        return null;
+    }
+    try {
+        return window.localStorage.getItem(key);
+    } catch (err) {
+        console.warn('Unable to read chat draft from storage', err);
+        if (isQuotaExceededError(err)) {
+            chatDraftStorageEnabled = false;
+        }
+        return null;
+    }
+}
+
+function safeSetChatDraft(key, value) {
+    if (!chatDraftStorageEnabled || !window.localStorage) {
+        return;
+    }
+    try {
+        window.localStorage.setItem(key, value);
+    } catch (err) {
+        if (isQuotaExceededError(err)) {
+            console.warn('Chat draft storage disabled due to quota limits', err);
+            chatDraftStorageEnabled = false;
+        } else {
+            console.warn('Failed to persist chat draft', err);
+        }
+    }
+}
+
+function safeRemoveChatDraft(key) {
+    if (!window.localStorage) {
+        return;
+    }
+    try {
+        window.localStorage.removeItem(key);
+    } catch (err) {
+        if (isQuotaExceededError(err)) {
+            chatDraftStorageEnabled = false;
+        }
+        console.warn('Unable to remove chat draft from storage', err);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', (event) => {
 
     const openSearchButton = document.getElementById('open-search');
@@ -50,7 +111,7 @@ document.addEventListener('DOMContentLoaded', (event) => {
     });
 
     // Load saved chat draft
-    var savedMessage = localStorage.getItem('chatDraft_' + chatId);
+    var savedMessage = safeGetChatDraft('chatDraft_' + chatId);
     if (savedMessage) {
         document.getElementById('userMessage').value = savedMessage;
         //console.log("Loaded saved message for chat ID " + chatId + ": ", savedMessage);
@@ -64,8 +125,6 @@ document.addEventListener('DOMContentLoaded', (event) => {
 // Modify the event listener for the userMessage input
 document.getElementById('userMessage').addEventListener('input', (event) => {
     //console.log("Input event for chat ID " + chatId);
-    localStorage.setItem('chatDraft_' + chatId, event.target.value);
+    safeSetChatDraft('chatDraft_' + chatId, event.target.value);
     //console.log("Saved draft message for chat ID " + chatId + ": ", event.target.value);
 });
-
-

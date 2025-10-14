@@ -435,7 +435,8 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
 
                         const summaryText = summaryParts.join(' · ');
                         if (documentHeadingSpan) {
-                            documentHeadingSpan.text(`Documents (${summaryText})`);
+                            //documentHeadingSpan.text(`Documents (${summaryText})`);
+                            documentHeadingSpan.text(`Documents`);
                             documentHeadingSpan.attr('title', summaryText);
                         }
 
