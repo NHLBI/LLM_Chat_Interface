@@ -220,6 +220,7 @@ foreach(array_keys($models) as $m) {
             <?php require_once 'staticpages/model_text.php'; ?> 
             <?php require_once 'staticpages/document_uploader.php'; ?> 
             <?php require_once 'staticpages/canned_modal.php'; ?> 
+            <?php require_once 'staticpages/document_excerpt_modal.php'; ?> 
 
             <h1 id="print-title"></h1>
 

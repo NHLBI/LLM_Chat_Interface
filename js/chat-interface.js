@@ -12,11 +12,18 @@ var docProcessingCancelEl;
 var originalMessagePlaceholder = '';
 
 var PROCESSING_STORAGE_KEY = 'chat_processing_jobs';
-var speechEnabled = typeof window !== 'undefined'
-    && 'speechSynthesis' in window
-    && typeof window.SpeechSynthesisUtterance !== 'undefined';
-var activeUtterance = null;
+var DEFAULT_TTS_VOICE = 'af_heart';
+var SPEAK_ICON = '<img src="images/speaker.svg" alt="" class="speak-icon">';
+
+var ttsEnabled = typeof window !== 'undefined'
+    && typeof window.fetch === 'function'
+    && typeof window.Audio !== 'undefined';
 var activeSpeakButton = null;
+var activeAudio = null;
+var activeAudioUrl = null;
+var activeTtsControllers = [];
+var activeSpeakSessionId = null;
+var speakSessionCounter = 0;
 
 var docProcessingState = {
     active: false,
@@ -1221,34 +1228,144 @@ function addCopyButton(messageElement, rawMessageContent) {
     });
 }
 
-    function resetSpeakButton(button) {
-        if (!button) {
-            return;
+function stopActiveAudio() {
+        activeSpeakSessionId = null;
+        activeTtsControllers.forEach(function (controller) {
+            try {
+                controller.abort();
+            } catch (e) {
+                console.warn('Abort controller failed', e);
+            }
+        });
+        activeTtsControllers = [];
+        if (activeAudio) {
+            try {
+                activeAudio.pause();
+            } catch (e) {
+                console.warn('Unable to pause audio', e);
+            }
         }
-        button.attr('aria-label', 'Play audio for this reply');
-        button.html(`
-            <span style="font-size:12px;">Play Audio</span>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-                <path d="M3 9v6h4l5 5V4L7 9H3z"></path>
-                <path d="M14 9.23v5.54c1.19-.69 2-.98 3-.98s2.25.31 3 1.01V9.2c-.75.69-1.75 1.02-3 1.02s-1.81-.28-3-.99z"></path>
-            </svg>
-        `);
-        button.removeClass('speak-playing');
+        if (activeAudioUrl) {
+            URL.revokeObjectURL(activeAudioUrl);
+            activeAudioUrl = null;
+        }
+        activeAudio = null;
+}
+
+function resetSpeakButton(button) {
+    if (!button) {
+        return;
+    }
+    button.attr('aria-label', 'Play audio for this reply');
+    setSpeakButtonLabel(button, 'Play audio');
+    button.removeClass('speak-playing');
+    var status = button.data('speakStatus');
+    if (status) {
+        status.text('');
+    }
+}
+
+function setSpeakButtonPlaying(button) {
+        button.attr('aria-label', 'Stop audio playback');
+        setSpeakButtonLabel(button, 'Stop Audio');
+    button.addClass('speak-playing');
+}
+
+function setSpeakButtonLabel(button, text) {
+    if (!button) {
+        return;
+    }
+    button.html('<span>' + text + '</span>' + SPEAK_ICON);
+}
+
+    function chunkTextForTts(text) {
+        var maxLen = 500;
+        var minLen = 200;
+        var remaining = text.trim();
+        var chunks = [];
+
+        while (remaining.length > 0) {
+            if (remaining.length <= maxLen) {
+                chunks.push(remaining);
+                break;
+            }
+
+            var slice = remaining.slice(0, maxLen);
+            var breakPoint = Math.max(
+                slice.lastIndexOf('. '),
+                slice.lastIndexOf('! '),
+                slice.lastIndexOf('? '),
+                slice.lastIndexOf('\n'),
+                slice.lastIndexOf(' ')
+            );
+
+            if (breakPoint < minLen) {
+                breakPoint = slice.lastIndexOf(' ');
+                if (breakPoint < minLen) {
+                    breakPoint = maxLen;
+                }
+            }
+
+            if (breakPoint <= 0) {
+                breakPoint = maxLen;
+            }
+
+            var rawChunk = slice.slice(0, breakPoint);
+            var chunk = rawChunk.trim();
+            if (!chunk) {
+                rawChunk = slice;
+                chunk = rawChunk.trim();
+            }
+            if (chunk) {
+                chunks.push(chunk);
+            }
+            var consumed = rawChunk.length;
+            if (consumed <= 0) {
+                consumed = Math.min(maxLen, remaining.length);
+            }
+            remaining = remaining.slice(consumed).trim();
+        }
+
+        if (!chunks.length) {
+            chunks.push(text);
+        }
+
+        return chunks;
     }
 
-    function setSpeakButtonPlaying(button) {
-        button.attr('aria-label', 'Stop audio playback');
-        button.html(`
-            <span style="font-size:12px;">Stop Audio</span>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-                <path d="M6 5h4v14H6zM14 5h4v14h-4z"></path>
-            </svg>
-        `);
-        button.addClass('speak-playing');
+    function fetchAudioChunk(text) {
+        var controller = new AbortController();
+        activeTtsControllers.push(controller);
+
+        return fetch('tts_proxy.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                text: text,
+                voice: DEFAULT_TTS_VOICE
+            }),
+            signal: controller.signal
+        }).then(function (response) {
+            if (!response.ok) {
+                throw new Error('TTS request failed with status ' + response.status);
+            }
+            var contentType = response.headers.get('Content-Type') || '';
+            if (contentType.indexOf('audio') === -1) {
+                throw new Error('Unexpected content-type ' + contentType);
+            }
+            return response.blob();
+        }).finally(function () {
+            var index = activeTtsControllers.indexOf(controller);
+            if (index !== -1) {
+                activeTtsControllers.splice(index, 1);
+            }
+        });
     }
 
     function addSpeakButton(messageElement, rawMessageContent) {
-        if (!speechEnabled) {
+        if (!ttsEnabled) {
             return;
         }
 
@@ -1257,15 +1374,10 @@ function addCopyButton(messageElement, rawMessageContent) {
             return;
         }
 
-        var speakButton = $(`
-            <button class="copy-chat-button speak-chat-button" title="Play audio for this reply" aria-label="Play audio for this reply">
-                <span style="font-size:12px;">Play Audio</span>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-                <path d="M3 9v6h4l5 5V4L7 9H3z"></path>
-                <path d="M14 9.23v5.54c1.19-.69 2-.98 3-.98s2.25.31 3 1.01V9.2c-.75.69-1.75 1.02-3 1.02s-1.81-.28-3-.99z"></path>
-            </svg>
-        </button>
-    `);
+        var speakButton = $('<button type="button" class="copy-chat-button speak-chat-button" title="Play audio for this reply" aria-label="Play audio for this reply"><svg xmlns="http://www.w3.org/2000/svg" version="1.0" width="202.000000pt" height="174.000000pt" viewBox="0 0 202.000000 174.000000" preserveAspectRatio="xMidYMid meet"><metadata>Created by potrace 1.10, written by Peter Selinger 2001-2011</metadata><g transform="translate(0.000000,174.000000) scale(0.100000,-0.100000)" fill="#a5803b" stroke="none"><path d="M875 1620 c-16 -11 -110 -103 -209 -205 l-178 -185 -152 0 c-167 0 -187 -6 -223 -59 -23 -33 -23 -40 -23 -303 0 -292 2 -305 56 -347 25 -19 40 -21 184 -21 l156 0 184 -191 c101 -104 196 -197 211 -205 59 -30 113 -12 147 49 16 29 17 86 20 676 2 442 -1 661 -8 698 -21 98 -94 140 -165 93z m45 -757 l0 -628 -198 198 -197 197 -158 0 -157 0 0 235 0 235 158 0 157 0 195 195 c107 107 196 195 197 195 2 0 3 -282 3 -627z"/><path d="M1564 1552 c-19 -12 -35 -52 -28 -65 4 -6 33 -41 65 -77 206 -236 267 -526 168 -808 -38 -108 -84 -185 -167 -281 -68 -77 -80 -113 -46 -138 47 -34 96 -2 194 129 73 97 131 215 161 328 33 121 33 329 0 450 -30 113 -88 231 -161 328 -92 123 -146 161 -186 134z"/><path d="M1384 1382 c-6 -4 -16 -16 -22 -28 -13 -24 -6 -37 60 -119 64 -80 95 -140 118 -231 25 -98 25 -180 0 -278 -23 -91 -54 -151 -118 -231 -26 -32 -52 -66 -58 -77 -25 -43 17 -87 70 -74 55 14 171 182 218 316 24 68 35 250 19 333 -22 118 -89 249 -176 343 -50 53 -81 66 -111 46z"/><path d="M1198 1208 c-34 -27 -30 -53 17 -113 66 -86 88 -151 83 -250 -5 -89 -24 -137 -89 -219 -44 -54 -46 -62 -23 -94 27 -38 70 -30 120 25 127 138 157 339 74 506 -59 121 -135 181 -182 145z"/></g></svg></button>');
+        setSpeakButtonLabel(speakButton, 'Play Audio');
+        var statusSpan = $('<span class="speak-status" aria-live="polite"></span>');
+        speakButton.data('speakStatus', statusSpan);
 
         var controls = messageElement.find('.reply-controls');
         if (!controls.length) {
@@ -1278,51 +1390,157 @@ function addCopyButton(messageElement, rawMessageContent) {
             messageElement.append(controls);
         }
 
-        speakButton.css({
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px'
-        });
+        speakButton.css('margin-left', '10px');
 
-        speakButton.on('click', function () {
-            if (!speechEnabled) {
+        speakButton.on('click', function (event) {
+            event.preventDefault();
+            if (!ttsEnabled) {
                 return;
             }
 
             var sameButtonActive = activeSpeakButton && activeSpeakButton[0] === speakButton[0];
-            if (activeUtterance) {
-                window.speechSynthesis.cancel();
+
+            stopActiveAudio();
+            if (activeSpeakButton) {
                 resetSpeakButton(activeSpeakButton);
-                activeUtterance = null;
                 activeSpeakButton = null;
-                if (sameButtonActive) {
+            }
+
+            if (sameButtonActive) {
+                return;
+            }
+
+            var status = speakButton.data('speakStatus');
+            if (status) {
+                status.text('Preparing audio…');
+            }
+
+            activeSpeakButton = speakButton;
+            var sessionId = ++speakSessionCounter;
+            activeSpeakSessionId = sessionId;
+            setSpeakButtonPlaying(speakButton);
+            activeTtsControllers = [];
+
+            var sanitized = plain.replace(/[*_`]/g, '');
+            var chunks = chunkTextForTts(sanitized);
+            var chunkFetches = [];
+
+            function ensureFetch(index) {
+                if (index >= chunks.length) {
+                    return null;
+                }
+                if (!chunkFetches[index]) {
+                    chunkFetches[index] = fetchAudioChunk(chunks[index]);
+                }
+                return chunkFetches[index];
+            }
+
+            ensureFetch(0);
+            if (chunks.length > 1) {
+                ensureFetch(1);
+            }
+
+            var currentIndex = 0;
+
+            function playChunk(index) {
+                var fetchPromise = ensureFetch(index);
+                if (!fetchPromise) {
+                    finishPlayback();
                     return;
+                }
+                fetchPromise.then(function (blob) {
+                    if (activeSpeakSessionId !== sessionId) {
+                        return;
+                    }
+
+                    if (index + 1 < chunks.length) {
+                        ensureFetch(index + 1);
+                    }
+
+                    if (status) {
+                        status.text('Playing audio (' + (index + 1) + '/' + chunks.length + ')…');
+                    }
+
+                    var url = URL.createObjectURL(blob);
+                    activeAudioUrl = url;
+                    var audio = new Audio(url);
+                    activeAudio = audio;
+
+                    audio.onended = function () {
+                        if (activeAudioUrl === url) {
+                            URL.revokeObjectURL(url);
+                            activeAudioUrl = null;
+                        } else {
+                            URL.revokeObjectURL(url);
+                        }
+                        activeAudio = null;
+
+                        if (activeSpeakSessionId !== sessionId) {
+                            return;
+                        }
+
+                        currentIndex = index + 1;
+                        if (currentIndex < chunks.length) {
+                            ensureFetch(currentIndex + 1);
+                            playChunk(currentIndex);
+                        } else {
+                            finishPlayback();
+                        }
+                    };
+
+                    audio.onerror = function (err) {
+                        console.error('Audio playback failed:', err);
+                        if (activeAudioUrl === url) {
+                            URL.revokeObjectURL(url);
+                            activeAudioUrl = null;
+                        } else {
+                            URL.revokeObjectURL(url);
+                        }
+                        activeAudio = null;
+                        if (status) {
+                            status.text('Audio playback failed.');
+                        }
+                        stopActiveAudio();
+                        resetSpeakButton(speakButton);
+                        activeSpeakButton = null;
+                    };
+
+                    var playPromise = audio.play();
+                    if (playPromise && typeof playPromise.then === 'function') {
+                        playPromise.catch(function (err) {
+                            console.error('Audio playback failed:', err);
+                            audio.onerror(err);
+                        });
+                    }
+                }).catch(function (err) {
+                    if (activeSpeakSessionId !== sessionId) {
+                        return;
+                    }
+                    console.error('TTS fetch failed:', err);
+                    if (status) {
+                        status.text('Audio unavailable.');
+                    }
+                    stopActiveAudio();
+                    resetSpeakButton(speakButton);
+                    activeSpeakButton = null;
+                });
+            }
+
+            function finishPlayback() {
+                if (status) {
+                    status.text('');
+                }
+                stopActiveAudio();
+                if (activeSpeakButton && activeSpeakButton[0] === speakButton[0]) {
+                    resetSpeakButton(speakButton);
+                    activeSpeakButton = null;
                 }
             }
 
-            var utterance = new window.SpeechSynthesisUtterance(plain.replace(/[*_`]/g, ''));
-            utterance.onend = function () {
-                if (activeSpeakButton && activeSpeakButton[0] === speakButton[0]) {
-                    resetSpeakButton(speakButton);
-                    activeUtterance = null;
-                    activeSpeakButton = null;
-                }
-            };
-            utterance.onerror = function () {
-                if (activeSpeakButton && activeSpeakButton[0] === speakButton[0]) {
-                    resetSpeakButton(speakButton);
-                    activeUtterance = null;
-                    activeSpeakButton = null;
-                }
-            };
-
-            activeUtterance = utterance;
-            activeSpeakButton = speakButton;
-            setSpeakButtonPlaying(speakButton);
-            window.speechSynthesis.speak(utterance);
+            playChunk(0);
         });
 
-        controls.append(speakButton);
+        controls.append(speakButton, statusSpan);
     }
 
     // Load old messages

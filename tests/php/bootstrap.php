@@ -3,6 +3,46 @@ declare(strict_types=1);
 
 $__registered_tests = [];
 
+if (getenv('SESSION_LOG_PATH') === false || getenv('SESSION_LOG_PATH') === '') {
+    $sessionLogTmp = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'session_log_' . bin2hex(random_bytes(6)) . '.log';
+    putenv('SESSION_LOG_PATH=' . $sessionLogTmp);
+    register_shutdown_function(function () use ($sessionLogTmp): void {
+        if (is_file($sessionLogTmp)) {
+            @unlink($sessionLogTmp);
+        }
+    });
+}
+
+if (!function_exists('rrmdir')) {
+    /**
+     * Recursively remove a directory tree.
+     */
+    function rrmdir(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            if (is_file($dir)) {
+                @unlink($dir);
+            }
+            return;
+        }
+
+        $items = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::CHILD_FIRST
+        );
+
+        foreach ($items as $item) {
+            if ($item->isDir()) {
+                @rmdir($item->getPathname());
+            } else {
+                @unlink($item->getPathname());
+            }
+        }
+
+        @rmdir($dir);
+    }
+}
+
 function register_test(string $name, callable $fn): void
 {
     global $__registered_tests;

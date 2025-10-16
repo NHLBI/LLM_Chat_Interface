@@ -1,0 +1,11 @@
+{
+  "name": "nhlbi-chat",
+  "private": true,
+  "version": "1.0.0",
+  "devDependencies": {
+    "@playwright/test": "^1.48.2"
+  },
+  "scripts": {
+    "test:ui": "playwright test"
+  }
+}

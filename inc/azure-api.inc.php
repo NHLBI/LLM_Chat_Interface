@@ -113,6 +113,203 @@ function truncate_document_for_budget(string $content, int $tokenBudget, ?int $k
     ];
 }
 
+/**
+ * Build an excerpt for an oversized paste by combining leading context and,
+ * where helpful, a trailing snippet.
+ *
+ * @param string      $content      Original user submission.
+ * @param int         $tokenBudget  Maximum approximate tokens permitted for the excerpt.
+ * @param int|null    $tokenCount   Optional pre-computed token length for the submission.
+ *
+ * @return string Excerpt suitable for inline prompts.
+ */
+function build_oversize_excerpt(string $content, int $tokenBudget, ?int $tokenCount = null): string {
+    $tokenBudget = max(200, (int)$tokenBudget);
+    $tokenCount  = $tokenCount ?? estimate_tokens($content);
+
+    $headBudget = (int)max(120, floor($tokenBudget * 0.65));
+    $tailBudget = max(0, $tokenBudget - $headBudget);
+
+    $head = truncate_document_for_budget($content, $headBudget, ($tokenCount <= $headBudget) ? $tokenCount : null);
+    $excerpt = rtrim($head['text']);
+
+    if ($tokenCount > $tokenBudget && $tailBudget > 0) {
+        $charBudget = max(240, (int)round($tailBudget * 3));
+        $length = mb_strlen($content, 'UTF-8');
+        if ($length > 0) {
+            $tail = mb_substr($content, max(0, $length - $charBudget), null, 'UTF-8');
+            $tail = trim($tail);
+            if ($tail !== '') {
+                $excerpt = rtrim($excerpt)
+                    . "\n\n[...excerpt continues from end of submission...]\n\n"
+                    . $tail;
+            }
+        }
+    }
+
+    return $excerpt;
+}
+
+/**
+ * Promote an oversized pasted prompt into a queued document for RAG processing.
+ *
+ * @param string $message       Original user submission.
+ * @param string $chat_id       Chat identifier.
+ * @param string $user          Authenticated user.
+ * @param array  $active_config Active deployment configuration.
+ *
+ * @return array{
+ *   was_promoted:bool,
+ *   original_prompt?:string,
+ *   model_prompt?:string,
+ *   placeholder_prompt?:string,
+ *   document_id?:int,
+ *   document_name?:string,
+ *   excerpt?:string
+ * }
+ */
+function maybe_promote_oversize_prompt(string $message, string $chat_id, string $user, array $active_config): array {
+    global $config, $config_file, $pdo;
+
+    $result = ['was_promoted' => false];
+
+    $trimmed = trim($message);
+    if ($trimmed === '' || empty($chat_id) || empty($user)) {
+        return $result;
+    }
+
+    $contextLimit = (int)($active_config['context_limit'] ?? 0);
+    if ($contextLimit <= 0) {
+        return $result;
+    }
+
+    $reserve = isset($config['rag']['oversize_min_reserve_tokens'])
+        ? (int)$config['rag']['oversize_min_reserve_tokens']
+        : 8192;
+    $reserve = max(1024, $reserve);
+
+    $approxTokens = estimate_tokens($message);
+    if ($approxTokens + $reserve <= $contextLimit) {
+        return $result;
+    }
+
+    try {
+        $tokenCount = get_token_count($message, 'cl100k_base');
+    } catch (Throwable $e) {
+        error_log('Failed to count tokens for oversize detection: ' . $e->getMessage());
+        $tokenCount = $approxTokens;
+    }
+
+    if ($tokenCount + $reserve <= $contextLimit) {
+        return $result;
+    }
+
+    try {
+        $ragPaths = rag_workspace_paths($config ?? null);
+        $requiredDirs = [
+            $ragPaths['root'] ?? null,
+            $ragPaths['queue'] ?? null,
+            $ragPaths['parsed'] ?? null,
+            $ragPaths['logs'] ?? null,
+            $ragPaths['completed'] ?? null,
+            $ragPaths['failed'] ?? null,
+        ];
+        foreach ($requiredDirs as $dir) {
+            if (!$dir) {
+                continue;
+            }
+            if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
+                throw new RuntimeException('Unable to create RAG workspace directory: ' . $dir);
+            }
+            @chmod($dir, 0775);
+        }
+
+        $documentName = sprintf('Pasted content %s', date('Y-m-d H:i:s'));
+        $parsedPath   = ($ragPaths['parsed'] ?? sys_get_temp_dir()) . '/paste_' . $chat_id . '_' . uniqid('', true) . '.txt';
+        if (@file_put_contents($parsedPath, $message) === false) {
+            throw new RuntimeException('Failed to persist oversized paste to ' . $parsedPath);
+        }
+
+        $maxDbBytes = isset($config['rag']['paste_preview_max_bytes'])
+            ? (int)$config['rag']['paste_preview_max_bytes']
+            : (2 * 1024 * 1024);
+        if ($maxDbBytes <= 0) {
+            $maxDbBytes = 2 * 1024 * 1024;
+        }
+
+        $dbContent = $message;
+        $previewWasTrimmed = false;
+        $byteLength = strlen($message);
+        if ($byteLength > $maxDbBytes) {
+            $dbContent = mb_strcut($message, 0, $maxDbBytes, 'UTF-8');
+            $dbContent = rtrim($dbContent) . "\n\n[Content truncated for preview; full text indexed via RAG.]";
+            $previewWasTrimmed = true;
+        }
+
+        $documentId = insert_document($user, $chat_id, $documentName, 'text/plain', $dbContent, [
+            'compute_tokens' => !$previewWasTrimmed,
+            'token_length'   => $tokenCount,
+        ]);
+
+        try {
+            $stmtMeta = $pdo->prepare("UPDATE document SET full_text_available = 0, source = :source WHERE id = :id");
+            $stmtMeta->execute([
+                'source' => 'paste',
+                'id'     => $documentId,
+            ]);
+        } catch (Throwable $e) {
+            error_log('Failed to update document metadata for oversize paste: ' . $e->getMessage());
+        }
+
+        $payload = [
+            'document_id'         => (int)$documentId,
+            'chat_id'             => $chat_id,
+            'user'                => $user,
+            'embedding_model'     => 'NHLBI-Chat-workflow-text-embedding-3-large',
+            'config_path'         => $config_file,
+            'file_path'           => $parsedPath,
+            'filename'            => $documentName . '.txt',
+            'mime'                => 'text/plain',
+            'cleanup_tmp'         => true,
+            'original_size_bytes' => $byteLength,
+            'parsed_size_bytes'   => $byteLength,
+            'queue_timestamp'     => time(),
+            'source'              => 'paste',
+        ];
+
+        $jobPath = ($ragPaths['queue'] ?? sys_get_temp_dir()) . '/job_' . uniqid('', true) . '.json';
+        $encoded = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        if ($encoded === false || file_put_contents($jobPath, $encoded) === false) {
+            error_log('Failed to enqueue RAG job for oversize paste document_id ' . $documentId);
+        }
+
+        $excerptBudget = isset($config['rag']['oversize_excerpt_tokens'])
+            ? (int)$config['rag']['oversize_excerpt_tokens']
+            : 1200;
+        $excerpt = build_oversize_excerpt($message, $excerptBudget, $tokenCount);
+
+        $placeholder = "Oversized pasted content captured as document \"{$documentName}\" (ID {$documentId}). "
+            . "The full submission has been queued for retrieval indexing; the excerpt below is provided for immediate context. "
+            . "When replying, acknowledge that the remainder is being processed asynchronously and offer guidance or a brief summary based on this preview. "
+            . "Invite the user to follow up once retrieval finishes for deeper analysis.\n\n"
+            . $excerpt;
+
+        $result = [
+            'was_promoted'       => true,
+            'original_prompt'    => $message,
+            'model_prompt'       => $placeholder,
+            'placeholder_prompt' => $placeholder,
+            'document_id'        => (int)$documentId,
+            'document_name'      => $documentName,
+            'excerpt'            => $excerpt,
+        ];
+        return $result;
+    } catch (Throwable $e) {
+        error_log('Unable to promote oversize prompt: ' . $e->getMessage());
+        return ['was_promoted' => false];
+    }
+}
+
 function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config) {
     global $config, $config_file;
     azure_debug_log('    -    ASSISTANTLOG - 1 -', $message);
@@ -324,6 +521,10 @@ function process_api_response(
     $uiDeployment = ui_deployment_key($active_config);
     $host         = $active_config['host'] ?? '';
     $summaryUser  = $_SESSION['user_data']['userid'] ?? '';
+    $oversizeMeta = $GLOBALS['oversize_prompt_context'] ?? null;
+    $storedPrompt = (is_array($oversizeMeta) && !empty($oversizeMeta['placeholder_prompt']))
+        ? (string)$oversizeMeta['placeholder_prompt']
+        : $user_prompt;
 
     /* small helper: robust URL fetch (uses cURL if available) */
     if (!function_exists('http_fetch_bytes')) {
@@ -393,7 +594,14 @@ function process_api_response(
             }
         }
 
-        $eid = create_exchange($uiDeployment, $chat_id, $user_prompt, $answer_text, $wfId, null, json_encode($links));
+        $eid = create_exchange($uiDeployment, $chat_id, $storedPrompt, $answer_text, $wfId, null, json_encode($links));
+        if (is_array($oversizeMeta) && !empty($oversizeMeta['document_id'])) {
+            try {
+                attach_document_to_exchange($eid, (int)$oversizeMeta['document_id']);
+            } catch (Throwable $e) {
+                error_log('Failed to link oversize paste document to exchange: ' . $e->getMessage());
+            }
+        }
 
         if ($summaryUser !== '' && $chat_id !== '') {
             chat_summary_maybe_enqueue($chat_id, $summaryUser, ['min_exchanges' => 5]);
@@ -402,6 +610,8 @@ function process_api_response(
                 chat_summary_process_pending_jobs($cfg, ['max_jobs' => 1]);
             });
         }
+
+        unset($GLOBALS['oversize_prompt_context']);
 
         return [
             'eid'        => $eid,
@@ -519,6 +729,7 @@ function process_api_response(
 
     // 3a) ERROR branch if JSON invalid or API reported an error
     if (!is_array($data)) {
+        unset($GLOBALS['oversize_prompt_context']);
         return [
             'deployment' => $uiDeployment,
             'error'      => true,
@@ -527,6 +738,7 @@ function process_api_response(
     }
     if (isset($data['error'])) {
         log_error_details($msg_ctx, $user_prompt, $data['error']['message'] ?? 'Unknown error');
+        unset($GLOBALS['oversize_prompt_context']);
         return [
             'deployment' => $uiDeployment,
             'error'      => true,
@@ -536,7 +748,14 @@ function process_api_response(
 
     // 3b) Normal success
     $answer_text = $data['choices'][0]['message']['content'] ?? 'No response text found.';
-    $eid = create_exchange($uiDeployment, $chat_id, $user_prompt, $answer_text, $wfId);
+    $eid = create_exchange($uiDeployment, $chat_id, $storedPrompt, $answer_text, $wfId);
+    if (is_array($oversizeMeta) && !empty($oversizeMeta['document_id'])) {
+        try {
+            attach_document_to_exchange($eid, (int)$oversizeMeta['document_id']);
+        } catch (Throwable $e) {
+            error_log('Failed to link oversize paste document to exchange: ' . $e->getMessage());
+        }
+    }
 
     if ($summaryUser !== '' && $chat_id !== '') {
         chat_summary_maybe_enqueue($chat_id, $summaryUser, ['min_exchanges' => 5]);
@@ -545,6 +764,8 @@ function process_api_response(
             chat_summary_process_pending_jobs($cfg, ['max_jobs' => 1]);
         });
     }
+
+    unset($GLOBALS['oversize_prompt_context']);
 
     return [
         'eid'        => $eid,
@@ -569,6 +790,15 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
 
     // 1) build system message
     $system_message = build_system_message($active_config);
+
+    // 1a) Detect and promote oversized pasted prompts into queued documents.
+    $promotion = maybe_promote_oversize_prompt($message, $chat_id, $user, $active_config);
+    if (!empty($promotion['was_promoted'])) {
+        $message = $promotion['model_prompt'] ?? $message;
+        $GLOBALS['oversize_prompt_context'] = $promotion;
+    } else {
+        unset($GLOBALS['oversize_prompt_context']);
+    }
 
     // 2) gather document inventory
     $docs = get_chat_documents($user, $chat_id);

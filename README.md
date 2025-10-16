@@ -9,7 +9,8 @@ NHLBI Chat is a chat front-end interface designed to provide staff with a secure
 - Basic chat interface similar to popular AI chat tools.
 - File upload capability for document analysis. Accepted file formats include .pdf,.docx,.pptx,.txt,.md,.json, and .xml.
 - Uses Azure OpenAI API for generating responses.
-- Optional speech playback of assistant replies using the browser's SpeechSynthesis API (Chrome, Edge, Safari).
+- High-quality speech playback for assistant replies routed through the internal Mocha TTS service, with chunked streaming so audio starts quickly even for long responses.
+- Automatically promotes oversized pasted prompts into queued documents so the full text can be retrieved asynchronously without exhausting the chat context.
 
 ## Building and Launching
 

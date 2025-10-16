@@ -42,6 +42,48 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
     searchingIndicator.style.display = 'block';
     chatTitlesContainer.style.opacity = '0.5'; // Dim the container while loading
 
+    function fetchDocumentExcerpt($trigger) {
+        if (!$trigger || $trigger.length === 0) {
+            return;
+        }
+        const docId = $trigger.data('document-id');
+        if (!docId) {
+            return;
+        }
+
+        $trigger.addClass('document-title-loading');
+
+        $.ajax({
+            url: 'document_excerpt.php',
+            method: 'GET',
+            dataType: 'json',
+            data: { document_id: docId },
+            success: function(response) {
+                $trigger.removeClass('document-title-loading');
+
+                if (!response || response.ok !== true || !response.document) {
+                    alert('Unable to load the document preview at this time.');
+                    return;
+                }
+
+                if (typeof window.showDocumentExcerptModal === 'function') {
+                    window._documentExcerptReturnFocus = $trigger.get(0);
+                    window.showDocumentExcerptModal(response.document);
+                } else {
+                    console.warn('showDocumentExcerptModal is not available on the window object.');
+                }
+            },
+            error: function(xhr) {
+                $trigger.removeClass('document-title-loading');
+                let message = 'Unable to load the document preview.';
+                if (xhr && xhr.responseJSON && xhr.responseJSON.message) {
+                    message = xhr.responseJSON.message;
+                }
+                alert(message);
+            }
+        });
+    }
+
     $.ajax({
         url: 'get_chat_titles.php',
         type: 'GET',
@@ -380,6 +422,10 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                             html: `${itemNum}. ${displayTitle}`,
                             title: tooltip || docType
                         });
+                        docTitleSpan.attr('data-document-id', numericDocId);
+                        docTitleSpan.attr('data-chat-id', chat.id);
+                        docTitleSpan.attr('role', 'button');
+                        docTitleSpan.attr('tabindex', '0');
 
                         let statusLabel;
                         const statusTitle = provenanceLabel || (isReady ? 'Ready' : 'Processing…');
@@ -423,6 +469,15 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
 
                         docItem.append(docTitleSpan, ' ', statusLabel, ' ', deleteBtn);
                         docList.append(docItem);
+
+                        docTitleSpan.on('click keypress', function(event) {
+                            if (event.type === 'keypress' && event.key !== 'Enter' && event.key !== ' ') {
+                                return;
+                            }
+                            event.preventDefault();
+                            fetchDocumentExcerpt($(this));
+                        });
+
                         itemNum += 1;
                     });
 

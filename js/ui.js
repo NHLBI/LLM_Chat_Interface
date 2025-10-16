@@ -25,6 +25,84 @@ function closeAboutUs() {
     userMessage.focus();
   }
 }
+window._documentExcerptReturnFocus = null;
+function showDocumentExcerptModal(payload = {}) {
+  const modal = document.querySelector('.documentExcerptWindow');
+  if (!modal) {
+    return;
+  }
+
+  const titleEl = document.getElementById('documentExcerptTitle');
+  const metaEl = document.getElementById('documentExcerptMeta');
+  const bodyEl = document.getElementById('documentExcerptBody');
+  const footnoteEl = document.getElementById('documentExcerptFootnote');
+
+  const name = payload.name || 'Document Preview';
+  const source = (payload.source || '').trim();
+  const type = (payload.type || '').trim();
+  const tokenLength = Number.isFinite(payload.token_length) && payload.token_length > 0
+    ? payload.token_length
+    : null;
+  const isReady = Boolean(payload.ready);
+  const truncated = Boolean(payload.excerpt_truncated);
+  const hasPreview = payload.has_preview !== undefined ? Boolean(payload.has_preview) : true;
+  const excerpt = payload.excerpt || 'No preview is available for this document.';
+
+  if (titleEl) {
+    titleEl.textContent = name;
+  }
+
+  if (metaEl) {
+    const parts = [];
+    if (type) {
+      parts.push(type);
+    }
+    if (source) {
+      parts.push(`Source: ${source}`);
+    }
+    if (tokenLength) {
+      const formatted = tokenLength.toLocaleString(undefined, { maximumFractionDigits: 0 });
+      parts.push(`≈ ${formatted} tokens`);
+    }
+    parts.push(isReady ? 'Ready for retrieval' : 'Processing');
+    metaEl.textContent = parts.join(' • ');
+  }
+
+  if (bodyEl) {
+    bodyEl.textContent = excerpt;
+  }
+
+  if (footnoteEl) {
+    if (!hasPreview) {
+      footnoteEl.textContent = 'Preview will appear after the document finishes processing.';
+    } else if (truncated) {
+      footnoteEl.textContent = 'Preview truncated for display. Download the document to review the full content.';
+    } else {
+      footnoteEl.textContent = '';
+    }
+  }
+
+  modal.classList.add('show');
+  modal.style.display = 'flex';
+
+  const closeBtn = modal.querySelector('.closeDocumentExcerpt');
+  if (closeBtn) {
+    closeBtn.focus();
+  }
+}
+function closeDocumentExcerpt() {
+  const modal = document.querySelector('.documentExcerptWindow');
+  if (!modal) {
+    return;
+  }
+  modal.classList.remove('show');
+  modal.style.display = 'none';
+
+  if (window._documentExcerptReturnFocus && typeof window._documentExcerptReturnFocus.focus === 'function') {
+    window._documentExcerptReturnFocus.focus();
+  }
+  window._documentExcerptReturnFocus = null;
+}
 function showAboutModels() {
     const aboutWindow = document.querySelector('.aboutModelsWindow');
     aboutWindow.style.display = 'flex';
@@ -134,6 +212,50 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 
+document.addEventListener('keydown', function(event) {
+  if (event.key === 'Escape') {
+    let handled = false;
+
+    const excerptModal = document.querySelector('.documentExcerptWindow');
+    if (!handled && excerptModal && excerptModal.classList.contains('show')) {
+      event.stopPropagation();
+      closeDocumentExcerpt();
+      handled = true;
+    }
+
+    const disclaimer = document.querySelector('.disclaimerWindow.show');
+    if (!handled && disclaimer) {
+      event.stopPropagation();
+      closeAboutUs();
+      handled = true;
+    }
+
+    const modelWindow = document.querySelector('.aboutModelsWindow.show');
+    if (!handled && modelWindow) {
+      event.stopPropagation();
+      closeAboutModels();
+      handled = true;
+    }
+  }
+});
+
+document.addEventListener('click', function(event) {
+  const excerptModal = document.querySelector('.documentExcerptWindow');
+  if (excerptModal && excerptModal.classList.contains('show') && event.target === excerptModal) {
+    closeDocumentExcerpt();
+    return;
+  }
+
+  if (event.target.classList && event.target.classList.contains('disclaimerWindow')) {
+    closeAboutUs();
+    return;
+  }
+
+  if (event.target.classList && event.target.classList.contains('aboutModelsWindow')) {
+    closeAboutModels();
+  }
+});
+
 // When opening the upload modal, update maxUploads based on selected workflow
 // When opening the upload modal, update maxUploads and UI based on selected workflow
 function openUploadModal() {
@@ -240,4 +362,3 @@ function updatePlaceholder() {
     userMessageInput.placeholder = "Type your message...";
   }
 }
-

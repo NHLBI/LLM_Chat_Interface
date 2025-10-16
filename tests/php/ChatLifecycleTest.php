@@ -4,6 +4,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/../../session_init.php';
 require_once __DIR__ . '/../../db.php';
+require_once __DIR__ . '/../../inc/azure-api.inc.php';
+require_once __DIR__ . '/../../inc/rag_paths.php';
 
 function integration_config_path(): string
 {
@@ -272,5 +274,66 @@ register_test('verify_user_chat rejects non-owner', function (): void {
         assert_true(!verify_user_chat($other, $chatId), 'Non-owner should fail verification');
 
         $pdo->prepare('DELETE FROM chat WHERE id = :id')->execute(['id' => $chatId]);
+    });
+});
+
+register_test('oversize prompt is promoted to paste document', function (): void {
+    with_database(function (PDO $pdo, array $config): void {
+        with_authenticated_session($pdo, $config, function (string $user, string $deployment, string $dir, string $sid) use ($pdo, $config): void {
+            $chatId = create_chat($user, 'Oversize Paste ' . bin2hex(random_bytes(3)), '', $deployment);
+
+            $previousWorkspace = getenv('RAG_WORKSPACE_ROOT');
+            $workspaceRoot = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'rag_workspace_' . bin2hex(random_bytes(6));
+            putenv('RAG_WORKSPACE_ROOT=' . $workspaceRoot);
+
+            $previousRagConfig = $GLOBALS['config']['rag'] ?? [];
+            $GLOBALS['config']['rag']['oversize_min_reserve_tokens'] = 256;
+            $GLOBALS['config']['rag']['oversize_excerpt_tokens'] = 300;
+            $GLOBALS['config']['rag']['paste_preview_max_bytes'] = 1024;
+
+            $message = str_repeat("Large pasted content intended for RAG promotion. ", 400);
+            $activeConfig = [
+                'context_limit' => 1024,
+            ];
+
+            $result = maybe_promote_oversize_prompt($message, $chatId, $user, $activeConfig);
+
+            assert_true($result['was_promoted'] ?? false, 'Oversize prompt should be promoted');
+            $documentId = (int)($result['document_id'] ?? 0);
+            assert_true($documentId > 0, 'Document id should be captured');
+
+            $stmt = $pdo->prepare('SELECT source, full_text_available FROM document WHERE id = :id');
+            $stmt->execute(['id' => $documentId]);
+            $docRow = $stmt->fetch(PDO::FETCH_ASSOC);
+            assert_true(is_array($docRow), 'Document row should exist after promotion');
+            assert_equals('paste', $docRow['source']);
+            assert_equals('0', (string)$docRow['full_text_available']);
+
+            $queueFiles = glob($workspaceRoot . '/queue/job_*.json') ?: [];
+            assert_true(count($queueFiles) >= 1, 'Queue job should be created for oversize paste');
+            $jobPayload = json_decode(file_get_contents($queueFiles[0]), true);
+            assert_equals($documentId, $jobPayload['document_id']);
+
+            if (!empty($jobPayload['file_path']) && is_file($jobPayload['file_path'])) {
+                @unlink($jobPayload['file_path']);
+            }
+            foreach ($queueFiles as $jobFile) {
+                @unlink($jobFile);
+            }
+
+            $pdo->prepare('DELETE FROM document WHERE id = :id')->execute(['id' => $documentId]);
+            $pdo->prepare('DELETE FROM chat WHERE id = :id')->execute(['id' => $chatId]);
+
+            rrmdir($workspaceRoot);
+
+            if ($previousWorkspace === false) {
+                putenv('RAG_WORKSPACE_ROOT');
+            } else {
+                putenv('RAG_WORKSPACE_ROOT=' . $previousWorkspace);
+            }
+
+            $GLOBALS['config']['rag'] = $previousRagConfig;
+            unset($GLOBALS['oversize_prompt_context']);
+        });
     });
 });

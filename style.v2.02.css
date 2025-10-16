@@ -385,6 +385,46 @@ code {
     background-color: #0056b3;
 }
 
+.copy-chat-button svg {
+    width: 16px;
+    height: 16px;
+    margin-right: 4px;
+    vertical-align: middle;
+}
+
+.speak-chat-button svg,
+.speak-chat-button img {
+    width: 22px;
+    height: 22px;
+    margin-left: 2px;
+    vertical-align: middle;
+}
+
+.speak-chat-button {
+    background: none;
+    border: none;
+    color: #a5803b;
+    cursor: pointer;
+    padding: 0;
+    margin: 0;
+    border-radius: 4px;
+    transition: background-color 0.3s;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.speak-chat-button.speak-playing {
+    color: #f97070;
+}
+
+.speak-status {
+    margin-left: 38px;
+    font-size: 12px;
+    color: #cfcfcf;
+}
+
 
 
 
@@ -971,7 +1011,8 @@ code {
 /* We want .uploadModal, .aboutModelsWindow, and .disclaimerWindow to share identical overlay rules */
 .uploadModal,
 .aboutModelsWindow,
-.disclaimerWindow {
+.disclaimerWindow,
+.documentExcerptWindow {
   position: fixed;
   top: 0;
   left: 0;
@@ -987,7 +1028,8 @@ code {
 /* When “show” is applied, display as flex */
 .uploadModal.show,
 .aboutModelsWindow.show,
-.disclaimerWindow.show {
+.disclaimerWindow.show,
+.documentExcerptWindow.show {
   display: flex;
 }
 
@@ -996,7 +1038,8 @@ code {
 /* We want .modalContent, .modelsModalContent, and .disclaimerModalContent to share the same “box” style */
 .modalContent,
 .modelsModalContent,
-.disclaimerModalContent {
+.disclaimerModalContent,
+.documentExcerptModalContent {
   background: #fff;
   padding: 20px;
   border-radius: 1px;
@@ -1029,6 +1072,55 @@ code {
 .closeDisclaimer:focus,
 .closeCanned:focus {
   outline: 1px solid #DDD;
+}
+
+.documentExcerptModalContent {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.document-excerpt-meta {
+  color: #333;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.document-excerpt-body {
+  background: #f7f7f7;
+  border: 1px solid #e0e0e0;
+  padding: 1rem;
+  border-radius: 4px;
+  max-height: 420px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-family: "Source Code Pro", "Courier New", Courier, monospace;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: #212121;
+}
+
+.document-excerpt-footnote {
+  font-size: 0.85rem;
+  color: #555;
+  margin-top: -0.5rem;
+}
+
+.document-title {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: rgba(255,255,255,0.6);
+}
+
+.document-title:focus {
+  outline: 2px solid #f0c674;
+  outline-offset: 2px;
+}
+
+.document-title.document-title-loading {
+  opacity: 0.65;
+  cursor: progress;
 }
 
 

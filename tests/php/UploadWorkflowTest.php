@@ -11,28 +11,6 @@ if (!function_exists('integration_config_path')) {
 /**
  * Recursively remove a directory tree.
  */
-function rrmdir(string $dir): void
-{
-    if (!is_dir($dir)) {
-        return;
-    }
-
-    $items = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::CHILD_FIRST
-    );
-
-    foreach ($items as $item) {
-        if ($item->isDir()) {
-            @rmdir($item->getPathname());
-        } else {
-            @unlink($item->getPathname());
-        }
-    }
-
-    @rmdir($dir);
-}
-
 function set_env_var(string $key, ?string $value): void
 {
     if ($value === null) {
@@ -51,8 +29,23 @@ function include_upload_script(): string
         define('UPLOAD_SHOULD_EXIT', false);
     }
 
+    $configPath = integration_config_path();
+    if ($configPath) {
+        putenv('CHAT_CONFIG_PATH=' . $configPath);
+    }
+
+    global $config, $pdo;
+    if (isset($GLOBALS['config'])) {
+        $config = $GLOBALS['config'];
+    }
+    if (isset($GLOBALS['pdo'])) {
+        $pdo = $GLOBALS['pdo'];
+    }
+
+    $_SERVER['REQUEST_URI'] = $_SERVER['REQUEST_URI'] ?? '/chatdev/tests';
+
     ob_start();
-    include __DIR__ . '/../../get_config.php';
+    require_once __DIR__ . '/../../bootstrap.php';
     include __DIR__ . '/../../upload.php';
     return (string) ob_get_clean();
 }
