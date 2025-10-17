@@ -35,3 +35,4 @@ __pycache__/
 /rag310/
 /var/
 rag_retrieve.err
+docs/
