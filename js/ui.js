@@ -43,13 +43,19 @@ function showDocumentExcerptModal(payload = {}) {
   const tokenLength = Number.isFinite(payload.token_length) && payload.token_length > 0
     ? payload.token_length
     : null;
-  const isReady = Boolean(payload.ready);
-  const truncated = Boolean(payload.excerpt_truncated);
+  const ragReady = payload.ready === true || payload.ready === 1;
+  const hasFullText = payload.full_text_available === true || payload.full_text_available === 1;
+  const isInlineSource = ['inline', 'paste', 'image'].includes(source.toLowerCase());
   const hasPreview = payload.has_preview !== undefined ? Boolean(payload.has_preview) : true;
+  const isReady = ragReady || hasFullText || (hasPreview && !source);
+  const statusLabel = ragReady
+    ? 'Ready for retrieval'
+    : (isReady || isInlineSource ? 'Ready' : 'Processing');
+  const truncated = Boolean(payload.excerpt_truncated);
   const excerpt = payload.excerpt || 'No preview is available for this document.';
 
   if (titleEl) {
-    titleEl.textContent = name;
+    titleEl.textContent = `Document excerpted text: ${name}`;
   }
 
   if (metaEl) {
@@ -64,7 +70,7 @@ function showDocumentExcerptModal(payload = {}) {
       const formatted = tokenLength.toLocaleString(undefined, { maximumFractionDigits: 0 });
       parts.push(`≈ ${formatted} tokens`);
     }
-    parts.push(isReady ? 'Ready for retrieval' : 'Processing');
+    parts.push(statusLabel);
     metaEl.textContent = parts.join(' • ');
   }
 

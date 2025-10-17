@@ -576,6 +576,74 @@ code {
     max-height: 350px;
 }
 
+.message-attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 12px 0 0 52px;
+}
+
+.message-attachment {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.message-attachment--image .message-attachment__image {
+    max-width: 220px;
+    border-radius: 4px;
+}
+
+.message-attachment--document {
+    background: #f1f5f9;
+    border: 1px solid #cbd5f5;
+    border-radius: 9999px;
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    color: #0f172a;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.message-attachment--document:hover:not([disabled]) {
+    background: #e2e8f0;
+    border-color: #94a3b8;
+}
+
+.message-attachment--document[disabled],
+.message-attachment--pending {
+    opacity: 0.65;
+    cursor: default;
+}
+
+.message-attachment--removed {
+    opacity: 0.45;
+    filter: grayscale(0.4);
+}
+
+.message-attachment__icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+
+.message-attachment__name {
+    max-width: 160px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.message-attachment__status {
+    font-size: 0.75rem;
+    color: #475569;
+    margin-left: 4px;
+}
+
+.document-attachment-loading {
+    opacity: 0.5;
+}
+
 .waiting-indicator {
     position: fixed;
     top: 50%;

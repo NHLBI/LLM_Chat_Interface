@@ -62,6 +62,7 @@ CREATE TABLE `document` (
   `type` varchar(124) DEFAULT NULL,
   `content` longtext NOT NULL,
   `document_token_length` int(11) NOT NULL DEFAULT 0,
+  `full_text_available` tinyint(1) NOT NULL DEFAULT 0,
   `source` varchar(24) DEFAULT NULL,
   `deleted` tinyint(1) DEFAULT 0,
   `timestamp` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
@@ -72,7 +73,7 @@ CREATE TABLE `document` (
   KEY `idx_doc_content_sha` (`content_sha256`),
   KEY `idx_doc_file_sha` (`file_sha256`),
   CONSTRAINT `fk_exchange_chat_docs` FOREIGN KEY (`chat_id`) REFERENCES `chat` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=54105 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=54464 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -102,7 +103,7 @@ CREATE TABLE `exchange` (
   PRIMARY KEY (`id`),
   KEY `fk_exchange_chat` (`chat_id`),
   CONSTRAINT `fk_exchange_chat` FOREIGN KEY (`chat_id`) REFERENCES `chat` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=99801 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=99963 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -119,7 +120,7 @@ CREATE TABLE `exchange_document` (
   PRIMARY KEY (`id`),
   KEY `exchange_id` (`exchange_id`),
   KEY `document_id` (`document_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=5500 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=5666 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -150,7 +151,7 @@ CREATE TABLE `rag_index` (
   KEY `idx_rag_index_user_chat` (`user`,`chat_id`),
   KEY `idx_rag_index_sha` (`content_sha256`),
   CONSTRAINT `fk_rag_index_document` FOREIGN KEY (`document_id`) REFERENCES `document` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=95 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=329 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -175,7 +176,7 @@ CREATE TABLE `rag_usage_log` (
   KEY `idx_rag_usage_chat` (`chat_id`),
   KEY `idx_rag_usage_user` (`user`),
   CONSTRAINT `fk_rag_usage_exchange` FOREIGN KEY (`exchange_id`) REFERENCES `exchange` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=20 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=43 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -197,7 +198,7 @@ CREATE TABLE `workflow` (
   `timestamp` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `date_created` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -212,7 +213,7 @@ CREATE TABLE `workflow_config` (
   `config_label` varchar(48) DEFAULT NULL,
   `description` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=14 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -229,7 +230,7 @@ CREATE TABLE `workflow_config_join` (
   PRIMARY KEY (`id`),
   KEY `workflow_id` (`workflow_id`),
   KEY `workflow_config_id` (`workflow_config_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=12 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -247,7 +248,7 @@ CREATE TABLE `workflow_exchange` (
   UNIQUE KEY `exchange_id` (`exchange_id`),
   KEY `workflow_id` (`workflow_id`),
   CONSTRAINT `fk_workflow_exchange` FOREIGN KEY (`exchange_id`) REFERENCES `exchange` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=142 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=162 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -259,4 +260,4 @@ CREATE TABLE `workflow_exchange` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2025-09-19 15:33:36
+-- Dump completed on 2025-10-17 16:14:48

@@ -14,14 +14,30 @@ var originalMessagePlaceholder = '';
 var PROCESSING_STORAGE_KEY = 'chat_processing_jobs';
 var DEFAULT_TTS_VOICE = 'af_heart';
 var SPEAK_ICON = '<img src="images/speaker.svg" alt="" class="speak-icon">';
+var DOCUMENT_ICON_MAP = {
+    pdf: 'images/icon_pdf.svg',
+    doc: 'images/icon_docx.svg',
+    docx: 'images/icon_docx.svg',
+    ppt: 'images/icon_pptx.svg',
+    pptx: 'images/icon_pptx.svg',
+    xls: 'images/icon_xlsx.svg',
+    xlsx: 'images/icon_xlsx.svg',
+    csv: 'images/icon_csv.svg',
+    json: 'images/icon_csv.svg'
+};
 
 var ttsEnabled = typeof window !== 'undefined'
     && typeof window.fetch === 'function'
     && typeof window.Audio !== 'undefined';
 var activeSpeakButton = null;
-var activeAudio = null;
-var activeAudioUrl = null;
 var activeTtsControllers = [];
+var audioContext = null;
+var speakerGainNode = null;
+var activeBufferSource = null;
+var audioQueue = [];
+var isAudioContextPlaying = false;
+var activeSpeakMetadata = null;
+var pendingSpeakFinish = false;
 var activeSpeakSessionId = null;
 var speakSessionCounter = 0;
 
@@ -1238,18 +1254,32 @@ function stopActiveAudio() {
             }
         });
         activeTtsControllers = [];
-        if (activeAudio) {
+
+        pendingSpeakFinish = false;
+        activeSpeakSessionId = null;
+
+        if (activeBufferSource) {
             try {
-                activeAudio.pause();
+                activeBufferSource.stop();
             } catch (e) {
-                console.warn('Unable to pause audio', e);
+                console.warn('Unable to stop buffer source', e);
             }
         }
-        if (activeAudioUrl) {
-            URL.revokeObjectURL(activeAudioUrl);
-            activeAudioUrl = null;
+        activeBufferSource = null;
+
+        audioQueue = [];
+        isAudioContextPlaying = false;
+
+        if (audioContext) {
+            try {
+                audioContext.close();
+            } catch (e) {
+                console.warn('Unable to close audio context', e);
+            }
         }
-        activeAudio = null;
+        audioContext = null;
+        speakerGainNode = null;
+        activeSpeakMetadata = null;
 }
 
 function resetSpeakButton(button) {
@@ -1278,13 +1308,210 @@ function setSpeakButtonLabel(button, text) {
     button.html('<span>' + text + '</span>' + SPEAK_ICON);
 }
 
+function resolveDocumentIconPath(docType, name) {
+    var lower = (docType || '').toLowerCase();
+    if (lower.indexOf('pdf') !== -1) {
+        return DOCUMENT_ICON_MAP.pdf;
+    }
+    if (lower.indexOf('word') !== -1 || lower.indexOf('msword') !== -1 || lower.indexOf('doc') !== -1) {
+        return DOCUMENT_ICON_MAP.docx;
+    }
+    if (lower.indexOf('presentation') !== -1 || lower.indexOf('powerpoint') !== -1 || lower.indexOf('ppt') !== -1) {
+        return DOCUMENT_ICON_MAP.pptx;
+    }
+    if (lower.indexOf('sheet') !== -1 || lower.indexOf('excel') !== -1 || lower.indexOf('spreadsheet') !== -1 || lower.indexOf('xls') !== -1) {
+        return DOCUMENT_ICON_MAP.xlsx;
+    }
+    if (lower.indexOf('csv') !== -1) {
+        return DOCUMENT_ICON_MAP.csv;
+    }
+    if (lower.indexOf('json') !== -1) {
+        return DOCUMENT_ICON_MAP.json;
+    }
+
+    var base = (name || '').toLowerCase();
+    var match = base.match(/\.([a-z0-9]+)$/);
+    if (match) {
+        var ext = match[1];
+        if (DOCUMENT_ICON_MAP[ext]) {
+            return DOCUMENT_ICON_MAP[ext];
+        }
+    }
+    return 'images/paperclip.svg';
+}
+
+function openDocumentExcerpt(docId, trigger) {
+    if (!docId) {
+        return;
+    }
+    var $trigger = $(trigger);
+    $trigger.addClass('document-attachment-loading');
+
+    $.ajax({
+        url: 'document_excerpt.php',
+        method: 'GET',
+        dataType: 'json',
+        data: { document_id: docId },
+        success: function(response) {
+            $trigger.removeClass('document-attachment-loading');
+
+            if (!response || response.ok !== true || !response.document) {
+                alert('Unable to load the document preview at this time.');
+                return;
+            }
+
+            if (typeof window.showDocumentExcerptModal === 'function') {
+                window._documentExcerptReturnFocus = $trigger.get(0);
+                window.showDocumentExcerptModal(response.document);
+            } else {
+                console.warn('showDocumentExcerptModal is not available on the window object.');
+            }
+        },
+        error: function(xhr) {
+            $trigger.removeClass('document-attachment-loading');
+            var message = 'Unable to load the document preview.';
+            if (xhr && xhr.responseJSON && xhr.responseJSON.message) {
+                message = xhr.responseJSON.message;
+            }
+            alert(message);
+        }
+    });
+}
+
+function renderMessageAttachments(messageElement, documents) {
+    if (!messageElement || !messageElement.length) {
+        return;
+    }
+
+    var normalized = [];
+    if (Array.isArray(documents)) {
+        documents.forEach(function(doc) {
+            if (doc && typeof doc === 'object') {
+                normalized.push(doc);
+            }
+        });
+    } else if (typeof documents === 'object' && documents !== null) {
+        Object.keys(documents).forEach(function(key) {
+            var doc = documents[key];
+            if (doc && typeof doc === 'object') {
+                var entry = $.extend({}, doc);
+                if (entry.document_id === undefined) {
+                    var parsedId = parseInt(key, 10);
+                    if (!Number.isNaN(parsedId)) {
+                        entry.document_id = parsedId;
+                    }
+                }
+                normalized.push(entry);
+            }
+        });
+    }
+
+    if (!normalized.length) {
+        return;
+    }
+
+    var container = $('<div class="message-attachments" role="list"></div>');
+
+    normalized.forEach(function(doc) {
+        if (!doc || typeof doc !== 'object') {
+            return;
+        }
+
+        var docId = doc.document_id || doc.id;
+        var docName = doc.document_name || doc.name || 'Document';
+        var docType = (doc.document_type || doc.type || '').toLowerCase();
+        var docSource = (doc.document_source || doc.source || '').toLowerCase();
+        var docContent = doc.document_text || doc.document_content || '';
+        var docDeleted = doc.document_deleted === 1 || doc.document_deleted === '1';
+        var isImage = docType.indexOf('image/') === 0;
+        var isReady = !docDeleted && (isImage || doc.document_ready === true || doc.document_ready === 1 || doc.document_ready === '1' || docSource === 'inline' || docSource === 'paste' || docSource === 'image');
+
+        if (isImage && docContent) {
+            var imageWrapper = $('<div class="message-attachment message-attachment--image" role="listitem"></div>');
+            var img = $('<img>', {
+                src: docContent,
+                alt: docName,
+                class: 'message-attachment__image'
+            });
+            if (docDeleted) {
+                imageWrapper.addClass('message-attachment--removed');
+                imageWrapper.attr('aria-label', docName + ' (removed)');
+            }
+            imageWrapper.append(img);
+            container.append(imageWrapper);
+            return;
+        }
+
+        var chip = $('<button type="button" class="message-attachment message-attachment--document" role="listitem"></button>');
+        var iconPath = resolveDocumentIconPath(docType, docName);
+        var icon = $('<img>', {
+            src: iconPath,
+            alt: '',
+            class: 'message-attachment__icon',
+            'aria-hidden': 'true'
+        });
+        var nameSpan = $('<span class="message-attachment__name"></span>').text(docName);
+        chip.append(icon, nameSpan);
+
+        if (docDeleted) {
+            chip.addClass('message-attachment--removed');
+            chip.attr('aria-label', docName + ' (removed)');
+            chip.prop('disabled', true);
+        } else if (!isReady) {
+            chip.addClass('message-attachment--pending');
+            chip.prop('disabled', true);
+            var status = $('<span class="message-attachment__status"></span>').text('Processing…');
+            chip.append(status);
+        } else if (docId) {
+            chip.attr('aria-label', 'Open ' + docName + ' excerpt');
+            chip.on('click keypress', function(event) {
+                if (event.type === 'keypress' && event.key !== 'Enter' && event.key !== ' ') {
+                    return;
+                }
+                event.preventDefault();
+                openDocumentExcerpt(docId, chip);
+            });
+        } else {
+            chip.prop('disabled', true);
+        }
+
+        if (docSource) {
+            chip.attr('title', docSource);
+        }
+
+        container.append(chip);
+    });
+
+    if (!container.children().length) {
+        return;
+    }
+
+    var existing = messageElement.find('.message-attachments');
+    if (existing.length) {
+        existing.remove();
+    }
+
+    messageElement.append(container);
+}
+
     function chunkTextForTts(text) {
-        var maxLen = 500;
-        var minLen = 200;
+        var tiers = [
+            { max: 100, min: 50 },  // first chunk ~1/4 of previous size
+            { max: 175, min: 60 },  // first chunk ~1/4 of previous size
+            { max: 250, min: 120 }, // second chunk ~half size
+            { max: 375, min: 180 }, // third chunk between half and full
+            { max: 500, min: 200 }  // final/default chunk size
+        ];
+
         var remaining = text.trim();
         var chunks = [];
+        var tierIndex = 0;
 
         while (remaining.length > 0) {
+            var activeTier = tiers[Math.min(tierIndex, tiers.length - 1)];
+            var maxLen = activeTier.max;
+            var minLen = activeTier.min;
+
             if (remaining.length <= maxLen) {
                 chunks.push(remaining);
                 break;
@@ -1324,6 +1551,9 @@ function setSpeakButtonLabel(button, text) {
                 consumed = Math.min(maxLen, remaining.length);
             }
             remaining = remaining.slice(consumed).trim();
+            if (tierIndex < tiers.length - 1) {
+                tierIndex += 1;
+            }
         }
 
         if (!chunks.length) {
@@ -1355,13 +1585,102 @@ function setSpeakButtonLabel(button, text) {
             if (contentType.indexOf('audio') === -1) {
                 throw new Error('Unexpected content-type ' + contentType);
             }
-            return response.blob();
+            return response.arrayBuffer();
         }).finally(function () {
             var index = activeTtsControllers.indexOf(controller);
             if (index !== -1) {
                 activeTtsControllers.splice(index, 1);
             }
         });
+    }
+
+    function ensureAudioContext() {
+        if (!window.AudioContext && !window.webkitAudioContext) {
+            throw new Error('Web Audio API not supported in this browser');
+        }
+        if (!audioContext) {
+            var Ctor = window.AudioContext || window.webkitAudioContext;
+            audioContext = new Ctor();
+        }
+        if (!speakerGainNode && audioContext) {
+            speakerGainNode = audioContext.createGain();
+            speakerGainNode.gain.setValueAtTime(1, audioContext.currentTime);
+            speakerGainNode.connect(audioContext.destination);
+        }
+        if (audioContext.state === 'suspended') {
+            audioContext.resume().catch(function (err) {
+                console.warn('Unable to resume audio context', err);
+            });
+        }
+        return audioContext;
+}
+
+    function queueAudioBuffer(buffer) {
+        audioQueue.push(buffer);
+        if (!isAudioContextPlaying) {
+            playNextBuffer();
+        }
+    }
+
+    function playNextBuffer() {
+        if (!audioQueue.length || !audioContext) {
+            isAudioContextPlaying = false;
+            checkPlaybackCompletion();
+            return;
+        }
+
+        isAudioContextPlaying = true;
+        var buffer = audioQueue.shift();
+        var source = audioContext.createBufferSource();
+        activeBufferSource = source;
+        source.buffer = buffer;
+
+        var destination = speakerGainNode ? speakerGainNode : audioContext.destination;
+        try {
+            source.connect(destination);
+        } catch (connectErr) {
+            console.error('Audio buffer connect failed:', connectErr);
+            activeBufferSource = null;
+            isAudioContextPlaying = false;
+            checkPlaybackCompletion();
+            return;
+        }
+
+        source.onended = function () {
+            activeBufferSource = null;
+            playNextBuffer();
+        };
+
+        try {
+            source.start(0);
+        } catch (e) {
+            console.error('Audio buffer start failed:', e);
+            activeBufferSource = null;
+            isAudioContextPlaying = false;
+            playNextBuffer();
+        }
+    }
+
+    function checkPlaybackCompletion() {
+        if (pendingSpeakFinish && audioQueue.length === 0 && !isAudioContextPlaying) {
+            finalizeSpeakSession();
+        }
+    }
+
+    function finalizeSpeakSession() {
+        var meta = activeSpeakMetadata;
+        activeSpeakMetadata = null;
+        pendingSpeakFinish = false;
+
+        stopActiveAudio();
+
+        if (meta && meta.status) {
+            meta.status.text('');
+        }
+        if (meta && meta.button) {
+            resetSpeakButton(meta.button);
+        }
+        activeSpeakButton = null;
     }
 
     function addSpeakButton(messageElement, rawMessageContent) {
@@ -1420,6 +1739,11 @@ function setSpeakButtonLabel(button, text) {
             activeSpeakSessionId = sessionId;
             setSpeakButtonPlaying(speakButton);
             activeTtsControllers = [];
+            activeSpeakMetadata = {
+                button: speakButton,
+                status: status
+            };
+            pendingSpeakFinish = false;
 
             var sanitized = plain.replace(/[*_`]/g, '');
             var chunks = chunkTextForTts(sanitized);
@@ -1461,56 +1785,35 @@ function setSpeakButtonLabel(button, text) {
                         status.text('Playing audio (' + (index + 1) + '/' + chunks.length + ')…');
                     }
 
-                    var url = URL.createObjectURL(blob);
-                    activeAudioUrl = url;
-                    var audio = new Audio(url);
-                    activeAudio = audio;
+                    if (activeSpeakSessionId !== sessionId) {
+                        return;
+                    }
 
-                    audio.onended = function () {
-                        if (activeAudioUrl === url) {
-                            URL.revokeObjectURL(url);
-                            activeAudioUrl = null;
-                        } else {
-                            URL.revokeObjectURL(url);
-                        }
-                        activeAudio = null;
-
+                    ensureAudioContext();
+                    audioContext.decodeAudioData(blob, function (decoded) {
                         if (activeSpeakSessionId !== sessionId) {
                             return;
                         }
-
-                        currentIndex = index + 1;
-                        if (currentIndex < chunks.length) {
-                            ensureFetch(currentIndex + 1);
-                            playChunk(currentIndex);
-                        } else {
-                            finishPlayback();
+                        queueAudioBuffer(decoded);
+                    }, function (decodeErr) {
+                        if (activeSpeakSessionId !== sessionId) {
+                            return;
                         }
-                    };
-
-                    audio.onerror = function (err) {
-                        console.error('Audio playback failed:', err);
-                        if (activeAudioUrl === url) {
-                            URL.revokeObjectURL(url);
-                            activeAudioUrl = null;
-                        } else {
-                            URL.revokeObjectURL(url);
-                        }
-                        activeAudio = null;
+                        console.error('Audio decode failed:', decodeErr);
                         if (status) {
                             status.text('Audio playback failed.');
                         }
                         stopActiveAudio();
                         resetSpeakButton(speakButton);
                         activeSpeakButton = null;
-                    };
+                    });
 
-                    var playPromise = audio.play();
-                    if (playPromise && typeof playPromise.then === 'function') {
-                        playPromise.catch(function (err) {
-                            console.error('Audio playback failed:', err);
-                            audio.onerror(err);
-                        });
+                    currentIndex = index + 1;
+                    if (currentIndex < chunks.length) {
+                        ensureFetch(currentIndex + 1);
+                        playChunk(currentIndex);
+                    } else {
+                        finishPlayback();
                     }
                 }).catch(function (err) {
                     if (activeSpeakSessionId !== sessionId) {
@@ -1527,14 +1830,8 @@ function setSpeakButtonLabel(button, text) {
             }
 
             function finishPlayback() {
-                if (status) {
-                    status.text('');
-                }
-                stopActiveAudio();
-                if (activeSpeakButton && activeSpeakButton[0] === speakButton[0]) {
-                    resetSpeakButton(speakButton);
-                    activeSpeakButton = null;
-                }
+                pendingSpeakFinish = true;
+                checkPlaybackCompletion();
             }
 
             playChunk(0);
@@ -1561,6 +1858,13 @@ function setSpeakButtonLabel(button, text) {
 
     // Show older chat messages
     function displayMessages(chatMessages) {
+        // Stop any ongoing audio playback when switching chats.
+        stopActiveAudio();
+        if (activeSpeakButton) {
+            resetSpeakButton(activeSpeakButton);
+            activeSpeakButton = null;
+        }
+
         chatContainer.empty();
         // Since chatMessages is an object, iterate over its values
         Object.values(chatMessages).forEach(function (message) {
@@ -1692,19 +1996,12 @@ function setSpeakButtonLabel(button, text) {
             //------------------------------------------------
             // 4) DOCUMENTS (USER OR ASSISTANT UPLOADED)
             //------------------------------------------------
+                console.log("THIS IS JUST BEFORE THE CRAZY MESSAGE CODUMENTD");
+                console.log(message.document);
             if (message.document) {
-                // Iterate over each document entry in the document object
-                $.each(message.document, function(key, doc) {
-                    // Only process if the document is an image type
-                    if (doc.document_name && doc.document_text && /^image\//.test(doc.document_type)) {
-                        var docImg = $('<img>')
-                            .attr('class', 'image-message')
-                            .attr('src', doc.document_text)
-                            .attr('alt', doc.document_name || '');
-                        
-                        userMessageElement.append(docImg);
-                    }
-                });
+                console.log("THIS IS THE CRAZY MESSAGE CODUMENTD");
+                console.log(message.document);
+                renderMessageAttachments(userMessageElement, message.document);
             }
         });
 

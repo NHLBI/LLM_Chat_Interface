@@ -13,22 +13,7 @@ require_once __DIR__ . '/chat_summary.inc.php';
  * @return array The processed API response.
  */
 function azure_debug_log($label, $payload) {
-    static $targets = null;
-    if ($targets === null) {
-        $base = dirname(__DIR__) . '/assistant_msgs.log';
-        $tmp  = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . '/assistant_msgs.log';
-        $targets = [$base];
-        if ($tmp !== $base) {
-            $targets[] = $tmp;
-        }
-    }
-
-    $entry = "\n\n" . $label . ' ' . print_r($payload, true);
-    foreach ($targets as $target) {
-        if (@file_put_contents($target, $entry, FILE_APPEND) !== false) {
-            break;
-        }
-    }
+    // No-op placeholder retained for compatibility. Previously wrote to assistant_msgs.log.
 }
 
 function using_mock_completion_backend(): bool {

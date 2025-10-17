@@ -7,7 +7,6 @@
 /* =========================================================== */
 function call_assistant_api(array $cfg, string $chat_id, array $messages)
 {
-    file_put_contents(dirname(__DIR__).'/assistant_msgs.log', "\n\n    -    ASSISTANTLOG - 3 - " . print_r($messages, true), FILE_APPEND);
     if (empty($cfg['assistant_id'])) {
         throw new RuntimeException('assistant_id missing from config');
     }
@@ -16,7 +15,6 @@ function call_assistant_api(array $cfg, string $chat_id, array $messages)
 
     /* add *all* messages of this turn (system/doc/user) */
     foreach ($messages as $m) {
-        file_put_contents(dirname(__DIR__).'/assistant_msgs.log', "\n\n    -    ASSISTANTLOG - 4 - " . print_r($m, true), FILE_APPEND);
         if (!isset($m['content']) || trim($m['content']) === '') {
             continue;
         }
@@ -138,8 +136,6 @@ function _rest_core(string $method, string $path, ?array $body, array $cfg,
         $payload = null;
     }
 
-    #print("3. The Final payload: ".print_r($payload,1));
-    file_put_contents(dirname(__DIR__).'/assistant_msgs.log', "\n\n    -    ASSISTANTLOG - 7 - " . print_r($payload, true), FILE_APPEND);
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,

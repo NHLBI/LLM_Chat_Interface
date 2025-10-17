@@ -1,6 +1,5 @@
+# Deny direct access to internal directories and logs
+RedirectMatch 404 ^/(logs|docs|tests|var(?:/|$)|playwright-report|test-results)/
 
-
-<IfFile '/var/www/ai.nhlbi.nih.gov/chatdev/DOWN'>
-    Redirect /maintenance/
-</IfFile>
-
+# If PHP is served via Apache module, ensure existing rewrites remain intact.
+# (Add additional rewrite rules below as needed.)
