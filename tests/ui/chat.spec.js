@@ -353,4 +353,103 @@ async function cleanupChat(page) {
       await context.close();
     }
   });
+
+  test('mixed document/image attachments stay compact', async ({ browser }, testInfo) => {
+    testInfo.setTimeout(120000);
+    const { context, page } = await newAuthenticatedPage(browser);
+
+    try {
+      await navigateToChat(page);
+
+      await page.locator('button.upload-button').click();
+      await expect(page.locator('#uploadModal')).toBeVisible({ timeout: 10000 });
+
+      const textBuffer = Buffer.from('Layout regression check\n', 'utf8');
+      const timestamp = Date.now();
+      const textName = `layout-${timestamp}.txt`;
+      const imageName = `layout-${timestamp}.png`;
+
+      await page.setInputFiles('input#fileInput', [
+        {
+          name: textName,
+          mimeType: 'text/plain',
+          buffer: textBuffer,
+        },
+        {
+          name: imageName,
+          mimeType: 'image/png',
+          buffer: Buffer.from(IMAGE_BASE64, 'base64'),
+        },
+      ]);
+
+      await expect(page.locator('#preview')).toContainText(textName, { timeout: 5000 });
+      await expect(page.locator('#preview')).toContainText(imageName, { timeout: 5000 });
+
+      await page.evaluate(() => {
+        window.__lastUploadResult = null;
+      });
+
+      const [uploadResponse] = await Promise.all([
+        page.waitForResponse(
+          (response) => response.url().includes('upload.php') && response.request().method() === 'POST'
+        ),
+        page.click('button:has-text("Upload")'),
+      ]);
+
+      expect(uploadResponse.ok()).toBeTruthy();
+
+      const uploadJsonHandle = await page.waitForFunction(() => window.__lastUploadResult, null, {
+        timeout: 10000,
+      });
+      const uploadJson = await uploadJsonHandle.jsonValue();
+
+      const newChatId = uploadJson.new_chat ? uploadJson.chat_id : null;
+      await waitForChatNavigation(page, newChatId);
+
+      const message = `Compact attachments test ${timestamp}`;
+      await page.fill('#userMessage', message);
+
+      const responsePromise = page.waitForResponse(
+        (response) => response.url().includes('ajax_handler.php') && response.request().method() === 'POST'
+      );
+      const navigationPromise = page
+        .waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 })
+        .catch(() => null);
+
+      await page.locator('#messageForm button[type="submit"]').click();
+      const ajaxResponse = await responsePromise;
+      expect(ajaxResponse.ok()).toBeTruthy();
+
+      const navigation = await navigationPromise;
+      let chatIdFromNav = extractChatIdFromUrl(navigation?.url());
+      if (!chatIdFromNav) {
+        chatIdFromNav = extractChatIdFromUrl(page.url());
+      }
+      await waitForChatNavigation(page, chatIdFromNav);
+
+      const userMessageLocator = page.locator('.user-message').last();
+      await expect(userMessageLocator).toContainText(message, { timeout: 20000 });
+
+      const attachments = userMessageLocator.locator('.message-attachments');
+      await expect(attachments).toBeVisible({ timeout: 20000 });
+
+      const docChip = attachments.locator('.message-attachment--document').first();
+      const imageChip = attachments.locator('.message-attachment--image').first();
+
+      await expect(docChip).toBeVisible();
+      await expect(imageChip).toBeVisible();
+
+      const docHeight = await docChip.evaluate((el) => Math.round(el.getBoundingClientRect().height));
+      expect(docHeight).toBeLessThanOrEqual(60);
+
+      const screenshot = await attachments.screenshot({ animations: 'disabled' });
+      await testInfo.attach('mixed-attachments-layout', {
+        body: screenshot,
+        contentType: 'image/png',
+      });
+    } finally {
+      await cleanupChat(page);
+      await context.close();
+    }
+  });
 });

@@ -581,28 +581,40 @@ code {
     flex-wrap: wrap;
     gap: 10px;
     margin: 12px 0 0 52px;
+    align-items: flex-start;
 }
 
 .message-attachment {
     display: inline-flex;
     align-items: center;
     gap: 8px;
+    align-self: flex-start;
+    max-width: 100%;
 }
 
 .message-attachment--image .message-attachment__image {
     max-width: 220px;
     border-radius: 4px;
+    display: block;
+}
+
+.message-attachment--image {
+    align-self: flex-start;
 }
 
 .message-attachment--document {
     background: #f1f5f9;
     border: 1px solid #cbd5f5;
-    border-radius: 9999px;
+    border-radius: 14px;
     padding: 6px 12px;
     font-size: 0.85rem;
     color: #0f172a;
     cursor: pointer;
     transition: background 0.2s ease, border-color 0.2s ease;
+    max-height: 42px;
+    box-sizing: border-box;
+    overflow: hidden;
+    flex-shrink: 0;
 }
 
 .message-attachment--document:hover:not([disabled]) {
