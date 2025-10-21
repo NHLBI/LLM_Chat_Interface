@@ -70,6 +70,52 @@ code {
     background-color: #f0f0f0;
     border-bottom: solid 1px #ddd;
 }
+
+.assistant-message.streaming {
+    opacity: 0.98;
+}
+
+.assistant-stream__content {
+    min-height: 1.2em;
+    white-space: pre-line;
+    word-break: break-word;
+}
+
+.assistant-stream__error {
+    color: #b91c1c;
+    font-weight: 600;
+    white-space: pre-wrap;
+}
+.assistant-stream__cursor {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-left: 6px;
+    border-radius: 50%;
+    background-color: #333;
+    animation: assistant-stream-pulse 1s infinite;
+    vertical-align: middle;
+}
+.assistant-stream__cursor--fading {
+    background-color: #999;
+    animation: assistant-stream-pulse-soft 1.6s infinite;
+}
+
+.assistant-content-final p {
+    margin: 0 0 1rem;
+}
+
+@keyframes assistant-stream-pulse {
+    0% { opacity: 0.25; }
+    50% { opacity: 1; }
+    100% { opacity: 0.25; }
+}
+
+@keyframes assistant-stream-pulse-soft {
+    0% { opacity: 0.1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 0.1; }
+}
 .user-message {
     background-color: #fbfbfb;
 }
@@ -383,6 +429,13 @@ code {
 .copy-chat-button:hover {
     color: #FFFFDD;
     background-color: #0056b3;
+}
+
+.stream-stop-button {
+    position: static;
+    margin-left: auto;
+    bottom: auto;
+    left: auto;
 }
 
 .copy-chat-button svg {

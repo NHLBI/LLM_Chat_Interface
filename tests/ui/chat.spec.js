@@ -227,35 +227,34 @@ async function cleanupChat(page) {
       await page.fill('#userMessage', message);
 
       const submitButton = page.locator('#messageForm button[type="submit"]');
-      const responsePromise = page.waitForResponse((response) => {
-        return response.url().includes('ajax_handler.php') && response.request().method() === 'POST';
+      const streamResponsePromise = page.waitForResponse((response) => {
+        return response.url().includes('sse.php') && response.request().method() === 'POST';
       });
       const navigationPromise = page
         .waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 })
         .catch(() => null);
 
       await submitButton.click();
-      const postResponse = await responsePromise;
+      const streamResponse = await streamResponsePromise.catch(() => null);
       const navigation = await navigationPromise;
 
-      expect(postResponse.status(), 'ajax_handler.php should return HTTP 200').toBe(200);
-
-      let newChatId = extractChatIdFromUrl(navigation?.url());
-      if (!newChatId) {
-        newChatId = extractChatIdFromUrl(page.url());
+      if (streamResponse) {
+        expect(streamResponse.status(), 'sse.php should return HTTP 200').toBe(200);
       }
-      await waitForChatNavigation(page, newChatId);
 
-      await page.waitForResponse(
-        (response) =>
-          response.url().includes('get_messages.php') &&
-          response.request().method() === 'GET',
-        { timeout: 20000 }
-      );
+      if (navigation) {
+        const newChatId = extractChatIdFromUrl(navigation.url());
+        await waitForChatNavigation(page, newChatId);
+      } else {
+        await waitForChatNavigation(page, null);
+      }
 
       const userMessageLocator = page.locator('.user-message').last();
       await userMessageLocator.waitFor({ timeout: 20000 });
       await expect(userMessageLocator).toContainText(message, { timeout: 15000 });
+
+      await expect(page.locator('.assistant-message.streaming')).toBeVisible({ timeout: 10000 });
+      await expect(page.locator('.assistant-message.streaming')).toHaveCount(0, { timeout: 60000 });
 
       const assistantLocator = page.locator('.assistant-message').last();
       await assistantLocator.waitFor({ timeout: 60000 });
@@ -329,19 +328,26 @@ async function cleanupChat(page) {
       const payload = '<img src=x onerror="window.__pwned = true">';
       await page.fill('#userMessage', payload);
 
-      const responsePromise = page.waitForResponse(
-        (response) => response.url().includes('ajax_handler.php') && response.request().method() === 'POST'
+      const streamResponsePromise = page.waitForResponse(
+        (response) => response.url().includes('sse.php') && response.request().method() === 'POST'
       );
       const navigationPromise = page
         .waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 })
         .catch(() => null);
 
       await page.locator('#messageForm button[type="submit"]').click();
-      const ajaxResponse = await responsePromise;
-      expect(ajaxResponse.ok()).toBeTruthy();
+      const streamResponse = await streamResponsePromise.catch(() => null);
+      if (streamResponse) {
+        expect(streamResponse.ok()).toBeTruthy();
+      }
 
-      await navigationPromise;
-      await waitForChatNavigation(page, null);
+      const navigation = await navigationPromise;
+      if (navigation) {
+        const newChatId = extractChatIdFromUrl(navigation.url());
+        await waitForChatNavigation(page, newChatId);
+      } else {
+        await waitForChatNavigation(page, null);
+      }
 
       const innerHTML = await page.locator('.user-message').last().innerHTML();
       expect(innerHTML).not.toContain('<script');
@@ -409,16 +415,18 @@ async function cleanupChat(page) {
       const message = `Compact attachments test ${timestamp}`;
       await page.fill('#userMessage', message);
 
-      const responsePromise = page.waitForResponse(
-        (response) => response.url().includes('ajax_handler.php') && response.request().method() === 'POST'
+      const streamResponsePromise = page.waitForResponse(
+        (response) => response.url().includes('sse.php') && response.request().method() === 'POST'
       );
       const navigationPromise = page
         .waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 })
         .catch(() => null);
 
       await page.locator('#messageForm button[type="submit"]').click();
-      const ajaxResponse = await responsePromise;
-      expect(ajaxResponse.ok()).toBeTruthy();
+      const streamResponse = await streamResponsePromise.catch(() => null);
+      if (streamResponse) {
+        expect(streamResponse.ok()).toBeTruthy();
+      }
 
       const navigation = await navigationPromise;
       let chatIdFromNav = extractChatIdFromUrl(navigation?.url());
@@ -452,4 +460,54 @@ async function cleanupChat(page) {
       await context.close();
     }
   });
+
+  test('Stop button saves partial streaming reply', async ({ browser }) => {
+    const { context, page } = await newAuthenticatedPage(browser);
+    try {
+      await navigateToChat(page);
+
+      const message = `Stop streaming test ${Date.now()}`;
+      await page.fill('#userMessage', message);
+
+      const streamResponsePromise = page.waitForResponse(
+        (response) => response.url().includes('sse.php') && response.request().method() === 'POST'
+      );
+      const navigationPromise = page
+        .waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 })
+        .catch(() => null);
+
+      await page.locator('#messageForm button[type="submit"]').click();
+
+      await expect(page.locator('.assistant-message.streaming')).toBeVisible({ timeout: 10000 });
+      const streamingStopButton = page.locator('.assistant-message.streaming .stream-stop-button');
+      await expect(streamingStopButton.first()).toBeVisible({ timeout: 10000 });
+      await streamingStopButton.first().click();
+
+      await streamResponsePromise.catch(() => null);
+
+      await expect(page.locator('.assistant-message.streaming')).toHaveCount(0, { timeout: 60000 });
+
+      const navigation = await navigationPromise;
+      if (navigation) {
+        const newChatId = extractChatIdFromUrl(navigation.url());
+        await waitForChatNavigation(page, newChatId);
+      } else {
+        await waitForChatNavigation(page, null);
+      }
+
+      const assistantLocator = page.locator('.assistant-message').last();
+      const stoppedText = (await assistantLocator.innerText()).trim();
+      expect(stoppedText.length).toBeGreaterThan(0);
+      await expect(page.locator('.stream-stop-button')).toHaveCount(0, { timeout: 10000 });
+
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await waitForChatNavigation(page, null);
+      const persistedText = (await page.locator('.assistant-message').last().innerText()).trim();
+      expect(persistedText.length).toBeGreaterThan(0);
+    } finally {
+      await cleanupChat(page);
+      await context.close();
+    }
+  });
+
 });

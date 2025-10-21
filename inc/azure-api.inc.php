@@ -29,6 +29,91 @@ function using_mock_completion_backend(): bool {
     return in_array($flag, ['1', 'true', 'yes', 'on'], true);
 }
 
+function trim_trailing_ellipsis(string $text): string {
+    $original = $text;
+    $text = rtrim($text);
+
+    if ($text === '') {
+        return $text;
+    }
+
+    $modified = false;
+    $ellipsis = "\xE2\x80\xA6";
+    if (mb_substr($text, -1, 1, 'UTF-8') === $ellipsis) {
+        $text = rtrim(mb_substr($text, 0, mb_strlen($text, 'UTF-8') - 1, 'UTF-8'));
+        $modified = true;
+    }
+
+    while (substr($text, -3) === '...') {
+        $text = rtrim(substr($text, 0, -3));
+        $modified = true;
+    }
+
+    if ($modified) {
+        $lastChar = mb_substr($text, -1, 1, 'UTF-8');
+        if ($lastChar !== '.' && $lastChar !== '!' && $lastChar !== '?') {
+            $text .= '.';
+        }
+    }
+
+    return $text;
+}
+
+function stream_emit_event(?array &$streamOptions, string $type, array $payload = []): void {
+    if (!is_array($streamOptions)) {
+        return;
+    }
+
+    if (isset($streamOptions['state']) && is_array($streamOptions['state'])) {
+        if (!isset($streamOptions['state']['last_event_at'])) {
+            $streamOptions['state']['last_event_at'] = microtime(true);
+        } else {
+            $streamOptions['state']['last_event_at'] = microtime(true);
+        }
+
+        switch ($type) {
+            case 'token':
+                $text = isset($payload['text']) ? (string)$payload['text'] : '';
+                if ($text !== '') {
+                    if (!isset($streamOptions['state']['accumulated'])) {
+                        $streamOptions['state']['accumulated'] = $text;
+                    } else {
+                        $streamOptions['state']['accumulated'] .= $text;
+                    }
+                }
+                break;
+            case 'tool_call':
+                if (!isset($streamOptions['state']['tool_calls']) || !is_array($streamOptions['state']['tool_calls'])) {
+                    $streamOptions['state']['tool_calls'] = [];
+                }
+                $streamOptions['state']['tool_calls'][] = $payload;
+                break;
+            case 'finish':
+                if (isset($payload['finish_reason'])) {
+                    $streamOptions['state']['finish_reason'] = $payload['finish_reason'];
+                }
+                break;
+            case 'heartbeat':
+                // nothing to accumulate, state timestamp already updated
+                break;
+            case 'aborted':
+                $streamOptions['state']['aborted'] = true;
+                break;
+            default:
+                // no-op
+                break;
+        }
+    }
+
+    if (isset($streamOptions['on_event']) && is_callable($streamOptions['on_event'])) {
+        try {
+            $streamOptions['on_event']($type, $payload);
+        } catch (Throwable $e) {
+            error_log('stream handler error: ' . $e->getMessage());
+        }
+    }
+}
+
 /**
  * Returns a document snippet that fits within the provided token budget.
  *
@@ -295,9 +380,11 @@ function maybe_promote_oversize_prompt(string $message, string $chat_id, string 
     }
 }
 
-function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config) {
+function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config, array $options = []) {
     global $config, $config_file;
     azure_debug_log('    -    ASSISTANTLOG - 1 -', $message);
+
+    $streamOptions = $options['stream'] ?? null;
 
    $active_config = load_configuration($deployment);
     if (!$active_config) {
@@ -317,6 +404,38 @@ function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config
             $preview = trim(substr($message, 0, 160));
         }
         $replyText    = "Automated test reply\n\nPrompt preview: {$preview}";
+
+        if (is_array($streamOptions)) {
+            $shouldAbort = isset($streamOptions['should_abort']) && is_callable($streamOptions['should_abort'])
+                ? $streamOptions['should_abort']
+                : null;
+            $chunks = preg_split('/(\s+)/u', $replyText, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
+            if (!$chunks) {
+                $chunks = [$replyText];
+            }
+            $aborted = false;
+            foreach ($chunks as $chunk) {
+                if ($shouldAbort && $shouldAbort()) {
+                    stream_emit_event($streamOptions, 'aborted');
+                    $aborted = true;
+                    break;
+                }
+                stream_emit_event($streamOptions, 'token', [
+                    'text' => $chunk,
+                    'mock' => true
+                ]);
+                usleep(60_000);
+            }
+            if ($aborted && isset($streamOptions['state']['accumulated'])) {
+                $replyText = (string)$streamOptions['state']['accumulated'];
+            }
+            $finishReason = $aborted ? 'user_cancelled' : 'stop';
+            stream_emit_event($streamOptions, 'finish', [
+                'finish_reason' => $finishReason
+            ]);
+        }
+
+        $replyText = trim_trailing_ellipsis($replyText);
 
         $eid = create_exchange(
             $uiDeployment,
@@ -357,8 +476,15 @@ function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config
     if ($active_config['host'] == "Mocha") {
         $response = call_mocha_api($active_config['base_url'], $msg);
     } else {
-        if ($isAssistant) $response = call_assistant_api($active_config, $chat_id, $msg);
-        else $response = call_azure_api($active_config, $chat_id, $msg);
+        if ($isAssistant) {
+            $response = call_assistant_api($active_config, $chat_id, $msg);
+        } else {
+            $callOptions = [];
+            if (is_array($streamOptions)) {
+                $callOptions['stream'] = $streamOptions;
+            }
+            $response = call_azure_api($active_config, $chat_id, $msg, $callOptions);
+        }
     }
     #echo "<pre>Step get_gpt_response()\n".print_r($response,1)."</pre>"; die();
 
@@ -395,7 +521,7 @@ function get_chat_thread($message, $chat_id, $user, $active_config) {
  * @param mixed $msg The message payload.
  * @return string The API response.
  */
-function call_azure_api($active_config, $chat_id, $msg) {
+function call_azure_api($active_config, $chat_id, $msg, array $options = []) {
     // 1) pull your documents (with token lengths) back out of the DB
     $docs = get_chat_documents($_SESSION['user_data']['userid'], $chat_id);
 
@@ -403,6 +529,8 @@ function call_azure_api($active_config, $chat_id, $msg) {
     $doc_tokens = 0; #array_sum(array_column($docs, 'document_token_length'));
 
     $is_dalle = ($active_config['host'] === 'dall-e' || $active_config['host'] === 'gpt-image-1');
+
+    $streamOptions = $options['stream'] ?? null;
 
     if ($is_dalle) {
         // dall-E Image Generation Endpoint
@@ -426,6 +554,10 @@ function call_azure_api($active_config, $chat_id, $msg) {
         $payload = [
             'messages' => $msg
         ];
+
+        if (is_array($streamOptions)) {
+            $payload['stream'] = true;
+        }
 
         if ($is_gpt5) {
             // === GPT-5 reasoning models ===
@@ -475,6 +607,10 @@ function call_azure_api($active_config, $chat_id, $msg) {
         'Content-Type: application/json',
         'api-key: ' . $active_config['api_key']
     ];
+    if (is_array($streamOptions) && !$is_dalle) {
+        $headers[] = 'Accept: text/event-stream';
+        return execute_api_call_streaming($url, $payload, $headers, $streamOptions, $chat_id, $active_config);
+    }
     $response = execute_api_call($url, $payload, $headers, $chat_id);
     return $response;
 }
@@ -579,6 +715,7 @@ function process_api_response(
             }
         }
 
+        $answer_text = trim_trailing_ellipsis($answer_text);
         $eid = create_exchange($uiDeployment, $chat_id, $storedPrompt, $answer_text, $wfId, null, json_encode($links));
         if (is_array($oversizeMeta) && !empty($oversizeMeta['document_id'])) {
             try {
@@ -733,6 +870,7 @@ function process_api_response(
 
     // 3b) Normal success
     $answer_text = $data['choices'][0]['message']['content'] ?? 'No response text found.';
+    $answer_text = trim_trailing_ellipsis($answer_text);
     $eid = create_exchange($uiDeployment, $chat_id, $storedPrompt, $answer_text, $wfId);
     if (is_array($oversizeMeta) && !empty($oversizeMeta['document_id'])) {
         try {
@@ -1004,6 +1142,286 @@ function execute_api_call($url, $payload, $headers, $chat_id = '') {
     // Uncomment for debugging
     // print("GOT TO THE GET_EXECUTE API CALL FUNCTION");
     return $response;
+}
+
+function execute_api_call_streaming($url, array $payload, array $headers, array &$streamOptions, $chat_id = '', array $active_config = []) {
+    if (!isset($streamOptions['state']) || !is_array($streamOptions['state'])) {
+        $streamOptions['state'] = [];
+    }
+    if (!isset($streamOptions['state']['tool_calls']) || !is_array($streamOptions['state']['tool_calls'])) {
+        $streamOptions['state']['tool_calls'] = [];
+    }
+
+    $ch = curl_init();
+    $jsonPayload = json_encode($payload);
+
+    $buffer = '';
+    $metadata = [
+        'id'            => null,
+        'created'       => null,
+        'model'         => $active_config['model'] ?? ($active_config['deployment_name'] ?? ''),
+        'finish_reason' => null,
+        'usage'         => null,
+    ];
+    $heartbeatInterval = isset($streamOptions['heartbeat_interval'])
+        ? max(1, (int)$streamOptions['heartbeat_interval'])
+        : 8;
+    $lastHeartbeat = microtime(true);
+    $shouldAbort = (isset($streamOptions['should_abort']) && is_callable($streamOptions['should_abort']))
+        ? $streamOptions['should_abort']
+        : null;
+    $accumulated = isset($streamOptions['state']['accumulated']) && is_string($streamOptions['state']['accumulated'])
+        ? $streamOptions['state']['accumulated']
+        : '';
+    $streamOptions['state']['accumulated'] = $accumulated;
+    $aborted = false;
+
+    $emit = function (string $type, array $data = []) use (&$streamOptions) {
+        stream_emit_event($streamOptions, $type, $data);
+    };
+
+    $extractDeltaText = static function ($content) {
+        if (is_string($content)) {
+            return $content;
+        }
+
+        $text = '';
+        if (is_array($content)) {
+            foreach ($content as $fragment) {
+                if (is_string($fragment)) {
+                    $text .= $fragment;
+                } elseif (is_array($fragment)) {
+                    if (isset($fragment['text']) && is_string($fragment['text'])) {
+                        $text .= $fragment['text'];
+                    } elseif (isset($fragment['text']) && is_array($fragment['text']) && isset($fragment['text']['content']) && is_string($fragment['text']['content'])) {
+                        $text .= $fragment['text']['content'];
+                    } elseif (isset($fragment['content']) && is_string($fragment['content'])) {
+                        $text .= $fragment['content'];
+                    }
+                }
+            }
+        }
+
+        return $text;
+    };
+
+    curl_setopt_array($ch, [
+        CURLOPT_URL            => $url,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $jsonPayload,
+        CURLOPT_HTTPHEADER     => $headers,
+        CURLOPT_RETURNTRANSFER => false,
+        CURLOPT_FOLLOWLOCATION => false,
+        CURLOPT_HEADER         => false,
+        CURLOPT_WRITEFUNCTION  => function ($chRef, $data) use (&$buffer, &$metadata, &$accumulated, &$streamOptions, $emit, &$lastHeartbeat, $heartbeatInterval, $shouldAbort, &$aborted, $extractDeltaText) {
+            if ($data === '') {
+                return 0;
+            }
+
+            $buffer .= $data;
+            $buffer = str_replace(["\r\n", "\r"], "\n", $buffer);
+
+            while (($pos = strpos($buffer, "\n\n")) !== false) {
+                $rawEvent = substr($buffer, 0, $pos);
+                $buffer = substr($buffer, $pos + 2);
+                $rawEvent = trim($rawEvent);
+                if ($rawEvent === '') {
+                    continue;
+                }
+
+                $eventName = 'message';
+                $dataLines = [];
+                foreach (explode("\n", $rawEvent) as $line) {
+                    if ($line === '' || $line[0] === ':') {
+                        continue;
+                    }
+                    if (str_starts_with($line, 'event:')) {
+                        $eventName = trim(substr($line, 6));
+                    } elseif (str_starts_with($line, 'data:')) {
+                        $dataLines[] = ltrim(substr($line, 5));
+                    }
+                }
+
+                $eventPayload = trim(implode("\n", $dataLines));
+                if ($eventPayload === '') {
+                    continue;
+                }
+                if ($eventPayload === '[DONE]') {
+                    if ($metadata['finish_reason'] === null) {
+                        $metadata['finish_reason'] = $aborted ? 'user_cancelled' : 'stop';
+                        $emit('finish', ['finish_reason' => $metadata['finish_reason']]);
+                    }
+                    continue;
+                }
+
+                $decoded = json_decode($eventPayload, true);
+                if (!is_array($decoded)) {
+                    continue;
+                }
+
+                if (isset($decoded['id'])) {
+                    $metadata['id'] = $decoded['id'];
+                }
+                if (isset($decoded['created'])) {
+                    $metadata['created'] = $decoded['created'];
+                }
+                if (isset($decoded['model'])) {
+                    $metadata['model'] = $decoded['model'];
+                }
+                if (isset($decoded['usage'])) {
+                    $metadata['usage'] = $decoded['usage'];
+                }
+
+                $choice = $decoded['choices'][0] ?? null;
+                if (is_array($choice)) {
+                    $delta = $choice['delta'] ?? [];
+                    $textRaw = '';
+                    if (isset($delta['content'])) {
+                        $textRaw = $extractDeltaText($delta['content']);
+                    }
+
+                    $textToAppend = $textRaw;
+                    if ($textToAppend !== '') {
+                        $currentAccumulated = $accumulated;
+                        if ($currentAccumulated !== '' && str_starts_with($textToAppend, $currentAccumulated)) {
+                            $textToAppend = substr($textToAppend, strlen($currentAccumulated));
+                        } elseif ($currentAccumulated !== '' && str_starts_with($currentAccumulated, $textToAppend)) {
+                            $textToAppend = '';
+                        }
+                    }
+
+                    if ($textToAppend !== '') {
+                        $accumulated .= $textToAppend;
+                        $streamOptions['state']['accumulated'] = $accumulated;
+                        $emit('token', [
+                            'text' => $textToAppend,
+                            'accumulated' => $accumulated
+                        ]);
+                    }
+
+                    if (isset($delta['reasoning_content']) && is_array($delta['reasoning_content'])) {
+                        foreach ($delta['reasoning_content'] as $reasoningChunk) {
+                            if (($reasoningChunk['type'] ?? '') === 'output_text') {
+                                $emit('reasoning', [
+                                    'text' => (string)($reasoningChunk['text'] ?? ''),
+                                    'raw'  => $reasoningChunk
+                                ]);
+                            }
+                        }
+                    }
+
+                    if (!empty($choice['delta']['tool_calls']) && is_array($choice['delta']['tool_calls'])) {
+                        foreach ($choice['delta']['tool_calls'] as $toolCall) {
+                            $emit('tool_call', $toolCall);
+                        }
+                    }
+
+                    if (isset($choice['delta']['role']) && $choice['delta']['role'] === 'assistant') {
+                        // role announcement; nothing to emit
+                    }
+
+                    if (isset($choice['finish_reason']) && $choice['finish_reason'] !== null) {
+                        $metadata['finish_reason'] = $choice['finish_reason'];
+                        $emit('finish', ['finish_reason' => $metadata['finish_reason']]);
+                    }
+                }
+            }
+
+            $now = microtime(true);
+            if ($heartbeatInterval > 0 && ($now - $lastHeartbeat) >= $heartbeatInterval) {
+                $emit('heartbeat', ['timestamp' => time()]);
+                $lastHeartbeat = $now;
+            }
+
+            if ($shouldAbort && $shouldAbort()) {
+                $emit('aborted', []);
+                $aborted = true;
+                return 0;
+            }
+
+            return strlen($data);
+        },
+    ]);
+
+    curl_setopt($ch, CURLOPT_NOPROGRESS, false);
+    curl_setopt($ch, CURLOPT_PROGRESSFUNCTION, function($resource, $downloadSize, $downloaded, $uploadSize, $uploaded) use ($shouldAbort, &$lastHeartbeat, $heartbeatInterval, $emit, &$aborted) {
+        $now = microtime(true);
+        if ($heartbeatInterval > 0 && ($now - $lastHeartbeat) >= $heartbeatInterval) {
+            $emit('heartbeat', ['timestamp' => time()]);
+            $lastHeartbeat = $now;
+        }
+
+        if ($shouldAbort && $shouldAbort()) {
+            $emit('aborted', []);
+            $aborted = true;
+            return 1;
+        }
+        return 0;
+    });
+
+    $success = curl_exec($ch);
+    $curlErrNo = curl_errno($ch);
+    $curlError = curl_error($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($shouldAbort && $shouldAbort()) {
+        $aborted = true;
+    }
+
+    if ($curlErrNo && !$aborted) {
+        throw new RuntimeException('Curl error: ' . $curlError);
+    }
+
+    if ($status >= 400 && !$aborted) {
+        throw new RuntimeException("Streaming API HTTP {$status} (chat {$chat_id})");
+    }
+
+    $finalFinish = $metadata['finish_reason'] ?? null;
+    if ($finalFinish === null) {
+        $finalFinish = $aborted ? 'user_cancelled' : 'stop';
+        $emit('finish', ['finish_reason' => $finalFinish]);
+    }
+
+    $finalText = $streamOptions['state']['accumulated'] ?? $accumulated;
+    $result = [
+        'id'        => $metadata['id'] ?? ('stream-' . bin2hex(random_bytes(6))),
+        'object'    => 'chat.completion',
+        'created'   => $metadata['created'] ?? time(),
+        'model'     => $metadata['model'] ?? '',
+        'choices'   => [[
+            'index'         => 0,
+            'message'       => [
+                'role'    => 'assistant',
+                'content' => (string)$finalText,
+            ],
+            'finish_reason' => $finalFinish,
+        ]],
+    ];
+
+    if (!empty($streamOptions['state']['tool_calls'])) {
+        $result['choices'][0]['message']['tool_calls'] = $streamOptions['state']['tool_calls'];
+    }
+
+    if (!empty($metadata['usage'])) {
+        $result['usage'] = $metadata['usage'];
+    }
+
+    if ($aborted) {
+        $streamOptions['state']['aborted'] = true;
+    }
+    $streamOptions['state']['finish_reason'] = $finalFinish;
+
+    $tailPreview = mb_substr($finalText, max(0, mb_strlen($finalText, 'UTF-8') - 32), null, 'UTF-8');
+    error_log(sprintf(
+        'stream complete finish=%s aborted=%s len=%d tail=%s',
+        $finalFinish,
+        $aborted ? 'yes' : 'no',
+        mb_strlen($finalText, 'UTF-8'),
+        json_encode($tailPreview)
+    ));
+
+    return json_encode($result);
 }
 
 /**

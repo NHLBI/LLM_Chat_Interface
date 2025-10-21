@@ -412,6 +412,10 @@ foreach(array_keys($models) as $m) {
 <script src="js/ui.js"></script>
 <script src="js/listeners.js"></script>
 <script src="js/user_images.js"></script>
+<script src="js/chat-base.js"></script>
+<script src="js/chat-docs.js"></script>
+<script src="js/chat-tts.js"></script>
+<script src="js/chat-streaming.js"></script>
     <script src="js/chat-interface.js"></script>
 <script>
 function printChat() {
