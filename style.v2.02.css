@@ -77,8 +77,27 @@ code {
 
 .assistant-stream__content {
     min-height: 1.2em;
-    white-space: pre-line;
+    white-space: normal;
     word-break: break-word;
+}
+
+.assistant-stream__content p,
+.assistant-stream__content ul,
+.assistant-stream__content ol {
+    margin: 0 0 1rem;
+}
+
+.assistant-stream__content ul,
+.assistant-stream__content ol {
+    padding-left: 1.25rem;
+}
+
+.assistant-stream__content .code-block {
+    margin: 20px auto 0px auto;
+}
+
+.assistant-stream__content pre {
+    margin: 0;
 }
 
 .assistant-stream__error {
