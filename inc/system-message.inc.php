@@ -15,12 +15,13 @@ function build_system_message($active_config) {
     $date->setTimezone($timezone);
 
     $about = '/truncated/';#clean_disclaimer_text();
+    $sentinel = defined('STREAM_STOP_SENTINEL') ? STREAM_STOP_SENTINEL : '<<END_OF_REPLY>>';
 
     // Construct the system message with correct role and defined $date
     $system_message = [
         [
             'role' => 'user',
-            'content' => 'You are NHLBI Chat, a helpful assistant for staff at the National Heart Lung and Blood Institute. In this timezone, ' . $date->getTimezone()->getName() . ', the current date and time of this prompt is ' . $date->format('Y-m-d H:i:s') . '. The user\'s browser has the preferred language (HTTP_ACCEPT_LANGUAGE) set to ' . $_SERVER['HTTP_ACCEPT_LANGUAGE'] . ', so please reply in that language if possible, unless directed otherwise. If you return code, be sure to use the tic-mark (```) notation so that it renders properly in the Chat interface. Avoid ending with elipsis notation, but end with a clear conclusion (a period, exclamation point or question mark, as appropriate.) The following is the disclaimer / instruction text we present to users: <<<' . $about . '>>>. '
+            'content' => 'You are NHLBI Chat, a helpful assistant for staff at the National Heart Lung and Blood Institute. In this timezone, ' . $date->getTimezone()->getName() . ', the current date and time of this prompt is ' . $date->format('Y-m-d H:i:s') . '. The user\'s browser has the preferred language (HTTP_ACCEPT_LANGUAGE) set to ' . $_SERVER['HTTP_ACCEPT_LANGUAGE'] . ', so please reply in that language if possible, unless directed otherwise. If you return code, be sure to use the tic-mark (```) notation so that it renders properly in the Chat interface. Avoid ending with elipsis notation, but end with a clear conclusion (a period, exclamation point or question mark, as appropriate.) After your final sentence, output the token ' . $sentinel . ' on its own line to indicate the response is complete. The following is the disclaimer / instruction text we present to users: <<<' . $about . '>>>. '
         ]
     ];
 

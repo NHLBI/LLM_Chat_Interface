@@ -3,6 +3,10 @@ require_once __DIR__ . '/chat_summary.inc.php';
 # inc/azure-api.inc.php 
 # AZURE API
 
+if (!defined('STREAM_STOP_SENTINEL')) {
+    define('STREAM_STOP_SENTINEL', '<<END_OF_REPLY>>');
+}
+
 /**
  * Retrieves the GPT response by orchestrating the API call and processing the response.
  *
@@ -59,6 +63,36 @@ function trim_trailing_ellipsis(string $text): string {
     return $text;
 }
 
+function strip_stream_stop_sentinel(string $text): string {
+    $sentinel = STREAM_STOP_SENTINEL;
+    if ($sentinel === '') {
+        return $text;
+    }
+
+    $variants = [
+        $sentinel,
+        $sentinel . "\n",
+        $sentinel . "\r\n",
+        "\n" . $sentinel,
+        "\r\n" . $sentinel,
+        "\n" . $sentinel . "\n",
+        "\r\n" . $sentinel . "\r\n",
+    ];
+
+    foreach ($variants as $suffix) {
+        if ($suffix === '') {
+            continue;
+        }
+        if (str_ends_with($text, $suffix)) {
+            $text = substr($text, 0, -strlen($suffix));
+            $text = rtrim($text, "\r\n");
+            break;
+        }
+    }
+
+    return $text;
+}
+
 function stream_emit_event(?array &$streamOptions, string $type, array $payload = []): void {
     if (!is_array($streamOptions)) {
         return;
@@ -73,12 +107,16 @@ function stream_emit_event(?array &$streamOptions, string $type, array $payload 
 
         switch ($type) {
             case 'token':
-                $text = isset($payload['text']) ? (string)$payload['text'] : '';
-                if ($text !== '') {
-                    if (!isset($streamOptions['state']['accumulated'])) {
-                        $streamOptions['state']['accumulated'] = $text;
-                    } else {
-                        $streamOptions['state']['accumulated'] .= $text;
+                if (isset($payload['accumulated']) && is_string($payload['accumulated'])) {
+                    $streamOptions['state']['accumulated'] = $payload['accumulated'];
+                } else {
+                    $text = isset($payload['text']) ? (string)$payload['text'] : '';
+                    if ($text !== '') {
+                        if (!isset($streamOptions['state']['accumulated'])) {
+                            $streamOptions['state']['accumulated'] = $text;
+                        } else {
+                            $streamOptions['state']['accumulated'] .= $text;
+                        }
                     }
                 }
                 break;
@@ -435,6 +473,7 @@ function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config
             ]);
         }
 
+        $replyText = strip_stream_stop_sentinel($replyText);
         $replyText = trim_trailing_ellipsis($replyText);
 
         $eid = create_exchange(
@@ -557,6 +596,20 @@ function call_azure_api($active_config, $chat_id, $msg, array $options = []) {
 
         if (is_array($streamOptions)) {
             $payload['stream'] = true;
+        }
+
+        if (STREAM_STOP_SENTINEL !== '' && !$is_gpt5) {
+            $stopList = [
+                STREAM_STOP_SENTINEL,
+                "\n" . STREAM_STOP_SENTINEL,
+                STREAM_STOP_SENTINEL . "\n",
+            ];
+            if (!empty($payload['stop']) && is_array($payload['stop'])) {
+                $stopList = array_merge($payload['stop'], $stopList);
+            }
+            $payload['stop'] = array_values(array_unique(array_filter($stopList, static function ($value) {
+                return is_string($value) && $value !== '';
+            })));
         }
 
         if ($is_gpt5) {
@@ -870,6 +923,7 @@ function process_api_response(
 
     // 3b) Normal success
     $answer_text = $data['choices'][0]['message']['content'] ?? 'No response text found.';
+    $answer_text = strip_stream_stop_sentinel($answer_text);
     $answer_text = trim_trailing_ellipsis($answer_text);
     $eid = create_exchange($uiDeployment, $chat_id, $storedPrompt, $answer_text, $wfId);
     if (is_array($oversizeMeta) && !empty($oversizeMeta['document_id'])) {
@@ -1163,6 +1217,8 @@ function execute_api_call_streaming($url, array $payload, array $headers, array 
         'finish_reason' => null,
         'usage'         => null,
     ];
+    $sentinel = STREAM_STOP_SENTINEL;
+    $finishEmitted = false;
     $heartbeatInterval = isset($streamOptions['heartbeat_interval'])
         ? max(1, (int)$streamOptions['heartbeat_interval'])
         : 8;
@@ -1178,6 +1234,34 @@ function execute_api_call_streaming($url, array $payload, array $headers, array 
 
     $emit = function (string $type, array $data = []) use (&$streamOptions) {
         stream_emit_event($streamOptions, $type, $data);
+    };
+
+    $stripTrailingSentinel = static function (string $text) use ($sentinel): array {
+        if ($sentinel === '') {
+            return [$text, false];
+        }
+
+        $variants = [
+            $sentinel,
+            $sentinel . "\n",
+            $sentinel . "\r\n",
+            "\n" . $sentinel,
+            "\r\n" . $sentinel,
+            "\n" . $sentinel . "\n",
+            "\r\n" . $sentinel . "\r\n",
+        ];
+
+        foreach ($variants as $variant) {
+            if ($variant === '') {
+                continue;
+            }
+            if (str_ends_with($text, $variant)) {
+                $trimmed = substr($text, 0, -strlen($variant));
+                return [rtrim($trimmed, "\r\n"), true];
+            }
+        }
+
+        return [$text, false];
     };
 
     $extractDeltaText = static function ($content) {
@@ -1213,7 +1297,7 @@ function execute_api_call_streaming($url, array $payload, array $headers, array 
         CURLOPT_RETURNTRANSFER => false,
         CURLOPT_FOLLOWLOCATION => false,
         CURLOPT_HEADER         => false,
-        CURLOPT_WRITEFUNCTION  => function ($chRef, $data) use (&$buffer, &$metadata, &$accumulated, &$streamOptions, $emit, &$lastHeartbeat, $heartbeatInterval, $shouldAbort, &$aborted, $extractDeltaText) {
+        CURLOPT_WRITEFUNCTION  => function ($chRef, $data) use (&$buffer, &$metadata, &$accumulated, &$streamOptions, $emit, &$lastHeartbeat, $heartbeatInterval, $shouldAbort, &$aborted, $extractDeltaText, $stripTrailingSentinel, &$finishEmitted, $sentinel) {
             if ($data === '') {
                 return 0;
             }
@@ -1250,6 +1334,8 @@ function execute_api_call_streaming($url, array $payload, array $headers, array 
                     if ($metadata['finish_reason'] === null) {
                         $metadata['finish_reason'] = $aborted ? 'user_cancelled' : 'stop';
                         $emit('finish', ['finish_reason' => $metadata['finish_reason']]);
+                        $finishEmitted = true;
+                        $streamOptions['state']['finish_reason'] = $metadata['finish_reason'];
                     }
                     continue;
                 }
@@ -1280,23 +1366,37 @@ function execute_api_call_streaming($url, array $payload, array $headers, array 
                         $textRaw = $extractDeltaText($delta['content']);
                     }
 
-                    $textToAppend = $textRaw;
-                    if ($textToAppend !== '') {
-                        $currentAccumulated = $accumulated;
-                        if ($currentAccumulated !== '' && str_starts_with($textToAppend, $currentAccumulated)) {
-                            $textToAppend = substr($textToAppend, strlen($currentAccumulated));
-                        } elseif ($currentAccumulated !== '' && str_starts_with($currentAccumulated, $textToAppend)) {
-                            $textToAppend = '';
-                        }
-                    }
+                    $candidate = $accumulated . $textRaw;
+                    [$cleanCandidate, $sentinelHit] = $stripTrailingSentinel($candidate);
+                    $previousAccumulated = $accumulated;
+                    $accumulated = $cleanCandidate;
+                    $streamOptions['state']['accumulated'] = $accumulated;
 
-                    if ($textToAppend !== '') {
-                        $accumulated .= $textToAppend;
-                        $streamOptions['state']['accumulated'] = $accumulated;
+                    $shouldEmitToken = ($textRaw !== '') || $sentinelHit;
+                    if ($shouldEmitToken) {
+                        $prevLen = strlen($previousAccumulated);
+                        $currLen = strlen($accumulated);
+                        $deltaToEmit = '';
+                        if ($currLen >= $prevLen) {
+                            $deltaToEmit = substr($accumulated, $prevLen);
+                            if ($deltaToEmit === false) {
+                                $deltaToEmit = '';
+                            }
+                        }
                         $emit('token', [
-                            'text' => $textToAppend,
+                            'text' => $deltaToEmit,
                             'accumulated' => $accumulated
                         ]);
+                    }
+
+                    if ($sentinelHit && !$finishEmitted) {
+                        $metadata['finish_reason'] = 'stop';
+                        $emit('finish', [
+                            'finish_reason' => 'stop',
+                            'origin' => 'sentinel'
+                        ]);
+                        $finishEmitted = true;
+                        $streamOptions['state']['finish_reason'] = 'stop';
                     }
 
                     if (isset($delta['reasoning_content']) && is_array($delta['reasoning_content'])) {
@@ -1323,6 +1423,8 @@ function execute_api_call_streaming($url, array $payload, array $headers, array 
                     if (isset($choice['finish_reason']) && $choice['finish_reason'] !== null) {
                         $metadata['finish_reason'] = $choice['finish_reason'];
                         $emit('finish', ['finish_reason' => $metadata['finish_reason']]);
+                        $finishEmitted = true;
+                        $streamOptions['state']['finish_reason'] = $metadata['finish_reason'];
                     }
                 }
             }
@@ -1381,9 +1483,13 @@ function execute_api_call_streaming($url, array $payload, array $headers, array 
     if ($finalFinish === null) {
         $finalFinish = $aborted ? 'user_cancelled' : 'stop';
         $emit('finish', ['finish_reason' => $finalFinish]);
+        $finishEmitted = true;
+        $streamOptions['state']['finish_reason'] = $finalFinish;
     }
 
     $finalText = $streamOptions['state']['accumulated'] ?? $accumulated;
+    $finalText = strip_stream_stop_sentinel($finalText);
+    $streamOptions['state']['accumulated'] = $finalText;
     $result = [
         'id'        => $metadata['id'] ?? ('stream-' . bin2hex(random_bytes(6))),
         'object'    => 'chat.completion',
