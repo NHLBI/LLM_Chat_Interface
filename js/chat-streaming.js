@@ -183,6 +183,16 @@ function finalizeAssistantStream(finalPayload) {
     $('.waiting-indicator').hide();
 
     var streamContext = activeAssistantStream;
+    var promptDocs = null;
+    if (finalPayload && Array.isArray(finalPayload.prompt_documents)) {
+        promptDocs = finalPayload.prompt_documents;
+    } else if (Array.isArray(streamContext.promptDocuments)) {
+        promptDocs = streamContext.promptDocuments;
+    }
+    if (streamContext.userMessageElement && promptDocs) {
+        renderMessageAttachments(streamContext.userMessageElement, promptDocs);
+    }
+
     var finalReply = (finalPayload && typeof finalPayload.reply === 'string')
         ? finalPayload.reply
         : (streamContext.accumulatedText || '');
@@ -329,7 +339,9 @@ function startAssistantStream(request) {
         pendingStop: false,
         stopVisible: false,
         started: false,
-        cursorFadeTimeout: null
+        cursorFadeTimeout: null,
+        userMessageElement: request.userMessageElement || null,
+        promptDocuments: Array.isArray(request.promptDocuments) ? request.promptDocuments.slice() : null
     };
 
     streamUi.controls.stop.on('click', requestAssistantStreamStop);
@@ -498,6 +510,9 @@ function handleAssistantStreamEvent(event) {
     }
 
     if (event.type === 'final') {
+        if (event.data && Array.isArray(event.data.prompt_documents)) {
+            activeAssistantStream.promptDocuments = event.data.prompt_documents;
+        }
         finalizeAssistantStream(event.data || {});
         return;
     }

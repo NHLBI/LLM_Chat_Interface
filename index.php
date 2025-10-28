@@ -221,6 +221,7 @@ foreach(array_keys($models) as $m) {
             <?php require_once 'staticpages/document_uploader.php'; ?> 
             <?php require_once 'staticpages/canned_modal.php'; ?> 
             <?php require_once 'staticpages/document_excerpt_modal.php'; ?> 
+            <?php require_once 'staticpages/image_preview_modal.php'; ?> 
 
             <h1 id="print-title"></h1>
 
@@ -298,7 +299,7 @@ foreach(array_keys($models) as $m) {
 
 <?php if ($config[$deployment]['handles_temperature']) { ?>
 
-                <form onsubmit="saveMessage()" id="temperature_select" action="" method="post" >
+                <form onsubmit="saveMessage()" id="temperature_select" action="" method="post" style="display:inline-block; margin-top:10px;">
                     <label for="temperature">Temperature</label>: <select title="Choose a temperature setting between 0 and 2. A temperature of 0 means the responses will be very deterministic (meaning you almost always get the same response to a given prompt). A temperature of 2 means the responses can vary substantially." name="temperature" onchange="document.getElementById('temperature_select').submit();">
                         <?php
                         foreach ($temperatures as $t) {
@@ -411,7 +412,6 @@ foreach(array_keys($models) as $m) {
 <script src="js/popup.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/listeners.js"></script>
-<script src="js/user_images.js"></script>
 <script src="js/chat-base.js"></script>
 <script src="js/chat-docs.js"></script>
 <script src="js/chat-tts.js"></script>

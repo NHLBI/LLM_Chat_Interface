@@ -65,6 +65,7 @@ CREATE TABLE `document` (
   `full_text_available` tinyint(1) NOT NULL DEFAULT 0,
   `source` varchar(24) DEFAULT NULL,
   `deleted` tinyint(1) DEFAULT 0,
+  `enabled` tinyint(1) NOT NULL DEFAULT 1,
   `timestamp` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `exchange_id` int(11) DEFAULT NULL,
   PRIMARY KEY (`id`),
@@ -117,7 +118,9 @@ CREATE TABLE `exchange_document` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `exchange_id` int(11) NOT NULL,
   `document_id` int(11) NOT NULL,
+  `was_enabled` tinyint(1) NOT NULL DEFAULT 1,
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_exchange_document` (`exchange_id`,`document_id`),
   KEY `exchange_id` (`exchange_id`),
   KEY `document_id` (`document_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=5666 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;

@@ -6,19 +6,96 @@ var searchingIndicator;
 var chatTitlesContainer;
 var popup;
 var originalMessagePlaceholder = '';
+var toastContainerEl = null;
+
+function ensureToastContainer() {
+    if (toastContainerEl && toastContainerEl.length) {
+        return toastContainerEl;
+    }
+    toastContainerEl = $('<div class="toast-container" aria-live="polite" aria-atomic="true"></div>');
+    $('body').append(toastContainerEl);
+    return toastContainerEl;
+}
+
+function showToastMessage(message, options) {
+    if (!message) {
+        return;
+    }
+    var opts = options || {};
+    var container = ensureToastContainer();
+    var toast = $('<div class="toast-message" role="status"></div>');
+    toast.text(message);
+    container.append(toast);
+
+    requestAnimationFrame(function () {
+        toast.addClass('is-visible');
+    });
+
+    var duration = Number.isFinite(opts.duration) && opts.duration > 0 ? opts.duration : 4200;
+    setTimeout(function () {
+        toast.removeClass('is-visible');
+        setTimeout(function () {
+            toast.remove();
+        }, 250);
+    }, duration);
+}
+
+window.showToastMessage = showToastMessage;
 
 var scrollTimeout;
 
-var DOCUMENT_ICON_MAP = {
-    pdf: 'images/icon_pdf.svg',
-    doc: 'images/icon_docx.svg',
-    docx: 'images/icon_docx.svg',
-    ppt: 'images/icon_pptx.svg',
-    pptx: 'images/icon_pptx.svg',
-    xls: 'images/icon_xlsx.svg',
-    xlsx: 'images/icon_xlsx.svg',
-    csv: 'images/icon_csv.svg',
-    json: 'images/icon_csv.svg'
+// Build a safe, app-aware asset path: respects window.APP_PATH or <meta name="app-path">
+function old_assetPath(rel) {
+    var base = (window.APP_PATH ||
+               (document.head.querySelector('meta[name="app-path"]') &&
+                document.head.querySelector('meta[name="app-path"]').content) || '').replace(/\/+$/, '');
+    rel = String(rel || '').replace(/^\/+/, '');
+    // If base is set (e.g., "/chatdev"), generate "/chatdev/<rel>"; else return "/<rel>"
+    return (base ? base : '') + '/' + rel;
+}
+
+function assetPath(rel) {
+  var relClean = String(rel || '').replace(/^\/+/, '');
+  var app = (typeof window.application_path === 'string' ? window.application_path : '').trim();
+  app = app.replace(/^\/+|\/+$/g, ''); // strip leading/trailing slashes
+  return '/' + (app ? app + '/' : '') + relClean;
+}
+
+
+// Canonical icon filenames (no leading "images/")
+var ICONS = {
+  pdf:   'images/icon_pdf.svg',
+  doc:   'images/icon_docx.svg',
+  docx:  'images/icon_docx.svg',
+  rtf:   'images/icon_docx.svg',
+  txt:   'images/icon_docx.svg',     // fallback to docx if you don't have this
+  md:    'images/icon_docx.svg',      // fallback to docx if you don't have this
+  json:  'images/icon_xlsx.svg',    // fallback to csv/docx if you don't have this
+  csv:   'images/icon_csv.svg',
+  xls:   'images/icon_xlsx.svg',
+  xlsx:  'images/icon_xlsx.svg',
+  ppt:   'images/icon_pptx.svg',
+  pptx:  'images/icon_pptx.svg',
+  image: 'images/icon_image.svg',
+  audio: 'images/icon_audio.svg',
+  video: 'images/icon_video.svg',
+  file:  'images/icon_file.svg'
+};
+
+// Map common MIME types to canonical keys used above
+var MIME_ALIAS = {
+  'application/pdf': 'pdf',
+  'application/msword': 'doc',
+  'application/rtf': 'rtf',
+  'text/plain': 'txt',
+  'text/markdown': 'md',
+  'application/json': 'json',
+  'text/csv': 'csv',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx'
 };
 
 function waitForImagesToLoad(container, callback) {
@@ -158,28 +235,81 @@ function addCopyButton(messageElement, rawMessageContent) {
 }
 
 function resolveDocumentIconPath(docType, name) {
-    var lowered = (docType || '').toLowerCase();
-    if (!lowered && name) {
-        var extMatch = name.match(/\.([a-z0-9]+)$/i);
-        if (extMatch) {
-            lowered = extMatch[1].toLowerCase();
+    var t = (docType || '').toLowerCase().trim();
+    var ext = '';
+    if (!t && name) {
+        var m = String(name).toLowerCase().match(/\.([a-z0-9]+)$/i);
+        if (m) ext = m[1];
+    }
+
+    // Prefer explicit MIME mapping
+    if (t && MIME_ALIAS[t]) {
+        return assetPath(ICONS[MIME_ALIAS[t]] || ICONS.file);
+    }
+
+    // Generic media groups
+    if (t.indexOf('image/') === 0) return assetPath(ICONS.image);
+    if (t.indexOf('audio/') === 0) return assetPath(ICONS.audio);
+    if (t.indexOf('video/') === 0) return assetPath(ICONS.video);
+
+    // Extension mapping
+    if (ext && ICONS[ext]) return assetPath(ICONS[ext]);
+
+    // Fallback
+    return assetPath(ICONS.file);
+}
+
+function openImagePreview(imagePayload, trigger) {
+    if (!imagePayload) {
+        return;
+    }
+
+    var src = imagePayload.src || imagePayload.document_content || imagePayload.document_text || '';
+    var $trigger = null;
+    var focusTarget = null;
+
+    if (window.jQuery && trigger) {
+        if (trigger instanceof window.jQuery) {
+            $trigger = trigger;
+        } else {
+            $trigger = window.jQuery(trigger);
+        }
+        if ($trigger && !$trigger.length) {
+            $trigger = null;
         }
     }
 
-    if (lowered && DOCUMENT_ICON_MAP[lowered]) {
-        return DOCUMENT_ICON_MAP[lowered];
+    if ($trigger && $trigger.length) {
+        focusTarget = $trigger.get(0);
+        $trigger.addClass('message-attachment--loading');
+        $trigger.attr('aria-busy', 'true');
+    } else if (trigger && trigger.nodeType === 1) {
+        focusTarget = trigger;
     }
 
-    if (lowered.indexOf('image/') === 0) {
-        return 'images/icon_image.svg';
+    try {
+        if (typeof window.showImagePreviewModal === 'function' && src) {
+            window._imagePreviewReturnFocus = focusTarget || null;
+            window.showImagePreviewModal({
+                name: imagePayload.name || imagePayload.document_name || 'Image Preview',
+                type: imagePayload.type || imagePayload.document_type || '',
+                src: src,
+                document_id: imagePayload.document_id || imagePayload.id || null
+            });
+            return;
+        }
+
+        if (imagePayload.document_id) {
+            openDocumentExcerpt(imagePayload.document_id, trigger);
+        } else {
+            alert('Unable to display an image preview for this attachment.');
+        }
+    } finally {
+        if ($trigger && $trigger.length) {
+            $trigger.removeClass('message-attachment--loading');
+            $trigger.removeAttr('aria-busy');
+        }
     }
-    if (lowered.indexOf('audio/') === 0) {
-        return 'images/icon_audio.svg';
-    }
-    if (lowered.indexOf('video/') === 0) {
-        return 'images/icon_video.svg';
-    }
-    return 'images/icon_file.svg';
 }
 
 function openDocumentExcerpt(docId, trigger) {
@@ -187,40 +317,61 @@ function openDocumentExcerpt(docId, trigger) {
         return;
     }
 
-    var modal = $('#documentExcerptModal');
-    if (!modal.length) {
-        return;
-    }
-
-    modal.attr('data-document-id', docId);
-    modal.fadeIn(150);
-    $('body').addClass('modal-open');
-
-    fetch('document_excerpt.php?id=' + encodeURIComponent(docId), {
-        method: 'GET',
-        headers: {
-            'X-Requested-With': 'XMLHttpRequest'
+    var $trigger = null;
+    if (window.jQuery && trigger) {
+        if (trigger instanceof window.jQuery) {
+            $trigger = trigger;
+        } else {
+            $trigger = window.jQuery(trigger);
         }
-    })
-        .then(function (response) {
-            if (!response.ok) {
-                throw new Error('Unable to load document excerpt');
-            }
-            return response.text();
-        })
-        .then(function (html) {
-            modal.find('.document-excerpt__content').html(html);
-        })
-        .catch(function (err) {
-            console.error(err);
-            modal.find('.document-excerpt__content').text('Unable to load document excerpt.');
-        });
-
-    if (trigger && trigger.length) {
-        modal.data('invoker', trigger);
-    } else {
-        modal.removeData('invoker');
+        if ($trigger && !$trigger.length) {
+            $trigger = null;
+        }
     }
+
+    if ($trigger) {
+        $trigger.addClass('message-attachment--loading');
+        $trigger.attr('aria-busy', 'true');
+    }
+
+    window.jQuery.ajax({
+        url: 'document_excerpt.php',
+        method: 'GET',
+        dataType: 'json',
+        data: { document_id: docId },
+        success: function (response) {
+            if (!response || response.ok !== true || !response.document) {
+                alert('Unable to load the document preview at this time.');
+                return;
+            }
+
+            if (typeof window.showDocumentExcerptModal === 'function') {
+                var focusTarget = null;
+                if ($trigger && $trigger.length) {
+                    focusTarget = $trigger.get(0);
+                } else if (trigger && trigger.nodeType === 1) {
+                    focusTarget = trigger;
+                }
+                window._documentExcerptReturnFocus = focusTarget;
+                window.showDocumentExcerptModal(response.document);
+            } else {
+                console.warn('showDocumentExcerptModal is not available on the window object.');
+            }
+        },
+        error: function (xhr) {
+            var message = 'Unable to load the document preview.';
+            if (xhr && xhr.responseJSON && xhr.responseJSON.message) {
+                message = xhr.responseJSON.message;
+            }
+            alert(message);
+        },
+        complete: function () {
+            if ($trigger) {
+                $trigger.removeClass('message-attachment--loading');
+                $trigger.removeAttr('aria-busy');
+            }
+        }
+    });
 }
 
 function renderMessageAttachments(messageElement, documents) {
@@ -255,6 +406,22 @@ function renderMessageAttachments(messageElement, documents) {
         return;
     }
 
+    var docMap = (typeof chatId !== 'undefined' && window.chatDocumentsByChatId)
+        ? (window.chatDocumentsByChatId[chatId] || null)
+        : null;
+    if (docMap) {
+        normalized = normalized.map(function (doc) {
+            if (!doc || typeof doc !== 'object') {
+                return doc;
+            }
+            var docId = doc.document_id || doc.id;
+            if (docId && docMap[docId]) {
+                return Object.assign({}, docMap[docId], doc);
+            }
+            return doc;
+        });
+    }
+
     var container = $('<div class="message-attachments" role="list"></div>');
 
     normalized.forEach(function (doc) {
@@ -270,32 +437,28 @@ function renderMessageAttachments(messageElement, documents) {
         var docDeleted = doc.document_deleted === 1 || doc.document_deleted === '1';
         var isImage = docType.indexOf('image/') === 0;
         var isReady = !docDeleted && (isImage || doc.document_ready === true || doc.document_ready === 1 || doc.document_ready === '1' || docSource === 'inline' || docSource === 'paste' || docSource === 'image');
-
-        if (isImage && docContent) {
-            var imageWrapper = $('<div class="message-attachment message-attachment--image" role="listitem"></div>');
-            var img = $('<img>', {
-                src: docContent,
-                alt: docName,
-                class: 'message-attachment__image'
-            });
-            if (docDeleted) {
-                imageWrapper.addClass('message-attachment--removed');
-                imageWrapper.attr('aria-label', docName + ' (removed)');
-            }
-            imageWrapper.append(img);
-            container.append(imageWrapper);
-            return;
+        var wasEnabled = true;
+        if (doc.was_enabled !== undefined && doc.was_enabled !== null) {
+            wasEnabled = doc.was_enabled === true || doc.was_enabled === 1 || doc.was_enabled === '1';
         }
 
-        var chip = $('<button type="button" class="message-attachment message-attachment--document" role="listitem"></button>');
+        var chipClass = isImage ? 'message-attachment message-attachment--image' : 'message-attachment message-attachment--document';
+        var chip = $('<button type="button" class="' + chipClass + '" role="listitem"></button>');
         var iconPath = resolveDocumentIconPath(docType, docName);
+
         var icon = $('<img>', {
-            src: iconPath,
-            alt: '',
-            class: 'message-attachment__icon',
-            'aria-hidden': 'true'
+          src: iconPath,
+          alt: '',
+          class: 'message-attachment__icon',
+          'aria-hidden': 'true'
+        }).on('error', function () {
+          if (this.dataset.fallback) return; // avoid loops
+          this.dataset.fallback = '1';
+          this.src = assetPath(ICONS.file);
         });
-        var nameSpan = $('<span class="message-attachment__name"></span>').text(docName);
+
+        var displayName = wasEnabled ? docName : docName + ' (disabled)';
+        var nameSpan = $('<span class="message-attachment__name"></span>').text(displayName);
         chip.append(icon, nameSpan);
 
         if (docDeleted) {
@@ -308,16 +471,38 @@ function renderMessageAttachments(messageElement, documents) {
             var status = $('<span class="message-attachment__status"></span>').text('Processing…');
             chip.append(status);
         } else if (docId) {
-            chip.attr('aria-label', 'Open ' + docName + ' excerpt');
-            chip.on('click keypress', function (event) {
-                if (event.type === 'keypress' && event.key !== 'Enter' && event.key !== ' ') {
-                    return;
-                }
-                event.preventDefault();
-                openDocumentExcerpt(docId, chip);
-            });
+            if (isImage && docContent) {
+                chip.attr('aria-label', 'Open ' + docName + ' image preview');
+                (function (payload) {
+                    chip.on('click keypress', function (event) {
+                        if (event.type === 'keypress' && event.key !== 'Enter' && event.key !== ' ') {
+                            return;
+                        }
+                        event.preventDefault();
+                        openImagePreview(payload, chip);
+                    });
+                })({
+                    name: docName,
+                    type: docType,
+                    src: docContent,
+                    document_id: docId
+                });
+            } else {
+                chip.attr('aria-label', 'Open ' + displayName + ' excerpt');
+                chip.on('click keypress', function (event) {
+                    if (event.type === 'keypress' && event.key !== 'Enter' && event.key !== ' ') {
+                        return;
+                    }
+                    event.preventDefault();
+                    openDocumentExcerpt(docId, chip);
+                });
+            }
         } else {
             chip.prop('disabled', true);
+        }
+
+        if (!wasEnabled && !docDeleted) {
+            chip.addClass('message-attachment--disabled');
         }
 
         if (docSource) {

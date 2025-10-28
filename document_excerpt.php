@@ -91,8 +91,13 @@ try {
     $truncated = false;
 
     if ($isImage) {
-        $excerpt = 'This item is an image; preview is not available. Download from the chat transcript to view the original file.';
-        $hasPreview = false;
+        if ($rawContent !== '') {
+            $excerpt = 'Image preview available.';
+            $hasPreview = true;
+        } else {
+            $excerpt = 'This item is an image; preview is not available. Download from the chat transcript to view the original file.';
+            $hasPreview = false;
+        }
     } elseif ($hasPreview) {
         $excerpt = $rawContent;
         if (function_exists('mb_strlen')) {
@@ -122,6 +127,8 @@ try {
         'has_preview'          => $hasPreview,
         'excerpt_truncated'    => $truncated,
         'generated_at'         => date('c'),
+        'image_src'            => ($isImage && $rawContent !== '') ? $rawContent : null,
+        'document_content'     => (!$isImage && $hasPreview) ? $rawContent : null,
     ];
 
     echo json_encode([

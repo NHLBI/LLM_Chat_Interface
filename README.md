@@ -6,10 +6,11 @@ NHLBI Chat is a chat front-end interface designed to provide staff with a secure
 
 ## Features
 
-- Basic chat interface similar to popular AI chat tools.
-- File upload capability for document analysis. Accepted file formats include .pdf,.docx,.pptx,.txt,.md,.json, and .xml.
-- Uses Azure OpenAI API for generating responses.
-- High-quality speech playback for assistant replies routed through the internal Mocha TTS service, with chunked streaming so audio starts quickly even for long responses.
+- Real-time chat interface with streaming replies, stop/regenerate controls, and syntax-highlighted assistant output.
+- File upload capability for document analysis. Accepted file formats include .pdf, .docx, .pptx, .txt, .md, .json, and .xml.
+- Large image uploads are automatically downsampled with PHP/GD width and byte caps so previews remain fast while preserving aspect ratios; limits are configurable in `[images]`.
+- Responses are generated via Microsoft Azure OpenAI, with deployment and temperature settings stored per chat.
+- High-quality speech playback for assistant replies routed through the internal Mocha TTS service, including session-aware stop/resume, fade-in/out smoothing, and natural punctuation-based chunking so streamed audio stitches seamlessly.
 - Automatically promotes oversized pasted prompts into queued documents so the full text can be retrieved asynchronously without exhausting the chat context.
 
 ## Building and Launching
@@ -138,6 +139,7 @@ Before launching the application, you need to make the following changes to the 
 - Update the OpenID and LDAP sections with your institution's authentication details.
 - Customize the `[app]` section with your application's title, logo, and disclosure information.
 - Ensure that the `[database]` section has the correct credentials for your database.
+- Tune the `[images]` section (width/byte ceilings and `keep_original`) to control PHP-based downsampling for large uploads.
 
 Note that the provided `example_chat_config.ini` serves as a template and must be filled with your specific details.
 

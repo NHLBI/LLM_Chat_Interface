@@ -104,6 +104,14 @@ if (isset($_FILES['uploadDocument'])) {
     $uploadedDocuments = [];
     $queuedDocuments   = [];
     $fileCount = count($_FILES['uploadDocument']['name']);
+    $imageConfig = get_image_processing_config($config ?? []);
+    $imageDownsampleOptions = [
+        'max_width_px'       => $imageConfig['max_width_px'],
+        'max_bytes'          => $imageConfig['max_bytes'],
+        'keep_original'      => $imageConfig['keep_original'],
+        'min_width'          => 96,
+        'original_store_dir' => $workRoot . '/original-images',
+    ];
 
     for ($i = 0; $i < $fileCount; $i++) {
         if ($_FILES['uploadDocument']['error'][$i] !== UPLOAD_ERR_OK) {
@@ -115,8 +123,18 @@ if (isset($_FILES['uploadDocument'])) {
         $mimeType      = mime_content_type($tmpName);
         $originalSize  = @filesize($tmpName);
 
-        // ===== IMAGES: store as before; NO indexing =====
+        // ===== IMAGES: downscale if needed, then store inline (no indexing) =====
         if (strpos($mimeType, 'image/') === 0) {
+            $downscaleMeta = downscale_image_if_needed($tmpName, $imageDownsampleOptions);
+            if (!empty($downscaleMeta['error'])) {
+                error_log("Image downscale skipped: " . $downscaleMeta['error']);
+            }
+
+            $postProcessMime = mime_content_type($tmpName);
+            if ($postProcessMime) {
+                $mimeType = $postProcessMime;
+            }
+
             $base64Image = local_image_to_data_url($tmpName, $mimeType);
             $document_id = insert_document($user, $chat_id, $originalName, $mimeType, $base64Image, [
                 'compute_tokens' => false,
@@ -131,7 +149,33 @@ if (isset($_FILES['uploadDocument'])) {
             } catch (Throwable $e) {
                 error_log("Failed to set image source for document_id {$document_id}: " . $e->getMessage());
             }
+            $processedSize = @filesize($tmpName);
+            $originalPreserved = !empty($downscaleMeta['original_copy_path']);
+            if (isset($downscaleMeta['original_copy_path'])) {
+                unset($downscaleMeta['original_copy_path']);
+            }
+            $fileSha = false;
+            if (is_file($tmpName)) {
+                $fileSha = @hash_file('sha256', $tmpName);
+            }
             @unlink($tmpName);
+            $imageAdjustments = array_merge($downscaleMeta, [
+                'processed_bytes' => $processedSize !== false ? (int)$processedSize : null,
+                'original_preserved' => $originalPreserved,
+            ]);
+
+            try {
+                if ($fileSha) {
+                    $stmt = $pdo->prepare("UPDATE document SET file_sha256 = :sha WHERE id = :id");
+                    $stmt->execute([
+                        'sha' => $fileSha,
+                        'id'  => $document_id,
+                    ]);
+                }
+            } catch (Throwable $e) {
+                error_log("Failed to set file_sha256 for image document_id {$document_id}: " . $e->getMessage());
+            }
+
             $uploadedDocuments[] = [
                 'id'                => (int)$document_id,
                 'name'              => $originalName,
@@ -140,6 +184,7 @@ if (isset($_FILES['uploadDocument'])) {
                 'inline_only'      => true,
                 'original_size'     => $originalSize !== false ? (int)$originalSize : null,
                 'parsed_size'       => null,
+                'image_adjustments' => $imageAdjustments,
             ];
             continue;
         }

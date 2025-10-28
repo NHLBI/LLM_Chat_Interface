@@ -368,6 +368,26 @@ fetch('upload.php', {
   const uploadedDocs = Array.isArray(result.uploaded_documents) ? result.uploaded_documents : [];
   const queuedDocs   = uploadedDocs.filter(doc => doc && doc.queued);
 
+  if (typeof window.showToastMessage === 'function') {
+    uploadedDocs.forEach(doc => {
+      if (!doc || !doc.image_adjustments) {
+        return;
+      }
+      const adjustments = doc.image_adjustments;
+      const downscaled = Boolean(adjustments.downscaled) ||
+        (Number.isFinite(adjustments.original_width) && Number.isFinite(adjustments.width) && adjustments.width < adjustments.original_width);
+      if (!downscaled) {
+        return;
+      }
+      const width = Number.isFinite(adjustments.width) ? Math.round(adjustments.width) : null;
+      if (width) {
+        window.showToastMessage(`Downscaled to ${width}px to fit limits.`);
+      } else {
+        window.showToastMessage('Image downscaled to fit upload limits.');
+      }
+    });
+  }
+
   // 3) Close the upload modal
   closeUploadModal();
   console.log("Upload complete; modal closed.");

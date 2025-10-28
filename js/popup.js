@@ -1,6 +1,56 @@
 //------------------------------------------
 // Helper:   3247323 → 3.2 M, 64353 → 64 K
 //------------------------------------------
+if (typeof window.extractDocumentMetadataFromElement !== 'function') {
+    window.extractDocumentMetadataFromElement = function (element) {
+        if (!element) {
+            return null;
+        }
+        var $el;
+        if (window.jQuery && element instanceof window.jQuery) {
+            $el = element;
+        } else {
+            $el = $(element);
+        }
+        if (!$el || !$el.length) {
+            return null;
+        }
+        var idAttr = $el.attr('data-document-id');
+        var docId = parseInt(idAttr || '0', 10);
+        if (!Number.isFinite(docId) || docId <= 0) {
+            return null;
+        }
+
+        var enabledAttr = $el.attr('data-document-enabled');
+        var enabled = !(enabledAttr === '0' || enabledAttr === 'false');
+
+        var readyAttr = $el.attr('data-document-ready');
+        var ready = readyAttr === '1' || readyAttr === 'true';
+
+        var tokenAttr = $el.attr('data-document-tokens');
+        var tokens = parseInt(tokenAttr || '0', 10);
+        if (!Number.isFinite(tokens)) {
+            tokens = 0;
+        }
+
+        var name = $el.attr('data-document-name') || $el.find('.document-title').text().trim();
+
+        var meta = {
+            document_id: docId,
+            document_name: name,
+            document_type: $el.attr('data-document-type') || '',
+            document_source: $el.attr('data-document-source') || '',
+            source: $el.attr('data-document-source') || '',
+            document_ready: ready ? 1 : 0,
+            document_token_length: tokens,
+            document_deleted: 0,
+            enabled: enabled,
+            was_enabled: enabled
+        };
+        return meta;
+    };
+}
+
 function prettyTokens(n) {
     // If Intl.NumberFormat with compact notation is supported
     if (Intl && Intl.NumberFormat) {
@@ -80,6 +130,65 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                     message = xhr.responseJSON.message;
                 }
                 alert(message);
+            }
+            });
+    }
+
+    function fetchImagePreview($trigger, docId, chatId, fallbackMeta) {
+        if (!$trigger || $trigger.length === 0 || !docId) {
+            return;
+        }
+
+        $trigger.addClass('document-title-loading');
+        $.ajax({
+            url: 'document_excerpt.php',
+            method: 'GET',
+            dataType: 'json',
+            data: { document_id: docId },
+            success: function (response) {
+                if (!response || response.ok !== true || !response.document) {
+                    alert('Unable to display an image preview for this document.');
+                    return;
+                }
+
+                const doc = response.document || {};
+                const imageSrc = doc.image_src || doc.document_content || doc.content || '';
+                if (!imageSrc) {
+                    alert('Unable to display an image preview for this document.');
+                    return;
+                }
+
+                var payload = Object.assign({}, fallbackMeta || {}, {
+                    document_id: docId,
+                    document_name: doc.name || (fallbackMeta && fallbackMeta.document_name) || '',
+                    document_type: doc.type || (fallbackMeta && fallbackMeta.document_type) || '',
+                    document_source: doc.source || (fallbackMeta && fallbackMeta.document_source) || 'image',
+                    document_content: imageSrc,
+                    document_text: imageSrc,
+                    src: imageSrc
+                });
+
+                if (window.chatDocumentsByChatId) {
+                    window.chatDocumentsByChatId[chatId] = window.chatDocumentsByChatId[chatId] || {};
+                    window.chatDocumentsByChatId[chatId][docId] = Object.assign(
+                        window.chatDocumentsByChatId[chatId][docId] || {},
+                        payload
+                    );
+                }
+
+                if (typeof openImagePreview === 'function') {
+                    openImagePreview(payload, $trigger);
+                } else if (typeof window.openImagePreview === 'function') {
+                    window.openImagePreview(payload, $trigger);
+                } else {
+                    alert('Image preview is not available at this time.');
+                }
+            },
+            error: function () {
+                alert('Unable to display an image preview for this document.');
+            },
+            complete: function () {
+                $trigger.removeClass('document-title-loading');
             }
         });
     }
@@ -291,9 +400,12 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                     : [];
 
                 // Now docEntries is an array of [ [docKey, docTitle], ... ] for valid docs only
+                window.chatDocumentsByChatId = window.chatDocumentsByChatId || {};
+                window.chatDocumentsByChatId[chat.id] = {};
 
                 if (deployment != 'azure-dall-e-3' && docEntries.length > 0) {
                     const totalDocs = docEntries.length;
+                    const docMapForChat = {};
 
                     const documentHeadingSpan = $('<span>', {
                         class: 'document-heading',
@@ -362,6 +474,10 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                             ? docTokensRaw
                             : parseInt(docTokensRaw, 10);
 
+                        const docEnabled = !(docData.enabled === false
+                            || docData.enabled === 0
+                            || docData.enabled === '0');
+
                         if (!docSourceRaw) {
                             if (docFullText) {
                                 docSourceRaw = 'inline';
@@ -402,6 +518,9 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                         if (Number.isFinite(docTokenLength) && docTokenLength > 0) {
                             tooltipParts.push(`≈ ${prettyTokens(docTokenLength)} tokens`);
                         }
+                        if (!docEnabled) {
+                            tooltipParts.push('Disabled for prompts. Click the icon to re-enable.');
+                        }
                         const tooltip = tooltipParts.filter(Boolean).join('\n').trim();
 
                         if (Number.isFinite(docTokenLength) && docTokenLength > 0) {
@@ -416,14 +535,34 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                             class: `document-item ${isReady ? 'doc-ready' : 'doc-processing'}`,
                             title: tooltip || docType
                         });
+                        if (!docEnabled) {
+                            docItem.addClass('document-item--disabled');
+                        }
+                        docItem.attr({
+                            'data-document-id': numericDocId,
+                            'data-chat-id': chat.id,
+                            'data-document-name': docTitle,
+                            'data-document-type': docType,
+                            'data-document-source': docSourceRaw || '',
+                            'data-document-ready': isReady ? '1' : '0',
+                            'data-document-enabled': docEnabled ? '1' : '0',
+                            'data-document-tokens': Number.isFinite(docTokenLength) ? docTokenLength : '',
+                            'data-base-tooltip': tooltip || docType || ''
+                        });
 
                         const docTitleSpan = $('<span>', {
                             class: 'document-title',
-                            html: `${itemNum}. ${displayTitle}`,
+                            html: `${itemNum}. ${displayTitle}${docEnabled ? '' : ' (disabled)'}`,
                             title: tooltip || docType
                         });
+                        if (!docEnabled) {
+                            docTitleSpan.addClass('document-title--disabled');
+                        }
                         docTitleSpan.attr('data-document-id', numericDocId);
                         docTitleSpan.attr('data-chat-id', chat.id);
+                        docTitleSpan.attr('data-base-prefix', `${itemNum}. `);
+                        docTitleSpan.attr('data-base-name', displayTitle);
+                        docTitleSpan.attr('data-base-tooltip', tooltip || docType || '');
                         docTitleSpan.attr('role', 'button');
                         docTitleSpan.attr('tabindex', '0');
 
@@ -442,13 +581,23 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                                 title: statusTitle
                             });
                         } else {
-                            statusLabel = $('<span>', {
-                                class: 'document-status status-ready ready-icon',
-                                role: 'img',
-                                'aria-label': statusTitle,
-                                title: statusTitle
-                            });
-                            statusLabel.html('&#10003;');
+                            statusLabel = $('<button>', {
+                                type: 'button',
+                                class: 'document-status status-ready ready-icon document-status-toggle' + (docEnabled ? '' : ' document-status-toggle--disabled'),
+                                role: 'switch',
+                                'aria-checked': docEnabled ? 'true' : 'false',
+                                'aria-label': docEnabled ? 'Disable this document for future prompts' : 'Currently disabled; click to re-enable',
+                                'data-doc-id': numericDocId,
+                                'data-chat-id': chat.id,
+                                'data-enabled': docEnabled ? 'true' : 'false',
+                                title: docEnabled ? 'Disable this document for future prompts' : 'Currently disabled; click to re-enable'
+                            }).append(
+                                $('<span>', {
+                                    class: 'sr-only',
+                                    text: docEnabled ? 'Enabled' : 'Disabled'
+                                })
+                            );
+                            statusLabel.attr('data-base-title', statusTitle);
                         }
 
                         var showTrash = '';
@@ -475,11 +624,76 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                                 return;
                             }
                             event.preventDefault();
-                            fetchDocumentExcerpt($(this));
+                            var $trigger = $(this);
+                            var docId = numericDocId;
+                            var chatIdForDoc = chat.id;
+
+                            var docMeta = docMapForChat[docId] || null;
+                            if (!docMeta && window.chatDocumentsByChatId && window.chatDocumentsByChatId[chatIdForDoc]) {
+                                docMeta = window.chatDocumentsByChatId[chatIdForDoc][docId] || null;
+                            }
+
+                            var docTypeLower = ((docMeta && docMeta.document_type) || docType || '').toLowerCase();
+                            var docSourceLower = ((docMeta && docMeta.document_source) || docSourceRaw || '').toLowerCase();
+                            var isImageDoc = docTypeLower.indexOf('image/') === 0 || docSourceLower === 'image';
+
+                            if (isImageDoc) {
+                                var imagePayload = docMeta ? Object.assign({}, docMeta) : {
+                                    document_id: docId,
+                                    document_name: docTitle,
+                                    document_type: docType,
+                                    document_source: docSourceRaw || 'image'
+                                };
+                                var imageSrc = imagePayload.document_text || imagePayload.document_content || imagePayload.src || '';
+
+                                if (imageSrc) {
+                                    if (typeof openImagePreview === 'function') {
+                                        openImagePreview(Object.assign({}, imagePayload, {
+                                            src: imageSrc,
+                                            document_content: imageSrc,
+                                            document_text: imageSrc
+                                        }), $trigger);
+                                    } else if (typeof window.openImagePreview === 'function') {
+                                        window.openImagePreview(Object.assign({}, imagePayload, {
+                                            src: imageSrc,
+                                            document_content: imageSrc,
+                                            document_text: imageSrc
+                                        }), $trigger);
+                                    } else {
+                                        alert('Image preview is not available at this time.');
+                                    }
+                                    return;
+                                }
+
+                                fetchImagePreview($trigger, docId, chatIdForDoc, imagePayload);
+                                return;
+                            }
+
+                            fetchDocumentExcerpt($trigger);
                         });
+
+                        const docRecord = {
+                            document_id: numericDocId,
+                            document_name: docTitle,
+                            document_type: docType,
+                            document_source: docSourceRaw,
+                            source: docSourceRaw,
+                            document_ready: isReady ? 1 : 0,
+                            document_token_length: Number.isFinite(docTokenLength) ? docTokenLength : 0,
+                            document_deleted: 0,
+                            enabled: docEnabled,
+                            was_enabled: docEnabled,
+                            document_content: docData.document_content || null
+                        };
+                        if (isImage && docData.document_content) {
+                            docRecord.document_text = docData.document_content;
+                        }
+                        docMapForChat[numericDocId] = docRecord;
 
                         itemNum += 1;
                     });
+
+                    window.chatDocumentsByChatId[chat.id] = docMapForChat;
 
                     if (totalDocs > 0) {
                         const inlineLabel = inlineTokenTotal > 0 ? `${prettyTokens(inlineTokenTotal)} inline` : null;
@@ -614,6 +828,21 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                 }
             });
 
+            $('.chat-titles-container').off('click', '.document-status-toggle');
+            $('.chat-titles-container').on('click', '.document-status-toggle', function (event) {
+                event.preventDefault();
+                const button = $(this);
+                if (button.prop('disabled')) {
+                    return;
+                }
+                const docId = parseInt(button.data('doc-id'), 10);
+                const chatIdAttr = button.data('chat-id');
+                if (!docId || !chatIdAttr) {
+                    return;
+                }
+                toggleDocumentEnabled(button, docId, chatIdAttr);
+            });
+
         },
         error: function(xhr, status, error) {
             searchingIndicator.style.display = 'none';
@@ -644,6 +873,114 @@ function revertEditForm(existingChatId) {
         const chatTitle = $(this).data('chat-title');
         showPopup(e, chatId, chatTitle);
     }).on('mouseleave', startHideTimer);
+}
+
+function toggleDocumentEnabled(button, documentId, chatId) {
+    button.prop('disabled', true).addClass('document-status-toggle--busy');
+
+    fetch('toggle_document.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({
+            document_id: documentId,
+            chat_id: chatId
+        })
+    })
+        .then(function (response) {
+            if (!response.ok) {
+                throw new Error('Unable to toggle document');
+            }
+            return response.json();
+        })
+        .then(function (result) {
+            var enabled = !!(result && result.enabled);
+            var toggleTitle = enabled ? 'Disable this document for future prompts' : 'Currently disabled; click to re-enable';
+
+            button
+                .toggleClass('document-status-toggle--disabled', !enabled)
+                .attr('data-enabled', enabled ? 'true' : 'false')
+                .attr('aria-checked', enabled ? 'true' : 'false')
+                .attr('aria-label', toggleTitle)
+                .attr('title', toggleTitle);
+
+            var srText = button.find('.sr-only').first();
+            if (!srText.length) {
+                srText = $('<span>', { class: 'sr-only' }).appendTo(button);
+            }
+            srText.text(enabled ? 'Enabled' : 'Disabled');
+
+            var docItem = button.closest('.document-item');
+            if (docItem && docItem.length) {
+                docItem.toggleClass('document-item--disabled', !enabled);
+                docItem.attr('data-document-enabled', enabled ? '1' : '0');
+                var titleSpan = docItem.find('.document-title').first();
+                if (titleSpan && titleSpan.length) {
+                    var baseName = titleSpan.data('base-name') || titleSpan.text().replace(/^\d+\.\s*/, '').replace(/\s+\(disabled\)$/i, '');
+                    var basePrefix = titleSpan.data('base-prefix') || '';
+                    titleSpan.data('base-name', baseName);
+                    var enabledLabel = `${basePrefix}${baseName}`;
+                    var disabledLabel = `${basePrefix}${baseName} (disabled)`;
+
+                    if (enabled) {
+                        titleSpan.removeClass('document-title--disabled');
+                        titleSpan.text(enabledLabel);
+                    } else {
+                        titleSpan.addClass('document-title--disabled');
+                        titleSpan.text(disabledLabel);
+                    }
+
+                    var baseTooltip = titleSpan.data('base-tooltip') || '';
+                    var updatedTooltip = baseTooltip;
+                    if (!enabled) {
+                        updatedTooltip = baseTooltip ? `${baseTooltip}\nDisabled for prompts. Click the icon to re-enable.` : 'Disabled for prompts. Click the icon to re-enable.';
+                    }
+                    titleSpan.attr('title', updatedTooltip);
+                    docItem.attr('title', updatedTooltip);
+                }
+            }
+
+            if (window.chatDocumentsByChatId) {
+                window.chatDocumentsByChatId[chatId] = window.chatDocumentsByChatId[chatId] || {};
+                if (!window.chatDocumentsByChatId[chatId][documentId]) {
+                    var fallbackMeta = (typeof window.extractDocumentMetadataFromElement === 'function')
+                        ? window.extractDocumentMetadataFromElement(docItem)
+                        : null;
+                    if (fallbackMeta) {
+                        window.chatDocumentsByChatId[chatId][documentId] = fallbackMeta;
+                    }
+                }
+                if (window.chatDocumentsByChatId[chatId][documentId]) {
+                    var docEntry = window.chatDocumentsByChatId[chatId][documentId];
+                    docEntry.enabled = enabled;
+                    docEntry.was_enabled = enabled;
+                    if (!docEntry.document_name) {
+                        docEntry.document_name = docItem ? docItem.attr('data-document-name') || '' : '';
+                    }
+                    if (!docEntry.document_type) {
+                        docEntry.document_type = docItem ? docItem.attr('data-document-type') || '' : '';
+                    }
+                    if (!docEntry.document_source) {
+                        docEntry.document_source = docItem ? docItem.attr('data-document-source') || '' : '';
+                        docEntry.source = docEntry.document_source;
+                    }
+                }
+            } else {
+                window.chatDocumentsByChatId = {};
+            }
+
+            var searchTerm = $('#search-input').val() || '';
+            fetchAndUpdateChatTitles(searchTerm, false);
+        })
+        .catch(function (err) {
+            console.error('toggleDocumentEnabled error', err);
+            alert('Unable to update the document state. Please try again.');
+        })
+        .finally(function () {
+            button.prop('disabled', false).removeClass('document-status-toggle--busy');
+        });
 }
 
 function copyTitleToClipboard(chatId, title) {

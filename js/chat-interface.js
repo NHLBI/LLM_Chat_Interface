@@ -4,6 +4,62 @@ var userMessageInput;
 
 $(document).ready(initChatInterface);
 
+function collectCurrentPromptDocuments() {
+    if (typeof chatId === 'undefined' || !chatId) {
+        return [];
+    }
+    window.chatDocumentsByChatId = window.chatDocumentsByChatId || {};
+    var map = window.chatDocumentsByChatId[chatId] || {};
+
+    var docItems = $('#doclist-' + chatId + ' .document-item');
+    var snapshot = [];
+
+    if (docItems && docItems.length) {
+        docItems.each(function () {
+            var $item = $(this);
+            var docIdAttr = $item.attr('data-document-id');
+            var docId = parseInt(docIdAttr || '0', 10);
+            if (!Number.isFinite(docId) || docId <= 0) {
+                return;
+            }
+
+            var entry = map[docId];
+            if (!entry && typeof window.extractDocumentMetadataFromElement === 'function') {
+                entry = window.extractDocumentMetadataFromElement($item);
+                if (entry) {
+                    map[docId] = entry;
+                }
+            }
+
+            if (!entry) {
+                return;
+            }
+
+            var clone = Object.assign({}, entry);
+            clone.was_enabled = entry.enabled === false ? false : true;
+            clone.enabled = clone.was_enabled;
+            snapshot.push(clone);
+        });
+
+        window.chatDocumentsByChatId[chatId] = map;
+    } else if (map && Object.keys(map).length) {
+        Object.keys(map).sort(function (a, b) {
+            return parseInt(a, 10) - parseInt(b, 10);
+        }).forEach(function (key) {
+            var entry = map[key];
+            if (!entry) {
+                return;
+            }
+            var clone = Object.assign({}, entry);
+            clone.was_enabled = entry.enabled === false ? false : true;
+            clone.enabled = clone.was_enabled;
+            snapshot.push(clone);
+        });
+    }
+
+    return snapshot;
+}
+
 function initChatInterface() {
     searchingIndicator = document.getElementById('searching-indicator');
     chatTitlesContainer = document.querySelector('.chat-titles-container');
@@ -72,14 +128,20 @@ function handleMessageSubmit(event) {
     var messageContent = base64EncodeUnicode(sanitizedMessageContent);
     var exchangeType = $('#exchange_type').val();
     var customConfigVal = $('#custom_config').val();
+    var promptDocsSnapshot = collectCurrentPromptDocuments();
 
-    showUserPrompt(messageContent, exchangeType);
+    var userPromptElement = showUserPrompt(messageContent, exchangeType);
+    if (promptDocsSnapshot.length && userPromptElement && userPromptElement.length) {
+        renderMessageAttachments(userPromptElement, promptDocsSnapshot);
+    }
 
     var requestPayload = {
         encodedMessage: messageContent,
         rawMessage: sanitizedMessageContent,
         exchangeType: exchangeType,
-        customConfig: customConfigVal
+        customConfig: customConfigVal,
+        promptDocuments: promptDocsSnapshot,
+        userMessageElement: userPromptElement
     };
 
     startAssistantStream(requestPayload);
@@ -120,10 +182,6 @@ function showUserPrompt(encodedMessage, exchangeType) {
         hljs.highlightElement(block);
     });
 
-    if (deployment !== 'azure-dall-e-3' && typeof fetchUserImages === 'function') {
-        fetchUserImages(chatId, userMessageElement);
-    }
-
     if (window.MathJax) {
         MathJax.typesetPromise([userMessageElement[0]])
             .then(debounceScroll)
@@ -145,6 +203,8 @@ function showUserPrompt(encodedMessage, exchangeType) {
             console.warn('Unable to clear chat draft cache', err);
         }
     }
+
+    return userMessageElement;
 }
 
 function loadMessages() {

@@ -224,6 +224,7 @@ try {
         'deployment'    => $response['deployment'] ?? null,
         'finish_reason' => $streamState['finish_reason'] ?? null,
         'stopped'       => (bool)$streamState['aborted'],
+        'prompt_documents' => $response['prompt_documents'] ?? [],
     ];
     $sendEvent('final', $finalPayload);
 

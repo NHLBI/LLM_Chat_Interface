@@ -55,16 +55,61 @@ function get_workflow_thread($message, $chat_id, $user, $active_config, $custom_
  */
 function handle_document_content($chat_id, $user, $message, $active_config) {
     $docs = get_chat_documents($user, $chat_id);
-    # print_r($docs);
+    $documentStates = [];
+    $promptDocumentsForClient = [];
 
     if (!empty($docs)) {
         $messages = [];
+        $index = 0;
 
-        foreach ($docs as $i => $doc) {
+        foreach ($docs as $doc) {
+            $docId = (int)($doc['document_id'] ?? 0);
+            $docEnabled = !(isset($doc['document_enabled']) && (int)$doc['document_enabled'] === 0);
+            $documentStates[$docId] = $docEnabled;
+
+            $docType = (string)($doc['document_type'] ?? '');
+            $docSource = strtolower((string)($doc['document_source'] ?? $doc['source'] ?? ''));
+            $docContent = (string)($doc['document_content'] ?? '');
+            $docReady = !empty($doc['document_ready']);
+            $docTokens = (int)($doc['document_token_length'] ?? 0);
+
+            if ($docSource === '') {
+                if (strpos($docType, 'image/') === 0) {
+                    $docSource = 'image';
+                } elseif (!empty($doc['full_text_available'])) {
+                    $docSource = 'inline';
+                } elseif ($docReady) {
+                    $docSource = 'rag';
+                }
+            }
+
+            $promptDoc = [
+                'document_id'                 => $docId,
+                'document_name'               => (string)($doc['document_name'] ?? ('Document ' . $docId)),
+                'document_type'               => $docType,
+                'document_source'             => $docSource,
+                'source'                      => $docSource,
+                'document_ready'              => $docReady ? 1 : 0,
+                'document_token_length'       => $docTokens,
+                'document_deleted'            => isset($doc['document_deleted']) ? (int)$doc['document_deleted'] : 0,
+                'document_full_text_available'=> isset($doc['full_text_available']) ? (int)$doc['full_text_available'] : 0,
+                'enabled'                     => (bool)$docEnabled,
+                'was_enabled'                 => (bool)$docEnabled,
+            ];
+            if (strpos($docType, 'image/') === 0 && $docContent !== '') {
+                $promptDoc['document_text'] = $docContent;
+            }
+            $promptDocumentsForClient[] = $promptDoc;
+
+            if (!$docEnabled) {
+                continue;
+            }
+
+            $index += 1;
             // Add document metadata
             $messages[] = [
                 "role" => "user",
-                "content" => "This is document #" . ($i + 1) . ". Its filename is: " . $doc['document_name']
+                "content" => "This is document #" . $index . ". Its filename is: " . $doc['document_name']
             ];
 
             // Handle image documents separately
@@ -91,8 +136,14 @@ function handle_document_content($chat_id, $user, $message, $active_config) {
             "content" => $message
         ];
 
+        $_SESSION['last_document_snapshot'] = $documentStates;
+        $GLOBALS['last_prompt_documents_details'] = $promptDocumentsForClient;
+
         return $messages;
     }
+
+    $_SESSION['last_document_snapshot'] = $documentStates;
+    $GLOBALS['last_prompt_documents_details'] = $promptDocumentsForClient;
 
     return null; // Explicitly return null if no documents exist
 }

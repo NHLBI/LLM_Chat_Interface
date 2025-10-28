@@ -18,6 +18,7 @@ var activeSpeakMetadata = null;
 var pendingSpeakFinish = false;
 var activeSpeakSessionId = null;
 var speakSessionCounter = 0;
+var BUFFER_FADE_SECONDS = 0.02;
 
 function addSpeakButton(messageElement, rawMessageContent) {
     if (!ttsEnabled) {
@@ -69,7 +70,8 @@ function addSpeakButton(messageElement, rawMessageContent) {
         activeTtsControllers = [];
         activeSpeakMetadata = {
             button: speakButton,
-            status: status
+            status: status,
+            sessionId: sessionId
         };
         pendingSpeakFinish = false;
 
@@ -95,35 +97,55 @@ function addSpeakButton(messageElement, rawMessageContent) {
         var currentIndex = 0;
 
         function playChunk(index) {
+            if (sessionId !== activeSpeakSessionId) {
+                return null;
+            }
+
+            if (index + 1 < chunks.length) {
+                ensureFetch(index + 1);
+            }
+
             var fetchPromise = ensureFetch(index);
             if (!fetchPromise) {
-                pendingSpeakFinish = true;
-                checkPlaybackCompletion();
-                return;
+                if (sessionId === activeSpeakSessionId) {
+                    pendingSpeakFinish = true;
+                    checkPlaybackCompletion(sessionId);
+                }
+                return null;
             }
 
             fetchPromise
                 .then(function (buffer) {
+                    if (sessionId !== activeSpeakSessionId) {
+                        return null;
+                    }
                     if (!buffer) {
                         return Promise.resolve();
                     }
-                    audioQueue.push(buffer);
-                    playNextBuffer();
+                    queueAudioBuffer(buffer, sessionId);
                     return Promise.resolve();
                 })
                 .then(function () {
+                    if (sessionId !== activeSpeakSessionId) {
+                        return null;
+                    }
                     currentIndex += 1;
                     if (currentIndex < chunks.length) {
                         return playChunk(currentIndex);
                     }
                     pendingSpeakFinish = true;
-                    checkPlaybackCompletion();
+                    checkPlaybackCompletion(sessionId);
                     return null;
                 })
                 .catch(function (err) {
+                    if (sessionId !== activeSpeakSessionId) {
+                        return;
+                    }
                     console.error('Failed to fetch audio chunk', err);
-                    finalizeSpeakSession();
+                    finalizeSpeakSession(sessionId);
                 });
+
+            return null;
         }
 
         playChunk(0);
@@ -132,6 +154,7 @@ function addSpeakButton(messageElement, rawMessageContent) {
 
 function stopActiveAudio() {
     activeSpeakSessionId = null;
+    activeSpeakMetadata = null;
     activeTtsControllers.forEach(function (controller) {
         try {
             controller.abort();
@@ -218,40 +241,20 @@ function chunkTextForTts(text) {
             break;
         }
 
-        var slice = remaining.slice(0, maxLen);
-        var breakPoint = Math.max(
-            slice.lastIndexOf('. '),
-            slice.lastIndexOf('! '),
-            slice.lastIndexOf('? '),
-            slice.lastIndexOf('\n'),
-            slice.lastIndexOf(' ')
-        );
+        var breakInfo = findNaturalBreakPoint(remaining, minLen, maxLen);
+        var chunkText = remaining.slice(0, breakInfo.length).trim();
 
-        if (breakPoint < minLen) {
-            breakPoint = slice.lastIndexOf(' ');
-            if (breakPoint < minLen) {
-                breakPoint = maxLen;
-            }
+        if (!chunkText) {
+            chunkText = remaining.slice(0, maxLen).trim();
+            breakInfo.length = chunkText.length;
         }
 
-        if (breakPoint <= 0) {
-            breakPoint = maxLen;
+        if (chunkText) {
+            chunks.push(chunkText);
         }
 
-        var rawChunk = slice.slice(0, breakPoint);
-        var chunk = rawChunk.trim();
-        if (!chunk) {
-            rawChunk = slice;
-            chunk = rawChunk.trim();
-        }
-        if (chunk) {
-            chunks.push(chunk);
-        }
-        var consumed = rawChunk.length;
-        if (consumed <= 0) {
-            consumed = Math.min(maxLen, remaining.length);
-        }
-        remaining = remaining.slice(consumed).trim();
+        remaining = remaining.slice(Math.min(remaining.length, breakInfo.length)).trim();
+
         if (tierIndex < tiers.length - 1) {
             tierIndex += 1;
         }
@@ -295,9 +298,79 @@ function fetchAudioChunk(text) {
     }).then(function (arrayBuffer) {
         ensureAudioContext();
         return new Promise(function (resolve, reject) {
-            audioContext.decodeAudioData(arrayBuffer, resolve, reject);
+            audioContext.decodeAudioData(arrayBuffer, function (buffer) {
+                try {
+                    applyFadeEnvelope(buffer);
+                } catch (envErr) {
+                    console.warn('Unable to apply fade envelope', envErr);
+                }
+                resolve(buffer);
+            }, reject);
         });
     });
+}
+
+function findNaturalBreakPoint(text, minLen, maxLen) {
+    var punctuationChars = ',.!?;:';
+    var safetyWindow = 60;
+    var effectiveMax = Math.min(text.length, maxLen);
+    var searchLimit = Math.min(text.length, maxLen + safetyWindow);
+    var searchSlice = text.slice(0, searchLimit);
+    var bestMatch = -1;
+    var bestScore = -Infinity;
+    var postMaxMatch = -1;
+    var whitespaceFallback = -1;
+
+    for (var i = 0; i < searchSlice.length; i++) {
+        var char = searchSlice[i];
+        var nextChar = searchSlice[i + 1] || '';
+        var position = i + 1; // length including current char
+
+        if (char === '\n' || char === '\r') {
+            if (position >= minLen) {
+                bestMatch = position;
+                bestScore = 1000;
+                break;
+            }
+            continue;
+        }
+
+        if (char === ' ') {
+            whitespaceFallback = position;
+        }
+
+        if (punctuationChars.indexOf(char) !== -1) {
+            var isSentenceEnding = (char === '.' || char === '?' || char === '!');
+            var punctuationBonus = isSentenceEnding ? 75 : 40;
+            if (nextChar === ' ') {
+                punctuationBonus += 5;
+            }
+
+            if (position >= minLen && position <= effectiveMax) {
+                var score = punctuationBonus + (position / effectiveMax) * 25;
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestMatch = position;
+                }
+            } else if (position > effectiveMax && postMaxMatch === -1) {
+                postMaxMatch = position;
+            }
+        }
+    }
+
+    if (bestMatch !== -1) {
+        return { length: bestMatch };
+    }
+
+    if (postMaxMatch !== -1 && postMaxMatch <= searchLimit) {
+        return { length: postMaxMatch };
+    }
+
+    if (whitespaceFallback !== -1 && whitespaceFallback >= minLen) {
+        return { length: whitespaceFallback };
+    }
+
+    return { length: effectiveMax };
 }
 
 function ensureAudioContext() {
@@ -310,7 +383,7 @@ function ensureAudioContext() {
     }
     if (!speakerGainNode && audioContext) {
         speakerGainNode = audioContext.createGain();
-        speakerGainNode.gain.setValueAtTime(1, audioContext.currentTime);
+        speakerGainNode.gain.setValueAtTime(0, audioContext.currentTime);
         speakerGainNode.connect(audioContext.destination);
     }
     if (audioContext.state === 'suspended') {
@@ -321,20 +394,28 @@ function ensureAudioContext() {
     return audioContext;
 }
 
-function queueAudioBuffer(buffer) {
+function queueAudioBuffer(buffer, sessionId) {
+    if (sessionId && sessionId !== activeSpeakSessionId) {
+        return;
+    }
     audioQueue.push(buffer);
     if (!isAudioContextPlaying) {
-        playNextBuffer();
+        playNextBuffer(sessionId || activeSpeakSessionId);
     }
 }
 
-function playNextBuffer() {
+function playNextBuffer(sessionId) {
+    if (sessionId && sessionId !== activeSpeakSessionId) {
+        isAudioContextPlaying = false;
+        return;
+    }
     if (!audioQueue.length || !audioContext) {
         isAudioContextPlaying = false;
-        checkPlaybackCompletion();
+        checkPlaybackCompletion(sessionId || activeSpeakSessionId);
         return;
     }
 
+    var wasPlaying = isAudioContextPlaying;
     isAudioContextPlaying = true;
     var buffer = audioQueue.shift();
     var source = audioContext.createBufferSource();
@@ -354,8 +435,19 @@ function playNextBuffer() {
 
     source.onended = function () {
         activeBufferSource = null;
-        playNextBuffer();
+        playNextBuffer(sessionId || activeSpeakSessionId);
     };
+
+    if (!wasPlaying && speakerGainNode) {
+        var now = audioContext.currentTime;
+        try {
+            speakerGainNode.gain.cancelScheduledValues(now);
+            speakerGainNode.gain.setValueAtTime(0, now);
+            speakerGainNode.gain.linearRampToValueAtTime(1, now + 0.05);
+        } catch (fadeErr) {
+            console.warn('Gain ramp failed', fadeErr);
+        }
+    }
 
     try {
         source.start(0);
@@ -363,18 +455,61 @@ function playNextBuffer() {
         console.error('Audio buffer start failed:', err);
         activeBufferSource = null;
         isAudioContextPlaying = false;
-        playNextBuffer();
+        playNextBuffer(sessionId || activeSpeakSessionId);
     }
 }
 
-function checkPlaybackCompletion() {
+function applyFadeEnvelope(buffer) {
+    if (!buffer) {
+        return;
+    }
+    var sampleRate = buffer.sampleRate || 44100;
+    var channels = buffer.numberOfChannels || 0;
+    var fadeDuration = Math.min(BUFFER_FADE_SECONDS, buffer.duration ? buffer.duration / 4 : BUFFER_FADE_SECONDS);
+    if (!channels || fadeDuration <= 0) {
+        return;
+    }
+    var fadeSamples = Math.max(1, Math.floor(sampleRate * fadeDuration));
+    for (var channel = 0; channel < channels; channel++) {
+        var data = buffer.getChannelData(channel);
+        if (!data || !data.length) {
+            continue;
+        }
+        var length = data.length;
+        var maxFadeSamples = Math.min(fadeSamples, Math.floor(length / 2));
+        for (var i = 0; i < maxFadeSamples; i++) {
+            var fadeInGain = i / maxFadeSamples;
+            data[i] *= fadeInGain;
+            var tailIndex = length - 1 - i;
+            if (tailIndex <= i) {
+                break;
+            }
+            var fadeOutGain = (maxFadeSamples - i - 1) / maxFadeSamples;
+            if (fadeOutGain < 0) {
+                fadeOutGain = 0;
+            }
+            data[tailIndex] *= fadeOutGain;
+        }
+    }
+}
+
+function checkPlaybackCompletion(sessionId) {
+    if (sessionId && sessionId !== activeSpeakSessionId) {
+        return;
+    }
     if (pendingSpeakFinish && audioQueue.length === 0 && !isAudioContextPlaying) {
-        finalizeSpeakSession();
+        finalizeSpeakSession(sessionId || activeSpeakSessionId);
     }
 }
 
-function finalizeSpeakSession() {
+function finalizeSpeakSession(sessionId) {
+    if (sessionId && sessionId !== activeSpeakSessionId) {
+        return;
+    }
     var meta = activeSpeakMetadata;
+    if (sessionId && meta && meta.sessionId && meta.sessionId !== sessionId) {
+        return;
+    }
     activeSpeakMetadata = null;
     pendingSpeakFinish = false;
 

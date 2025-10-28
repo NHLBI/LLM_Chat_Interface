@@ -93,6 +93,18 @@ function strip_stream_stop_sentinel(string $text): string {
     return $text;
 }
 
+function consume_prompt_documents_for_client(): array {
+    if (!isset($GLOBALS['last_prompt_documents_details'])) {
+        return [];
+    }
+    $details = $GLOBALS['last_prompt_documents_details'];
+    unset($GLOBALS['last_prompt_documents_details']);
+    if (!is_array($details)) {
+        return [];
+    }
+    return array_values($details);
+}
+
 function stream_emit_event(?array &$streamOptions, string $type, array $payload = []): void {
     if (!is_array($streamOptions)) {
         return;
@@ -476,6 +488,20 @@ function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config
         $replyText = strip_stream_stop_sentinel($replyText);
         $replyText = trim_trailing_ellipsis($replyText);
 
+        if (!isset($_SESSION['last_document_snapshot'])) {
+            $docs = get_chat_documents($user, $chat_id);
+            $snapshot = [];
+            foreach ($docs as $docRow) {
+                $docIdMeta = (int)($docRow['document_id'] ?? 0);
+                if ($docIdMeta <= 0) {
+                    continue;
+                }
+                $isEnabledMeta = !(isset($docRow['document_enabled']) && (int)$docRow['document_enabled'] === 0);
+                $snapshot[$docIdMeta] = $isEnabledMeta;
+            }
+            $_SESSION['last_document_snapshot'] = $snapshot;
+        }
+
         $eid = create_exchange(
             $uiDeployment,
             $chat_id,
@@ -772,7 +798,7 @@ function process_api_response(
         $eid = create_exchange($uiDeployment, $chat_id, $storedPrompt, $answer_text, $wfId, null, json_encode($links));
         if (is_array($oversizeMeta) && !empty($oversizeMeta['document_id'])) {
             try {
-                attach_document_to_exchange($eid, (int)$oversizeMeta['document_id']);
+                attach_document_to_exchange($eid, (int)$oversizeMeta['document_id'], true);
             } catch (Throwable $e) {
                 error_log('Failed to link oversize paste document to exchange: ' . $e->getMessage());
             }
@@ -788,13 +814,19 @@ function process_api_response(
 
         unset($GLOBALS['oversize_prompt_context']);
 
-        return [
+        $promptDocsForClient = consume_prompt_documents_for_client();
+        $result = [
             'eid'        => $eid,
             'deployment' => $uiDeployment,
             'error'      => false,
             'message'    => $answer_text,
             'links'      => $links
         ];
+        if (!empty($promptDocsForClient)) {
+            $result['prompt_documents'] = $promptDocsForClient;
+        }
+
+        return $result;
     }
 
     /* ================== 2) GPT-IMAGE-1 / DALL·E ==================== */
@@ -890,12 +922,14 @@ function process_api_response(
         );
 
         /* Return canonical success object ----------------------------------- */
+        $promptDocsForClient = consume_prompt_documents_for_client();
         return [
             'eid'            => $eid,
             'deployment'     => $uiDeployment,
             'error'          => false,
             'message'        => 'Image generated successfully.',
-            'image_gen_name' => $imageName
+            'image_gen_name' => $imageName,
+            'prompt_documents' => $promptDocsForClient,
         ];
     }
 
@@ -905,6 +939,8 @@ function process_api_response(
     // 3a) ERROR branch if JSON invalid or API reported an error
     if (!is_array($data)) {
         unset($GLOBALS['oversize_prompt_context']);
+        unset($_SESSION['last_document_snapshot']);
+        consume_prompt_documents_for_client();
         return [
             'deployment' => $uiDeployment,
             'error'      => true,
@@ -914,6 +950,8 @@ function process_api_response(
     if (isset($data['error'])) {
         log_error_details($msg_ctx, $user_prompt, $data['error']['message'] ?? 'Unknown error');
         unset($GLOBALS['oversize_prompt_context']);
+        unset($_SESSION['last_document_snapshot']);
+        consume_prompt_documents_for_client();
         return [
             'deployment' => $uiDeployment,
             'error'      => true,
@@ -928,7 +966,7 @@ function process_api_response(
     $eid = create_exchange($uiDeployment, $chat_id, $storedPrompt, $answer_text, $wfId);
     if (is_array($oversizeMeta) && !empty($oversizeMeta['document_id'])) {
         try {
-            attach_document_to_exchange($eid, (int)$oversizeMeta['document_id']);
+            attach_document_to_exchange($eid, (int)$oversizeMeta['document_id'], true);
         } catch (Throwable $e) {
             error_log('Failed to link oversize paste document to exchange: ' . $e->getMessage());
         }
@@ -944,12 +982,17 @@ function process_api_response(
 
     unset($GLOBALS['oversize_prompt_context']);
 
-    return [
+    $result = [
         'eid'        => $eid,
         'deployment' => $uiDeployment,
         'error'      => false,
         'message'    => $answer_text
     ];
+    $promptDocsForClient = consume_prompt_documents_for_client();
+    if (!empty($promptDocsForClient)) {
+        $result['prompt_documents'] = $promptDocsForClient;
+    }
+    return $result;
 }
 
 /**
@@ -987,6 +1030,24 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
     $docsNeedingRag = [];
     $decisions = [];
 
+    $documentStates = [];
+    foreach ($docs as $docMeta) {
+        $docIdMeta = (int)($docMeta['document_id'] ?? 0);
+        if ($docIdMeta <= 0) {
+            continue;
+        }
+        $docEnabledMeta = true;
+        if (isset($docMeta['document_enabled'])) {
+            $docEnabledMeta = (int)$docMeta['document_enabled'] === 1 || $docMeta['document_enabled'] === true;
+        } elseif (isset($docMeta['enabled'])) {
+            $docEnabledMeta = (int)$docMeta['enabled'] === 1 || $docMeta['enabled'] === true;
+        }
+        $documentStates[$docIdMeta] = $docEnabledMeta;
+    }
+    $_SESSION['last_document_snapshot'] = $documentStates;
+    $promptDocumentsForClient = [];
+    $imageAttachments = [];
+
     $inlineCandidates = [];
     $remainingDocs = [];
     foreach ($docs as $doc) {
@@ -1016,15 +1077,28 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
             continue;
         }
 
-        $docName   = (string)($doc['document_name'] ?? ('Document ' . $docId));
-        $docType   = (string)($doc['document_type'] ?? '');
-        $docReady  = !empty($doc['document_ready']);
+        $docName    = (string)($doc['document_name'] ?? ('Document ' . $docId));
+        $docType    = (string)($doc['document_type'] ?? '');
+        $docSource  = strtolower((string)($doc['document_source'] ?? $doc['source'] ?? ''));
+        $docReady   = !empty($doc['document_ready']);
         $docContent = (string)($doc['document_content'] ?? '');
         $docTokens  = (int)($doc['document_token_length'] ?? 0);
+        $docEnabled = $documentStates[$docId] ?? true;
+        $isImage    = (strpos($docType, 'image/') === 0);
 
         $fullAvailable = !empty($doc['full_text_available']) && strpos($docType, 'image/') !== 0 && $docContent !== '';
         if ($fullAvailable && $docTokens <= 0 && $docContent !== '') {
             $docTokens = estimate_tokens($docContent);
+        }
+
+        if ($docSource === '') {
+            if ($isImage) {
+                $docSource = 'image';
+            } elseif ($fullAvailable) {
+                $docSource = 'inline';
+            } elseif ($docReady) {
+                $docSource = 'rag';
+            }
         }
 
         $decision = [
@@ -1035,7 +1109,66 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
             'document_ready'        => (bool)$docReady,
             'document_token_length' => $docTokens,
             'mode'                  => 'pending',
+            'enabled'               => (bool)$docEnabled,
+            'source'                => $docSource,
         ];
+
+        $promptDoc = [
+            'document_id'                 => $docId,
+            'document_name'               => $docName,
+            'document_type'               => $docType,
+            'document_source'             => $docSource,
+            'source'                      => $docSource,
+            'document_ready'              => $docReady ? 1 : 0,
+            'document_token_length'       => $docTokens,
+            'document_deleted'            => isset($doc['document_deleted']) ? (int)$doc['document_deleted'] : 0,
+            'document_full_text_available'=> isset($doc['full_text_available']) ? (int)$doc['full_text_available'] : 0,
+            'enabled'                     => (bool)$docEnabled,
+            'was_enabled'                 => (bool)$docEnabled,
+        ];
+        if ($isImage && $docContent !== '') {
+            $promptDoc['document_text'] = $docContent;
+        }
+        $promptDocumentsForClient[] = $promptDoc;
+
+        if (!$docEnabled) {
+            $decision['mode'] = 'disabled';
+            $decision['reason'] = 'manually_disabled';
+            $decisions[] = $decision;
+            continue;
+        }
+
+        if ($isImage) {
+            if ($docContent !== '') {
+                $imageAttachments[] = [
+                    'document_id'   => $docId,
+                    'document_name' => $docName,
+                    'document_type' => $docType,
+                    'document_source' => $docSource,
+                    'document_content' => $docContent,
+                ];
+                $decision['mode'] = 'image_inline';
+                $decision['reason'] = 'embedded';
+            } else {
+                $decision['mode'] = 'image_missing_content';
+                $decision['reason'] = 'missing_content';
+            }
+            $decisions[] = $decision;
+            continue;
+        }
+
+        if (in_array($docSource, ['rag', 'paste'], true)) {
+            if ($docReady) {
+                $docsNeedingRag[] = $docId;
+                $decision['mode'] = 'rag';
+                $decision['reason'] = 'rag_source';
+            } else {
+                $decision['mode'] = 'pending_index';
+                $decision['reason'] = 'rag_source_pending';
+            }
+            $decisions[] = $decision;
+            continue;
+        }
 
         if ($fullAvailable) {
             $header = "Document: {$docName}";
@@ -1105,6 +1238,7 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
         'documents'       => $decisions,
         'rag_document_ids'=> $docsNeedingRag,
     ];
+    $GLOBALS['last_prompt_documents_details'] = $promptDocumentsForClient;
 
     $shouldRunRag = !empty($docsNeedingRag);
     if ($shouldRunRag) {
@@ -1152,14 +1286,48 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
     );
 
     // 5) stitch everything together
+    $userMessagePayload = ['role' => 'user'];
+    if (!empty($imageAttachments)) {
+        $contentParts = [
+            [
+                'type' => 'text',
+                'text' => $message
+            ]
+        ];
+        $imageIndex = 1;
+        foreach ($imageAttachments as $attachment) {
+            $imageData = $attachment['document_content'] ?? '';
+            if ($imageData === '') {
+                continue;
+            }
+            $attachmentName = $attachment['document_name'] ?? ('Image ' . $imageIndex);
+            $contentParts[] = [
+                'type' => 'text',
+                'text' => "\n\nImage attachment #{$imageIndex}: {$attachmentName}"
+            ];
+            $contentParts[] = [
+                'type' => 'image_url',
+                'image_url' => [
+                    'url' => $imageData
+                ]
+            ];
+            $imageIndex++;
+        }
+        if ($imageIndex > 1) {
+            $userMessagePayload['content'] = $contentParts;
+        } else {
+            $userMessagePayload['content'] = $message;
+        }
+    } else {
+        $userMessagePayload['content'] = $message;
+    }
+
     $messages = array_merge(
         $system_message,
         $document_messages,
         $summary_block,
         $context_messages,
-        [
-            ["role" => "user", "content" => $message]
-        ]
+        [$userMessagePayload]
     );
     return $messages;
 }
@@ -1563,8 +1731,8 @@ function retrieve_context_messages(
         if ($total_tokens + $needed > $token_budget) {
             break;
         }
-        $formatted[] = ['role' => 'assistant', 'content' => $msg['reply']];
         $formatted[] = ['role' => 'user',      'content' => $msg['prompt']];
+        $formatted[] = ['role' => 'assistant', 'content' => $msg['reply']];
         $total_tokens += $needed;
     }
 
