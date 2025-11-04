@@ -346,6 +346,19 @@ document.addEventListener('click', function(event) {
 
   if (event.target.classList && event.target.classList.contains('aboutModelsWindow')) {
     closeAboutModels();
+    return;
+  }
+
+  var uploadModal = document.getElementById('uploadModal');
+  if (uploadModal && uploadModal.style.display !== 'none' && event.target === uploadModal) {
+    cancelUploadModal();
+    return;
+  }
+
+  var workflowModal = document.querySelector('.cannedModalWindow');
+  if (workflowModal && workflowModal.classList.contains('show') && event.target === workflowModal) {
+    cancelCannedModal();
+    return;
   }
 });
 

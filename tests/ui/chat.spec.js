@@ -32,6 +32,7 @@ async function newAuthenticatedPage(browser) {
   const context = await browser.newContext({
     baseURL: BASE_URL,
     viewport: { width: 1280, height: 720 },
+    permissions: ['clipboard-read', 'clipboard-write'],
   });
 
   await context.addInitScript(() => {

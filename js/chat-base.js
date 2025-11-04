@@ -67,9 +67,9 @@ var ICONS = {
   pdf:   'images/icon_pdf.svg',
   doc:   'images/icon_docx.svg',
   docx:  'images/icon_docx.svg',
-  rtf:   'images/icon_docx.svg',
-  txt:   'images/icon_docx.svg',     // fallback to docx if you don't have this
-  md:    'images/icon_docx.svg',      // fallback to docx if you don't have this
+  rtf:   'images/icon_rtf.svg',
+  txt:   'images/icon_txt.svg',     // fallback to docx if you don't have this
+  md:    'images/icon_txt.svg',      // fallback to docx if you don't have this
   json:  'images/icon_xlsx.svg',    // fallback to csv/docx if you don't have this
   csv:   'images/icon_csv.svg',
   xls:   'images/icon_xlsx.svg',
@@ -237,9 +237,14 @@ function addCopyButton(messageElement, rawMessageContent) {
 function resolveDocumentIconPath(docType, name) {
     var t = (docType || '').toLowerCase().trim();
     var ext = '';
-    if (!t && name) {
-        var m = String(name).toLowerCase().match(/\.([a-z0-9]+)$/i);
+    if (name) {
+        var cleanedName = String(name).trim().toLowerCase();
+        var m = cleanedName.match(/\.([a-z0-9]+)$/);
         if (m) ext = m[1];
+    }
+
+    if (t.indexOf(';') !== -1) {
+        t = t.split(';')[0].trim();
     }
 
     // Prefer explicit MIME mapping
