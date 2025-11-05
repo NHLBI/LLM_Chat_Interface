@@ -199,6 +199,10 @@ function showCannedModal() {
         modal.classList.add('show');
         modal.style.display = 'flex';
         modal.querySelector('.closeCanned')?.focus();
+        window.isWorkflowFlow = true;
+        if (typeof window.applyWorkflowUiState === 'function') {
+            window.applyWorkflowUiState(true);
+        }
     }
 }
 
@@ -219,6 +223,10 @@ function closeCannedModal() {
 function cancelCannedModal() {
   // 1) Close the modal
   closeCannedModal();
+  window.isWorkflowFlow = false;
+  if (typeof window.applyWorkflowUiState === 'function') {
+    window.applyWorkflowUiState(false);
+  }
 
   // 2) Figure out the chatId from the URL
   const path   = window.location.pathname.replace(/\/$/, '');

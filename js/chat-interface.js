@@ -76,6 +76,37 @@ function collectCurrentPromptDocuments() {
     return snapshot;
 }
 
+function applyWorkflowUiState(isWorkflow) {
+    var messageForm = document.getElementById('messageForm');
+    var modelSelect = document.getElementById('modelSelectButton');
+    var temperatureForm = document.getElementById('temperature_select');
+    var reasoningForm = document.getElementById('reasoning_effort_select');
+    var verbosityForm = document.getElementById('verbosity_select');
+    var mainColTop = document.querySelector('.maincol-top');
+
+    if (messageForm) {
+        messageForm.style.display = isWorkflow ? 'none' : 'block';
+    }
+    if (modelSelect) {
+        modelSelect.style.display = isWorkflow ? 'none' : 'inline-block';
+    }
+    if (temperatureForm) {
+        temperatureForm.style.display = isWorkflow ? 'none' : 'inline-block';
+    }
+    if (reasoningForm) {
+        reasoningForm.style.display = isWorkflow ? 'none' : 'inline-block';
+    }
+    if (verbosityForm) {
+        verbosityForm.style.display = isWorkflow ? 'none' : 'inline-block';
+    }
+    if (mainColTop) {
+        mainColTop.style.height = isWorkflow ? 'calc(100vh - 140px)' : 'calc(100vh - 240px)';
+    }
+
+    window.workflowUiActive = !!isWorkflow;
+}
+window.applyWorkflowUiState = applyWorkflowUiState;
+
 function initChatInterface() {
     searchingIndicator = document.getElementById('searching-indicator');
     chatTitlesContainer = document.querySelector('.chat-titles-container');
@@ -85,6 +116,10 @@ function initChatInterface() {
     }
 
     initializeDocumentProcessingElements();
+
+    if (window.isWorkflowFlow) {
+        applyWorkflowUiState(true);
+    }
 
     chatContainer = $('.chat-container');
     userMessageInput = $('#userMessage');
@@ -266,27 +301,7 @@ function showUserPrompt(encodedMessage, exchangeType) {
     var sanitizedPrompt = formatCodeBlocks(decoded);
 
     var icon = exchangeType === 'workflow' ? 'gear_icon.png' : 'user.png';
-    if (exchangeType === 'workflow') {
-        document.getElementById('messageForm').style.display = 'none';
-        document.getElementById('modelSelectButton').style.display = 'none';
-        document.getElementById('temperature_select').style.display = 'none';
-
-        var workflowContainer = document.querySelector('.maincol-top');
-        if (workflowContainer) {
-            workflowContainer.style.height = 'calc(100vh - 140px)';
-        }
-    } else {
-        document.getElementById('messageForm').style.display = 'block';
-        document.getElementById('modelSelectButton').style.display = 'inline-block';
-        var tempForm = document.getElementById('temperature_select');
-        if (tempForm) {
-            tempForm.style.display = 'inline-block';
-        }
-        var mainColTop = document.querySelector('.maincol-top');
-        if (mainColTop) {
-            mainColTop.style.height = 'calc(100vh - 240px)';
-        }
-    }
+    applyWorkflowUiState(exchangeType === 'workflow');
 
     var userMessageElement = $('<div class="message user-message"></div>').html(sanitizedPrompt);
     userMessageElement.prepend('<img src="images/' + icon + '" class="user-icon" alt="User icon">');
@@ -345,9 +360,13 @@ function displayMessages(chatMessages) {
 
     chatContainer.empty();
     var promptsForHistory = [];
+    var workflowDetected = !!window.workflowUiActive || !!window.isWorkflowFlow;
 
     Object.values(chatMessages || {}).forEach(function (message) {
         var exchangeType = message.exchange_type || 'chat';
+        if (exchangeType === 'workflow') {
+            workflowDetected = true;
+        }
         var icon = exchangeType === 'workflow' ? 'gear_icon.png' : 'user.png';
         if (message && message.prompt) {
             promptsForHistory.push(message.prompt);
@@ -398,6 +417,14 @@ function displayMessages(chatMessages) {
             renderMessageAttachments(userMessageElement, message.document);
         }
     });
+
+    var exchangeTypeInput = document.getElementById('exchange_type');
+    if (exchangeTypeInput) {
+        exchangeTypeInput.value = workflowDetected ? 'workflow' : 'chat';
+    }
+    if (typeof applyWorkflowUiState === 'function') {
+        applyWorkflowUiState(workflowDetected);
+    }
 
     if (typeof hljs !== 'undefined' && hljs.highlightAll) {
         hljs.highlightAll();
