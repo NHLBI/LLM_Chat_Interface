@@ -145,27 +145,17 @@ function handleMessageSubmit(event) {
         return;
     }
 
-    var proceedSubmission = function () {
-        storePromptHistoryEntry(chatId, sanitizedMessageContent);
+    storePromptHistoryEntry(chatId, sanitizedMessageContent);
 
-        var messageContent = base64EncodeUnicode(sanitizedMessageContent);
-        var exchangeType = $('#exchange_type').val();
-        var customConfigVal = $('#custom_config').val();
-        var promptDocsSnapshot = collectCurrentPromptDocuments();
+    var messageContent = base64EncodeUnicode(sanitizedMessageContent);
+    var exchangeType = $('#exchange_type').val();
+    var customConfigVal = $('#custom_config').val();
+    var promptDocsSnapshot = collectCurrentPromptDocuments();
 
-        var userPromptElement = showUserPrompt(messageContent, exchangeType);
-        if (promptDocsSnapshot.length && userPromptElement && userPromptElement.length) {
-            renderMessageAttachments(userPromptElement, promptDocsSnapshot);
-        }
-
-        var requestPayload = {
-            encodedMessage: messageContent,
-            rawMessage: sanitizedMessageContent,
-            exchangeType: exchangeType,
-            customConfig: customConfigVal,
-            promptDocuments: promptDocsSnapshot,
-            userMessageElement: userPromptElement
-        };
+    var userPromptElement = showUserPrompt(messageContent, exchangeType);
+    if (promptDocsSnapshot.length && userPromptElement && userPromptElement.length) {
+        renderMessageAttachments(userPromptElement, promptDocsSnapshot);
+    }
 
     var requestPayload = {
         encodedMessage: messageContent,

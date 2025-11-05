@@ -244,9 +244,18 @@ function finalizeAssistantStream(finalPayload) {
         }
     }
     streamContext.controlsWrapper = controlsWrapper;
+    var pendingRedirect = finalPayload && finalPayload.new_chat_id;
 
     if (typeof fetchAndUpdateChatTitles === 'function') {
-        fetchAndUpdateChatTitles(typeof search_term !== 'undefined' ? search_term : '', 0);
+        var currentSearchTerm = (typeof search_term !== 'undefined') ? search_term : '';
+        fetchAndUpdateChatTitles(currentSearchTerm, 0);
+        if (!pendingRedirect) {
+            setTimeout(function () {
+                if (typeof fetchAndUpdateChatTitles === 'function') {
+                    fetchAndUpdateChatTitles(currentSearchTerm, 0);
+                }
+            }, 1500);
+        }
     }
 
     if (typeof hljs !== 'undefined' && hljs.highlightAll) {
@@ -263,7 +272,6 @@ function finalizeAssistantStream(finalPayload) {
         debounceScroll();
     }
 
-    var pendingRedirect = finalPayload && finalPayload.new_chat_id;
     activeAssistantStream = null;
 
     if (pendingRedirect) {
