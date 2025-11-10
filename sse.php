@@ -4,7 +4,6 @@ require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/inc/streaming.inc.php';
 require_once __DIR__ . '/inc/azure-api.inc.php';
-require_once __DIR__ . '/inc/chat_title_service.php';
 
 if (!defined('HARDCODED_DEPLOYMENT')) {
     define('HARDCODED_DEPLOYMENT', 'azure-gpt4.1-mini');

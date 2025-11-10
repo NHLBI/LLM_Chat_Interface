@@ -366,7 +366,12 @@ function startAssistantStream(request) {
         signal: controller.signal
     }).then(function (response) {
         if (!response.ok) {
-            throw new Error('HTTP ' + response.status);
+            return response.text().catch(function () {
+                return '';
+            }).then(function (bodyText) {
+                var suffix = bodyText ? (' - ' + bodyText) : '';
+                throw new Error('HTTP ' + response.status + suffix);
+            });
         }
         if (!response.body) {
             throw new Error('Streaming not supported by this browser.');

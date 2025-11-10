@@ -6,6 +6,14 @@ error_reporting(E_ALL);
 // Include necessary libraries
 require_once 'bootstrap.php';
 
+if (!function_exists('smiles_debug_log')) {
+    function smiles_debug_log($message) {
+        $logFile = __DIR__ . '/logs/smiles_debug.log';
+        $line = date('c') . ' ' . $message . "\n";
+        @file_put_contents($logFile, $line, FILE_APPEND);
+    }
+}
+
 if (!defined('UPLOAD_SHOULD_EXIT')) {
     define('UPLOAD_SHOULD_EXIT', true);
 }
@@ -113,6 +121,9 @@ if (isset($_FILES['uploadDocument'])) {
         'original_store_dir' => $workRoot . '/original-images',
     ];
 
+    $smilesGenerated = !empty($_POST['smiles_generated']);
+    $smilesLabel = isset($_POST['smiles_label']) ? trim((string)$_POST['smiles_label']) : '';
+
     for ($i = 0; $i < $fileCount; $i++) {
         if ($_FILES['uploadDocument']['error'][$i] !== UPLOAD_ERR_OK) {
             continue;
@@ -140,6 +151,18 @@ if (isset($_FILES['uploadDocument'])) {
                 'compute_tokens' => false,
                 'token_length'   => 0,
             ]);
+            if ($smilesGenerated) {
+                smiles_debug_log(sprintf(
+                    'SMILES image insert chat=%s doc=%d name=%s label=%s size=%d bytes=%s',
+                    $chat_id,
+                    $document_id,
+                    $originalName,
+                    $smilesLabel,
+                    strlen($base64Image),
+                    $originalSize !== false ? (int)$originalSize : 'n/a'
+                ));
+                smiles_debug_log('SMILES image base64 sample: ' . substr($base64Image, 0, 120));
+            }
             try {
                 $stmt = $pdo->prepare("UPDATE document SET source = :source, full_text_available = 0 WHERE id = :id");
                 $stmt->execute([

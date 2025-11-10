@@ -1,6 +1,6 @@
 <?php
-require 'get_config.php';
-require 'db.php';
+require_once 'get_config.php';
+require_once 'db.php';
 $pdo = get_connection();
 
 function execute_query_to_csv($pdo, $query, $filename) {

@@ -1,6 +1,6 @@
 <?php
-require 'get_config.php';
-require 'db.php';
+require_once 'get_config.php';
+require_once 'db.php';
 require_once __DIR__ . '/inc/rag_cleanup.php';
 $pdo = get_connection();
 

@@ -20,6 +20,568 @@ var isApplyingPromptHistory = false;
 
 $(document).ready(initChatInterface);
 
+function isProbableSmilesJS(token) {
+    if (!token || typeof token !== 'string') {
+        return false;
+    }
+
+    if (token.length === 0 || token.length > 1024) {
+        return false;
+    }
+
+    if (/\s/u.test(token)) {
+        return false;
+    }
+
+    if (!/[A-Za-z]/.test(token)) {
+        return false;
+    }
+
+    if (!/^[A-Za-z0-9#%=\+\-\[\]\(\)@\/\\\.]+$/.test(token)) {
+        return false;
+    }
+
+    if (token.length === 1) {
+        return false;
+    }
+
+    if (/(?:Cl|Br|Si|Na|Li|Mg|Ca|K|Fe|Cu|Zn|Hg|Al|Sn|Pb|Ag|Au|Ni|Co|Mn|Ti|B|C|N|O|S|P|F|I|H)/.test(token)) {
+        return true;
+    }
+
+    return /\d/.test(token);
+}
+
+function cleanSmilesCandidate(raw) {
+    if (!raw) {
+        return '';
+    }
+    return raw.replace(/^[("'“‘\[]+|[)"'”’\].,;:!?]+$/g, '');
+}
+
+function extractSmilesCommands(text) {
+    var result = {
+        tokens: [],
+        cleanedText: typeof text === 'string' ? text : ''
+    };
+    if (!text || typeof text !== 'string') {
+        return result;
+    }
+
+    var regex = /\/smiles\b/gi;
+    var match;
+    var removalRanges = [];
+
+    while ((match = regex.exec(text)) !== null) {
+        var commandStart = match.index;
+        var cursor = regex.lastIndex;
+
+        while (cursor < text.length && /\s/.test(text.charAt(cursor))) {
+            cursor += 1;
+        }
+
+        var lastTokenEnd = cursor;
+        var foundAnyToken = false;
+
+        while (cursor < text.length) {
+            var wordStart = cursor;
+            while (cursor < text.length && !/\s/.test(text.charAt(cursor))) {
+                cursor += 1;
+            }
+            var wordEnd = cursor;
+            if (wordStart === wordEnd) {
+                break;
+            }
+            var rawWord = text.slice(wordStart, wordEnd);
+            var cleanedWord = cleanSmilesCandidate(rawWord);
+            if (cleanedWord && isProbableSmilesJS(cleanedWord)) {
+                result.tokens.push(cleanedWord);
+                foundAnyToken = true;
+                lastTokenEnd = wordEnd;
+                while (cursor < text.length && /\s/.test(text.charAt(cursor))) {
+                    cursor += 1;
+                    lastTokenEnd = cursor;
+                }
+            } else {
+                break;
+            }
+        }
+
+        var removalEnd = foundAnyToken ? lastTokenEnd : regex.lastIndex;
+        removalRanges.push([commandStart, removalEnd]);
+        regex.lastIndex = cursor;
+    }
+
+    if (!removalRanges.length) {
+        result.cleanedText = text.trim();
+        return result;
+    }
+
+    var rebuilt = [];
+    var lastIndex = 0;
+    removalRanges.forEach(function (range) {
+        var start = range[0];
+        var end = range[1];
+        if (start > lastIndex) {
+            rebuilt.push(text.slice(lastIndex, start));
+        }
+        lastIndex = Math.max(lastIndex, end);
+    });
+    if (lastIndex < text.length) {
+        rebuilt.push(text.slice(lastIndex));
+    }
+    var cleanedText = rebuilt.join('');
+    cleanedText = cleanedText.replace(/[ \t]{2,}/g, ' ');
+    cleanedText = cleanedText.replace(/ +\n/g, '\n').replace(/\n +/g, '\n');
+    cleanedText = cleanedText.replace(/\s+$/g, '');
+    result.cleanedText = cleanedText.trim();
+    return result;
+}
+
+function resolveAppPath(path) {
+    if (!path) {
+        return path;
+    }
+    if (/^(https?:)?\/\//i.test(path)) {
+        return path;
+    }
+    if (path.charAt(0) === '/') {
+        return path;
+    }
+    var base = typeof application_path === 'string' ? application_path.replace(/^\/+|\/+$/g, '') : '';
+    if (base === '') {
+        return '/' + path.replace(/^\/+/, '');
+    }
+    return '/' + base + '/' + path.replace(/^\/+/, '');
+}
+
+async function postJSON(path, payload) {
+    var url = resolveAppPath(path);
+    var response = await fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify(payload || {})
+    });
+    if (!response.ok) {
+        var errorText = 'HTTP ' + response.status;
+        try {
+            var errJson = await response.json();
+            if (errJson && errJson.message) {
+                errorText = errJson.message;
+            }
+        } catch (err) {
+            // swallow JSON parse issues
+        }
+        throw new Error(errorText);
+    }
+    var json = null;
+    try {
+        json = await response.json();
+    } catch (err) {
+        throw new Error('Invalid JSON response');
+    }
+    return json;
+}
+
+function smilesClientDebug(stage, extra) {
+    try {
+        var payload = {
+            event: 'smiles_debug',
+            stage: stage,
+            chat_id: typeof chatId !== 'undefined' ? chatId : null,
+            details: extra || {}
+        };
+        var body = JSON.stringify(payload);
+        var url = resolveAppPath('log_client_event.php');
+        if (navigator && typeof navigator.sendBeacon === 'function') {
+            var blob = new Blob([body], { type: 'application/json' });
+            if (!navigator.sendBeacon(url, blob)) {
+                fetch(url, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: body
+                }).catch(function () { /* swallow */ });
+            }
+        } else {
+            fetch(url, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: body
+            }).catch(function () { /* swallow */ });
+        }
+    } catch (err) {
+        console.warn('smilesClientDebug failed', err);
+    }
+}
+
+async function fetchPngAsDataUrl(pngUrl) {
+    if (!pngUrl) {
+        throw new Error('PNG URL missing');
+    }
+    var url = resolveAppPath(pngUrl);
+    var response = await fetch(url, {
+        method: 'GET',
+        credentials: 'same-origin'
+    });
+    if (!response.ok) {
+        throw new Error('Failed to fetch molecule image');
+    }
+    var blob = await response.blob();
+    return await new Promise(function (resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function () {
+            resolve(reader.result);
+        };
+        reader.onerror = function (event) {
+            reject(event && event.target && event.target.error ? event.target.error : new Error('Failed to read image blob'));
+        };
+        reader.readAsDataURL(blob);
+    });
+}
+
+function dataUrlToBlob(dataUrl) {
+    try {
+        var parts = dataUrl.split(',');
+        if (parts.length < 2) {
+            return null;
+        }
+        var mimeMatch = parts[0].match(/data:(.*?);base64/i);
+        var mimeType = mimeMatch && mimeMatch[1] ? mimeMatch[1] : 'application/octet-stream';
+        var binary = atob(parts[1]);
+        var len = binary.length;
+        var buffer = new Uint8Array(len);
+        for (var i = 0; i < len; i++) {
+            buffer[i] = binary.charCodeAt(i);
+        }
+        return new Blob([buffer], { type: mimeType });
+    } catch (err) {
+        console.error('dataUrlToBlob error', err);
+        return null;
+    }
+}
+
+function buildSmilesFileName(label) {
+    var safe = (label || '').trim();
+    if (safe === '') {
+        safe = 'molecule';
+    }
+    safe = safe.replace(/[^\w\-.]+/g, '_').replace(/_+/g, '_');
+    if (safe.length > 120) {
+        safe = safe.slice(0, 120);
+    }
+    return 'molecule_' + safe + '.png';
+}
+
+async function fetchDocumentPreview(documentId) {
+    if (!documentId) {
+        return null;
+    }
+    var url = resolveAppPath('document_excerpt.php') + '?document_id=' + encodeURIComponent(documentId);
+    try {
+        var response = await fetch(url, {
+            method: 'GET',
+            credentials: 'same-origin',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        if (!response.ok) {
+            return null;
+        }
+        var json = await response.json();
+        if (json && json.ok && json.document) {
+            return json.document;
+        }
+    } catch (err) {
+        console.warn('fetchDocumentPreview failed', err);
+    }
+    return null;
+}
+
+async function uploadSmilesImage(dataUrl, smilesToken, canonicalLabel) {
+    var blob = dataUrlToBlob(dataUrl);
+    if (!blob) {
+        throw new Error('Unable to prepare molecule image');
+    }
+
+    var effectiveCanonical = canonicalLabel || smilesToken;
+    var displayName = 'Molecule: ' + effectiveCanonical;
+    var fileName = buildSmilesFileName(effectiveCanonical);
+    var file;
+    try {
+        file = new File([blob], fileName, { type: 'image/png' });
+    } catch (err) {
+        var fallbackBlob = blob.slice(0, blob.size, 'image/png');
+        fallbackBlob.name = fileName;
+        file = fallbackBlob;
+    }
+
+    var formData = new FormData();
+    var chatIdentifier = (typeof chatId !== 'undefined' && chatId) ? chatId : '';
+    formData.append('chat_id', chatIdentifier);
+    formData.append('smiles_generated', '1');
+    formData.append('smiles_label', effectiveCanonical);
+    if (window.selectedWorkflow) {
+        try {
+            formData.append('selected_workflow', JSON.stringify(window.selectedWorkflow));
+        } catch (err) {
+            console.warn('Unable to serialize selectedWorkflow for upload', err);
+        }
+    }
+    var appendName = (file && file.name) ? file.name : fileName;
+    formData.append('uploadDocument[]', file, appendName);
+
+    var response = await fetch(resolveAppPath('upload.php'), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: formData
+    });
+
+    if (!response.ok) {
+        throw new Error('Upload failed with status ' + response.status);
+    }
+
+    var resultJson = {};
+    try {
+        resultJson = await response.json();
+    } catch (err) {
+        throw new Error('Upload response was not JSON');
+    }
+
+    if (resultJson && resultJson.new_chat && resultJson.chat_id) {
+        window.location.href = '/' + application_path + '/' + encodeURIComponent(resultJson.chat_id);
+        return null;
+    }
+
+    var uploadedDocuments = Array.isArray(resultJson.uploaded_documents) ? resultJson.uploaded_documents : [];
+    var serverDoc = uploadedDocuments.length ? uploadedDocuments[0] : null;
+    if (!serverDoc && resultJson && typeof resultJson.document === 'object') {
+        serverDoc = resultJson.document;
+    }
+    if (!serverDoc || typeof serverDoc !== 'object' || typeof serverDoc.id === 'undefined') {
+        throw new Error('Upload did not return document metadata');
+    }
+
+    var docId = parseInt(serverDoc.id, 10);
+    if (!Number.isFinite(docId) || docId <= 0) {
+        throw new Error('Invalid document id returned for molecule upload');
+    }
+
+    var docIsQueued = !!serverDoc.queued;
+    var docName = serverDoc.name || displayName;
+    var docDisplayName = displayName;
+    var docType = serverDoc.type || 'image/png';
+    var docContent = dataUrl;
+    if (!docIsQueued) {
+        var previewDoc = await fetchDocumentPreview(docId);
+        if (previewDoc && (previewDoc.image_src || previewDoc.document_content || previewDoc.content)) {
+            var previewContent = previewDoc.image_src || previewDoc.document_content || previewDoc.content;
+            if (typeof previewContent === 'string' && previewContent.length) {
+                docContent = previewContent;
+            }
+            if (previewDoc.name) {
+                docName = previewDoc.name;
+            }
+        }
+    }
+
+    var docRecord = {
+        document_id: docId,
+        id: docId,
+        document_name: docDisplayName,
+        document_type: docType,
+        document_source: 'image',
+        source: 'image',
+        document_ready: docIsQueued ? 0 : 1,
+        document_deleted: 0,
+        document_token_length: 0,
+        enabled: true,
+        was_enabled: true,
+        document_text: docContent,
+        document_content: docContent,
+        meta: {
+            smiles: smilesToken,
+            canonical: effectiveCanonical
+        }
+    };
+
+    if (typeof window.documentsLength === 'number') {
+        window.documentsLength += 1;
+    } else {
+        window.documentsLength = 1;
+    }
+
+    var effectiveChatId = chatIdentifier || (resultJson && resultJson.chat_id) || chatId || '';
+    if (effectiveChatId) {
+        window.chatDocumentsByChatId = window.chatDocumentsByChatId || {};
+        window.chatDocumentsByChatId[effectiveChatId] = window.chatDocumentsByChatId[effectiveChatId] || {};
+        window.chatDocumentsByChatId[effectiveChatId][docId] = docRecord;
+    }
+
+    if (typeof fetchAndUpdateChatTitles === 'function') {
+        try {
+            var currentSearch = $('#search-input').length ? $('#search-input').val() : '';
+            fetchAndUpdateChatTitles(currentSearch || '', false);
+        } catch (err) {
+            console.warn('Unable to refresh document list after SMILES upload', err);
+        }
+    }
+
+    return docRecord;
+}
+
+function filterPromptDocumentsForSend(docs) {
+    if (!Array.isArray(docs)) {
+        return [];
+    }
+    return docs.filter(function (doc) {
+        if (!doc || typeof doc !== 'object') {
+            return false;
+        }
+        var docType = (doc.document_type || doc.type || '').toLowerCase();
+        if (docType.indexOf('image/') === 0) {
+            var inlineData = doc.document_text || doc.document_content || '';
+            if (typeof inlineData !== 'string' || inlineData.indexOf('data:image/') !== 0 || inlineData.length <= 20) {
+                console.warn('Skipping image attachment lacking inline data payload', doc);
+                return false;
+            }
+        }
+        return true;
+    });
+}
+
+async function preSendSmilesConfirm(draftText) {
+    var result = {
+        text: draftText,
+        attachments: [],
+        abortSend: false
+    };
+
+    if (!draftText || typeof draftText !== 'string') {
+        return result;
+    }
+
+    if (window.appFeatures && window.appFeatures.smiles_support === false) {
+        return result;
+    }
+
+    var extraction = extractSmilesCommands(draftText);
+    var commandTokens = extraction.tokens || [];
+    if (!commandTokens.length) {
+        return result;
+    }
+
+    smilesClientDebug('smiles_command_detected', { tokens: commandTokens, count: commandTokens.length });
+
+    var confirmMessage = 'Detected /smiles command for:\n\n' + commandTokens.join('\n') + '\n\nGenerate molecule image attachments?';
+    if (!window.confirm(confirmMessage)) {
+        smilesClientDebug('smiles_user_declined', { tokens: commandTokens });
+        return result;
+    }
+    smilesClientDebug('smiles_user_confirmed', { tokens: commandTokens });
+
+    var attachments = [];
+
+    for (var idx = 0; idx < commandTokens.length; idx++) {
+        var token = commandTokens[idx];
+        smilesClientDebug('smiles_token_start', { token: token, index: idx });
+
+        var canonical = token;
+        try {
+            var canonicalResponse = await postJSON('chem_canonicalize.php', { smiles: token });
+            if (canonicalResponse && canonicalResponse.ok && canonicalResponse.canonical) {
+                canonical = canonicalResponse.canonical;
+            }
+            smilesClientDebug('smiles_canonicalized', { token: token, canonical: canonical, via: canonicalResponse ? canonicalResponse.via : null, index: idx });
+        } catch (err) {
+            console.warn('SMILES canonicalization failed; using original token', err);
+            smilesClientDebug('smiles_canonicalize_error', { token: token, message: err && err.message ? err.message : String(err), index: idx });
+        }
+
+        var renderResponse;
+        try {
+            renderResponse = await postJSON('chem_render_png.php', { smiles: token });
+            smilesClientDebug('smiles_render_response', {
+                token: token,
+                ok: !!(renderResponse && renderResponse.ok),
+                via: renderResponse ? renderResponse.via : null,
+                png_url: renderResponse ? renderResponse.png_url : null,
+                index: idx
+            });
+        } catch (err) {
+            alert('Unable to render one of the molecule previews. The message will be sent without new attachments.');
+            smilesClientDebug('smiles_render_error', { token: token, message: err && err.message ? err.message : String(err), index: idx });
+            return result;
+        }
+
+        if (!renderResponse || !renderResponse.ok || !renderResponse.png_url) {
+            alert('Unable to render one of the molecule previews. The message will be sent without new attachments.');
+            smilesClientDebug('smiles_render_invalid', { token: token, response: renderResponse || null, index: idx });
+            return result;
+        }
+
+        var dataUrl;
+        try {
+            dataUrl = await fetchPngAsDataUrl(renderResponse.png_url);
+            smilesClientDebug('smiles_image_fetched', {
+                token: token,
+                png_url: renderResponse.png_url,
+                data_url_length: dataUrl ? dataUrl.length : 0,
+                index: idx
+            });
+        } catch (err) {
+            alert('Unable to fetch one of the molecule images. The message will be sent without new attachments.');
+            smilesClientDebug('smiles_fetch_image_error', { token: token, message: err && err.message ? err.message : String(err), index: idx });
+            return result;
+        }
+
+        var attachmentRecord = null;
+        try {
+            attachmentRecord = await uploadSmilesImage(dataUrl, token, canonical);
+            smilesClientDebug('smiles_upload_success', {
+                token: token,
+                canonical: canonical,
+                document_id: attachmentRecord ? attachmentRecord.document_id : null,
+                index: idx
+            });
+        } catch (err) {
+            console.error('uploadSmilesImage failed', err);
+            alert('Unable to attach one of the molecule images. The message will be sent without new attachments.');
+            smilesClientDebug('smiles_upload_error', { token: token, message: err && err.message ? err.message : String(err), index: idx });
+            return result;
+        }
+
+        if (!attachmentRecord) {
+            result.abortSend = true;
+            return result;
+        }
+
+        attachments.push(attachmentRecord);
+    }
+
+    result.attachments = attachments;
+    smilesClientDebug('smiles_ready', {
+        tokens: commandTokens,
+        attachment_document_ids: attachments.map(function (att) { return att ? att.document_id : null; })
+    });
+    return result;
+}
+
 function collectCurrentPromptDocuments() {
     if (typeof chatId === 'undefined' || !chatId) {
         return [];
@@ -161,7 +723,7 @@ function initChatInterface() {
     $('#messageForm').on('submit', handleMessageSubmit);
 }
 
-function handleMessageSubmit(event) {
+async function handleMessageSubmit(event) {
     event.preventDefault();
 
     if (window.isDocumentProcessing) {
@@ -180,12 +742,73 @@ function handleMessageSubmit(event) {
         return;
     }
 
+    var smilesPrepResult = { text: sanitizedMessageContent, attachments: [], abortSend: false };
+    try {
+        smilesPrepResult = await preSendSmilesConfirm(sanitizedMessageContent);
+    } catch (err) {
+        console.error('preSendSmilesConfirm error', err);
+    }
+
+    if (smilesPrepResult && smilesPrepResult.abortSend) {
+        return;
+    }
+
+    if (smilesPrepResult && typeof smilesPrepResult.text === 'string') {
+        sanitizedMessageContent = smilesPrepResult.text;
+    }
+
+    var smilesAttachments = (smilesPrepResult && Array.isArray(smilesPrepResult.attachments))
+        ? smilesPrepResult.attachments
+        : [];
+
     storePromptHistoryEntry(chatId, sanitizedMessageContent);
 
     var messageContent = base64EncodeUnicode(sanitizedMessageContent);
     var exchangeType = $('#exchange_type').val();
     var customConfigVal = $('#custom_config').val();
     var promptDocsSnapshot = collectCurrentPromptDocuments();
+
+    if (smilesAttachments && smilesAttachments.length) {
+        var seenDocIds = {};
+        for (var i = 0; i < promptDocsSnapshot.length; i++) {
+            var docIdExisting = promptDocsSnapshot[i] && promptDocsSnapshot[i].document_id;
+            if (docIdExisting !== undefined && docIdExisting !== null) {
+                seenDocIds[String(docIdExisting)] = true;
+            }
+        }
+
+        smilesAttachments.forEach(function (attachment) {
+            if (!attachment || typeof attachment !== 'object') {
+                return;
+            }
+            var docClone = Object.assign({}, attachment);
+            if (docClone.document_id !== undefined && docClone.document_id !== null) {
+                docClone.document_id = parseInt(docClone.document_id, 10);
+                if (!Number.isFinite(docClone.document_id)) {
+                    docClone.document_id = attachment.document_id;
+                }
+            }
+            if (docClone.document_id !== undefined && docClone.document_id !== null) {
+                var key = String(docClone.document_id);
+                if (seenDocIds[key]) {
+                    for (var j = 0; j < promptDocsSnapshot.length; j++) {
+                        var existing = promptDocsSnapshot[j];
+                        if (existing && String(existing.document_id) === key) {
+                            promptDocsSnapshot[j] = Object.assign({}, existing, docClone);
+                            break;
+                        }
+                    }
+                } else {
+                    promptDocsSnapshot.push(docClone);
+                    seenDocIds[key] = true;
+                }
+            } else {
+                promptDocsSnapshot.push(docClone);
+            }
+        });
+    }
+
+    promptDocsSnapshot = filterPromptDocumentsForSend(promptDocsSnapshot);
 
     var userPromptElement = showUserPrompt(messageContent, exchangeType);
     if (promptDocsSnapshot.length && userPromptElement && userPromptElement.length) {

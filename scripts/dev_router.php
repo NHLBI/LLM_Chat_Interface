@@ -69,7 +69,7 @@ if ($basePath !== '' && str_starts_with($uri, $basePath . '/')) {
 
     $scriptPath = realpath($projectRoot . '/' . ltrim($subPath, '/'));
     if ($scriptPath && str_starts_with($scriptPath, $projectRoot) && is_file($scriptPath)) {
-        require $scriptPath;
+        require_once $scriptPath;
         return true;
     }
 
@@ -79,7 +79,7 @@ if ($basePath !== '' && str_starts_with($uri, $basePath . '/')) {
         $_SERVER['REQUEST_URI'] = "/index.php?chat_id={$chatId}";
         $_SERVER['SCRIPT_NAME'] = '/index.php';
         $_SERVER['PHP_SELF']    = '/index.php';
-        require $projectRoot . '/index.php';
+        require_once $projectRoot . '/index.php';
         return true;
     }
 
@@ -87,12 +87,12 @@ if ($basePath !== '' && str_starts_with($uri, $basePath . '/')) {
     $_SERVER['REQUEST_URI'] = $subPath;
     $_SERVER['SCRIPT_NAME'] = '/index.php';
     $_SERVER['PHP_SELF']    = '/index.php';
-    require $projectRoot . '/index.php';
+    require_once $projectRoot . '/index.php';
     return true;
 }
 
 // 3. Default fallback → index.php (handles /, /index.php, etc.)
 $_SERVER['SCRIPT_NAME'] = '/index.php';
 $_SERVER['PHP_SELF']    = '/index.php';
-require $projectRoot . '/index.php';
+require_once $projectRoot . '/index.php';
 return true;

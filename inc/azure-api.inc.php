@@ -7,6 +7,14 @@ if (!defined('STREAM_STOP_SENTINEL')) {
     define('STREAM_STOP_SENTINEL', '<<END_OF_REPLY>>');
 }
 
+if (!function_exists('smiles_debug_log')) {
+    function smiles_debug_log($message) {
+        $logFile = __DIR__ . '/../logs/smiles_debug.log';
+        $line = date('c') . ' ' . $message . "\n";
+        @file_put_contents($logFile, $line, FILE_APPEND);
+    }
+}
+
 /**
  * Retrieves the GPT response by orchestrating the API call and processing the response.
  *
@@ -1313,6 +1321,16 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
             ];
             $imageIndex++;
         }
+        if (!empty($imageAttachments)) {
+            $sampleImage = substr($imageAttachments[0]['document_content'] ?? '', 0, 120);
+            $debugMessage = '[SMILES DEBUG] imageAttachments count=' . count($imageAttachments) . ' sample=' . $sampleImage;
+            if (function_exists('smiles_debug_log')) {
+                smiles_debug_log($debugMessage);
+            } else {
+                error_log($debugMessage);
+            }
+        }
+
         if ($imageIndex > 1) {
             $userMessagePayload['content'] = $contentParts;
         } else {
@@ -1376,6 +1394,7 @@ function execute_api_call_streaming($url, array $payload, array $headers, array 
 
     $ch = curl_init();
     $jsonPayload = json_encode($payload);
+    $rawStreamData = '';
 
     $buffer = '';
     $metadata = [
@@ -1465,12 +1484,13 @@ function execute_api_call_streaming($url, array $payload, array $headers, array 
         CURLOPT_RETURNTRANSFER => false,
         CURLOPT_FOLLOWLOCATION => false,
         CURLOPT_HEADER         => false,
-        CURLOPT_WRITEFUNCTION  => function ($chRef, $data) use (&$buffer, &$metadata, &$accumulated, &$streamOptions, $emit, &$lastHeartbeat, $heartbeatInterval, $shouldAbort, &$aborted, $extractDeltaText, $stripTrailingSentinel, &$finishEmitted, $sentinel) {
+        CURLOPT_WRITEFUNCTION  => function ($chRef, $data) use (&$buffer, &$metadata, &$accumulated, &$streamOptions, $emit, &$lastHeartbeat, $heartbeatInterval, $shouldAbort, &$aborted, $extractDeltaText, $stripTrailingSentinel, &$finishEmitted, $sentinel, &$rawStreamData) {
             if ($data === '') {
                 return 0;
             }
 
             $buffer .= $data;
+            $rawStreamData .= $data;
             $buffer = str_replace(["\r\n", "\r"], "\n", $buffer);
 
             while (($pos = strpos($buffer, "\n\n")) !== false) {
@@ -1644,6 +1664,12 @@ function execute_api_call_streaming($url, array $payload, array $headers, array 
     }
 
     if ($status >= 400 && !$aborted) {
+        $debugMessage = '[SMILES DEBUG] streaming HTTP ' . $status . ' chat=' . $chat_id . ' body=' . substr($rawStreamData, 0, 500);
+        if (function_exists('smiles_debug_log')) {
+            smiles_debug_log($debugMessage);
+        } else {
+            error_log($debugMessage);
+        }
         throw new RuntimeException("Streaming API HTTP {$status} (chat {$chat_id})");
     }
 
