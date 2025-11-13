@@ -6,10 +6,24 @@ import numpy as np
 import openai
 import sys
 import argparse # Use argparse for cleaner argument handling
+import configparser
 
 # === CONFIG ===
-AZURE_OPENAI_ENDPOINT = "https://nhlbi-chat.openai.azure.com/"
-AZURE_OPENAI_API_KEY = "c766f3be8420471dabccac63c2f75d8f"
+CONFIG_PATH = os.environ.get("CHAT_CONFIG_PATH", "/etc/apps/chatdev_config.ini")
+def load_azure_credentials():
+    parser = configparser.ConfigParser()
+    if not parser.read(CONFIG_PATH):
+        raise RuntimeError(f"Unable to read chat configuration at {CONFIG_PATH}")
+    default_deployment = parser.get("azure", "default", fallback=None)
+    if not default_deployment or default_deployment not in parser:
+        raise RuntimeError("Azure default deployment not defined in configuration.")
+    endpoint = parser[default_deployment].get("url", "").rstrip("/")
+    api_key = parser[default_deployment].get("api_key", "")
+    if not endpoint or not api_key:
+        raise RuntimeError("Azure endpoint or API key missing from configuration.")
+    return endpoint, api_key
+
+AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY = load_azure_credentials()
 EMBEDDING_MODEL = "NHLBI-Chat-workflow-text-embedding-3-large"
 CHAT_MODEL = "NHLBI-Chat-gpt-4o"
 API_VERSION = "2024-12-01-preview"

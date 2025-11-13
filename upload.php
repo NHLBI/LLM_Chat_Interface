@@ -379,7 +379,7 @@ if (isset($_FILES['uploadDocument'])) {
                 'file_path'       => $txtPath,
                 'filename'        => $originalName,
                 'mime'            => $mimeType,
-                'cleanup_tmp'     => false,
+                'cleanup_tmp'     => true,
                 'original_size_bytes' => $originalSize !== false ? (int)$originalSize : null,
                 'parsed_size_bytes'   => $parsedSizeBytes !== false ? (int)$parsedSizeBytes : null,
                 'queue_timestamp'     => time(),
@@ -419,6 +419,8 @@ if (isset($_FILES['uploadDocument'])) {
             'inline_only'      => !$queued,
             'original_size'     => $originalSize !== false ? (int)$originalSize : null,
             'parsed_size'       => $parsedSizeBytes !== false ? (int)$parsedSizeBytes : null,
+            'parsed_path'       => $txtPath,
+            'rag_document_ids'  => $queued ? [(int)$document_id] : [],
         ];
 
         // Upload temp file is no longer needed once parsed
@@ -426,6 +428,9 @@ if (isset($_FILES['uploadDocument'])) {
 
         continue;
     }
+
+    // If we queued documents and there are entries in rag_usage_log we can re-check later,
+    // but no immediate cleanup is needed here. Parsed txt files will be removed by the worker.
 
     // Use JSON response for AJAX requests, else do a header redirect
     if (isAjaxRequest()) {

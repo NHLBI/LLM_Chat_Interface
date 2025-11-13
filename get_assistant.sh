@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
-# ----- fill in your secrets first -----
-export AZURE_OPENAI_ENDPOINT="https://nhlbi-chat.openai.azure.com"
-#export AZURE_OPENAI_KEY="c766f3be8420471dabccac63c2f75d8f"# gpt4o
-#export AZURE_OPENAI_KEY="c766f3be8420471dabccac63c2f75d8f" # gpt4.1
-#export AZURE_OPENAI_KEY="c766f3be8420471dabccac63c2f75d8f" # o3
-export AZURE_OPENAI_KEY="c766f3be8420471dabccac63c2f75d8f" # o4-mini
-# --------------------------------------
+CONFIG_PATH="${CHAT_CONFIG_PATH:-/etc/apps/chatdev_config.ini}"
+AZURE_ENDPOINT=$(php -r '
+$path = getenv("CONFIG_PATH") ?: "/etc/apps/chatdev_config.ini";
+$parser = parse_ini_file($path, true);
+$default = $parser["azure"]["default"] ?? "";
+if (!$default || empty($parser[$default]["url"]) || empty($parser[$default]["api_key"])) {
+    fwrite(STDERR, "Config missing Azure info\n");
+    exit(1);
+}
+echo rtrim($parser[$default]["url"], "/"), "\n", $parser[$default]["api_key"];
+' CONFIG_PATH="$CONFIG_PATH") || { echo "Failed to read Azure credentials from $CONFIG_PATH" >&2; exit 1; }
+AZURE_OPENAI_ENDPOINT=$(echo "$AZURE_ENDPOINT" | sed -n '1p')
+AZURE_OPENAI_KEY=$(echo "$AZURE_ENDPOINT" | sed -n '2p')
 
 curl -sS -X POST \
   "$AZURE_OPENAI_ENDPOINT/openai/assistants?api-version=2024-08-01-preview" \
@@ -17,4 +23,3 @@ curl -sS -X POST \
         "instructions": "Answer normally. When the user asks for a file, use python-docx, openpyxl or python-pptx inside Code Interpreter and save the file.",
         "tools": [ { "type": "code_interpreter" } ]
       }'
-

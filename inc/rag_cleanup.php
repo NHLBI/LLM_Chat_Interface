@@ -95,6 +95,8 @@ function ragCleanupRemoveQueueJobs(array $docIds, ?string $workspaceRoot = null)
         return $removed;
     }
 
+    $parsedDir = $workspaceRoot . '/parsed';
+
     $docIdSet = array_flip($docIds);
 
     foreach (glob($queueDir . '/*.json') as $jobFile) {
@@ -109,11 +111,11 @@ function ragCleanupRemoveQueueJobs(array $docIds, ?string $workspaceRoot = null)
         }
 
         if (!empty($contents['file_path']) && is_string($contents['file_path'])) {
-                $parsedPath = $contents['file_path'];
-                if (strpos($parsedPath, $workspaceRoot) === 0 && file_exists($parsedPath)) {
-                    @unlink($parsedPath);
-                }
+            $parsedPath = $contents['file_path'];
+            if (strpos($parsedPath, $parsedDir) === 0 && file_exists($parsedPath)) {
+                @unlink($parsedPath);
             }
+        }
 
         @unlink($jobFile);
         $removed[] = $jobFile;

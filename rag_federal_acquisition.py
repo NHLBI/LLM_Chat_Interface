@@ -4,10 +4,24 @@ import json
 import faiss
 import numpy as np
 import openai
+import configparser
 
 # === CONFIG ===
-AZURE_OPENAI_ENDPOINT = "https://nhlbi-chat.openai.azure.com/"
-AZURE_OPENAI_API_KEY = "c766f3be8420471dabccac63c2f75d8f"
+CONFIG_PATH = os.environ.get("CHAT_CONFIG_PATH", "/etc/apps/chatdev_config.ini")
+def load_azure_credentials():
+    parser = configparser.ConfigParser()
+    if not parser.read(CONFIG_PATH):
+        raise RuntimeError(f"Unable to read chat configuration at {CONFIG_PATH}")
+    default_deployment = parser.get("azure", "default", fallback=None)
+    if not default_deployment or default_deployment not in parser:
+        raise RuntimeError("Azure default deployment not defined in configuration.")
+    endpoint = parser[default_deployment].get("url", "").rstrip("/")
+    api_key = parser[default_deployment].get("api_key", "")
+    if not endpoint or not api_key:
+        raise RuntimeError("Azure endpoint or API key missing from configuration.")
+    return endpoint, api_key
+
+AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY = load_azure_credentials()
 EMBEDDING_MODEL = "NHLBI-Chat-workflow-text-embedding-3-large"
 CHAT_MODEL = "NHLBI-Chat-gpt-4o"
 API_VERSION = "2024-12-01-preview"
@@ -15,9 +29,9 @@ API_VERSION = "2024-12-01-preview"
 # === INIT OPENAI FOR AZURE ===
 
 openai.api_type = "azure"
-openai.api_version = "2024-12-01-preview"
-openai.api_key = "c766f3be8420471dabccac63c2f75d8f"
-openai.azure_endpoint = "https://nhlbi-chat.openai.azure.com"
+openai.api_version = API_VERSION
+openai.api_key = AZURE_OPENAI_API_KEY
+openai.azure_endpoint = AZURE_OPENAI_ENDPOINT
 
 
 # === SAMPLE DOCUMENT ===
@@ -79,4 +93,3 @@ response = openai.chat.completions.create(
 # === SHOW OUTPUT ===
 print("\n🔎 Answer:\n")
 print(response.choices[0].message.content)
-

@@ -7,8 +7,16 @@
  *
  * ---------  EDIT THE BLOCK BELOW  ---------
  */
-$azureEndpoint = 'https://nhlbi-chat.openai.azure.com';
-$azureKey      = 'c766f3be8420471dabccac63c2f75d8f';
+require_once __DIR__ . '/get_config.php';
+
+$defaultDeployment = $config['azure']['default'] ?? '';
+if ($defaultDeployment === '' || empty($config[$defaultDeployment]['api_key']) || empty($config[$defaultDeployment]['url'])) {
+    fwrite(STDERR, "Unable to locate Azure deployment credentials in chat configuration.\n");
+    exit(1);
+}
+
+$azureEndpoint = rtrim($config[$defaultDeployment]['url'], '/');
+$azureKey      = $config[$defaultDeployment]['api_key'];
 
 /*  deployment-name  =>  friendly nick used in assistant name  */
 $deployments = [
@@ -71,4 +79,3 @@ function azurePost(string $url, array $json, string $key): array {
            ? json_decode($resp, true)
            : ['error'=>['message'=>$resp]];
 }
-
