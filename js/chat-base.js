@@ -379,6 +379,66 @@ function openDocumentExcerpt(docId, trigger) {
     });
 }
 
+function openRagCitationPreview(exchangeId, docId, chunkIndex, trigger) {
+    if (!exchangeId || !docId) {
+        return;
+    }
+
+    var $trigger = null;
+    if (window.jQuery && trigger) {
+        $trigger = trigger instanceof window.jQuery ? trigger : window.jQuery(trigger);
+        if ($trigger && !$trigger.length) {
+            $trigger = null;
+        }
+    }
+
+    if ($trigger) {
+        $trigger.addClass('message-attachment--loading');
+        $trigger.attr('aria-busy', 'true');
+    }
+
+    window.jQuery.ajax({
+        url: resolveAppPath('rag_citation_preview.php'),
+        method: 'GET',
+        dataType: 'json',
+        data: {
+            exchange_id: exchangeId,
+            document_id: docId,
+            chunk_index: typeof chunkIndex === 'number' ? chunkIndex : ''
+        },
+        success: function (response) {
+            if (!response || response.ok !== true || !response.citation) {
+                alert('Unable to load the retrieved chunk preview at this time.');
+                return;
+            }
+
+            if (typeof window.showDocumentExcerptModal === 'function') {
+                var focusTarget = null;
+                if ($trigger && $trigger.length) {
+                    focusTarget = $trigger.get(0);
+                } else if (trigger && trigger.nodeType === 1) {
+                    focusTarget = trigger;
+                }
+                window._documentExcerptReturnFocus = focusTarget;
+                window.showDocumentExcerptModal(response.citation);
+            }
+        },
+        error: function (xhr) {
+            var message = 'Unable to load the retrieved chunk preview.';
+            if (xhr && xhr.responseJSON && xhr.responseJSON.message) {
+                message = xhr.responseJSON.message;
+            }
+            alert(message);
+        },
+        complete: function () {
+            if ($trigger) {
+                $trigger.removeClass('message-attachment--loading');
+                $trigger.removeAttr('aria-busy');
+            }
+        }
+    });
+}
+
 function renderMessageAttachments(messageElement, documents) {
     if (!messageElement || !messageElement.length) {
         return;
@@ -528,3 +588,120 @@ function renderMessageAttachments(messageElement, documents) {
 
     messageElement.append(container);
 }
+
+function createInlineRagCitationElement(labelText, citation, exchangeId) {
+    var span = document.createElement('span');
+    span.className = 'rag-inline-citation';
+    span.setAttribute('role', 'button');
+    span.setAttribute('tabindex', '0');
+    span.textContent = labelText;
+    span.dataset.documentId = citation.document_id || citation.id || '';
+    if (exchangeId) {
+        span.dataset.exchangeId = exchangeId;
+    } else if (citation.exchange_id) {
+        span.dataset.exchangeId = citation.exchange_id;
+    }
+    if (citation.chunk_index !== undefined && citation.chunk_index !== null) {
+        span.dataset.chunkIndex = citation.chunk_index;
+    }
+    return span;
+}
+
+function collectInlineCitationNodes(node, bucket) {
+    if (!node) {
+        return;
+    }
+    var ELEMENT_NODE = 1;
+    var TEXT_NODE = 3;
+
+    if (node.nodeType === TEXT_NODE) {
+        if (node.nodeValue && node.nodeValue.indexOf('【') !== -1) {
+            bucket.push(node);
+        }
+        return;
+    }
+    if (node.nodeType !== ELEMENT_NODE) {
+        return;
+    }
+    var element = node;
+    if (element.classList && (element.classList.contains('rag-inline-citation') || element.classList.contains('message-attachments'))) {
+        return;
+    }
+    var child = node.firstChild;
+    while (child) {
+        collectInlineCitationNodes(child, bucket);
+        child = child.nextSibling;
+    }
+}
+
+function applyInlineRagCitationLinks(messageElement, citations, exchangeId) {
+    if (!messageElement || !messageElement.length) {
+        return;
+    }
+    if (!Array.isArray(citations) || !citations.length) {
+        return;
+    }
+
+    var queue = citations.slice();
+    var textNodes = [];
+    collectInlineCitationNodes(messageElement[0], textNodes);
+    var replacements = [];
+
+    textNodes.forEach(function (node) {
+        if (!queue.length) {
+            return;
+        }
+        var text = node.nodeValue;
+        if (!text || text.indexOf('【') === -1) {
+            return;
+        }
+        var pieces = [];
+        var lastIndex = 0;
+        var start = text.indexOf('【', lastIndex);
+
+        while (start !== -1 && queue.length) {
+            var end = text.indexOf('】', start);
+            if (end === -1) {
+                break;
+            }
+            if (start > lastIndex) {
+                pieces.push(document.createTextNode(text.slice(lastIndex, start)));
+            }
+            var label = text.slice(start, end + 1);
+            var citation = queue.shift();
+            pieces.push(createInlineRagCitationElement(label, citation, exchangeId));
+            lastIndex = end + 1;
+            start = text.indexOf('【', lastIndex);
+        }
+
+        if (pieces.length) {
+            if (lastIndex < text.length) {
+                pieces.push(document.createTextNode(text.slice(lastIndex)));
+            }
+            replacements.push({ node: node, fragments: pieces });
+        }
+    });
+
+    replacements.forEach(function (replacement) {
+        var parent = replacement.node.parentNode;
+        if (!parent) {
+            return;
+        }
+        replacement.fragments.forEach(function (fragment) {
+            parent.insertBefore(fragment, replacement.node);
+        });
+        parent.removeChild(replacement.node);
+    });
+}
+
+window.jQuery(document).on('click keypress', '.rag-inline-citation', function (event) {
+    if (event.type === 'keypress' && event.key !== 'Enter' && event.key !== ' ') {
+        return;
+    }
+    event.preventDefault();
+    var $target = window.jQuery(this);
+    var docId = $target.data('documentId');
+    var chunkIndex = $target.data('chunkIndex');
+    var exchangeId = $target.data('exchangeId');
+    openRagCitationPreview(exchangeId, docId, chunkIndex, this);
+});

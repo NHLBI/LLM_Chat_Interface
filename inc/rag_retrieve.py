@@ -127,6 +127,7 @@ def assemble_snippet(points, question: str, max_tokens: int):
     budget = max_tokens
 
     hits = getattr(points, "points", points)
+    used_chunks = []
 
     for p in hits:
         pl = getattr(p, "payload", {}) or {}
@@ -137,8 +138,6 @@ def assemble_snippet(points, question: str, max_tokens: int):
 
         filename = pl.get("filename") or f"doc-{pl.get('document_id')}"
         cite_bits = []
-        if pl.get("page_range"):
-            cite_bits.append(f"p. {pl['page_range']}")
         if pl.get("section"):
             cite_bits.append(f"sec. {pl['section']}")
         cite_suffix = ", ".join(cite_bits)
@@ -190,13 +189,28 @@ def assemble_snippet(points, question: str, max_tokens: int):
 
         out.append(candidate)
         budget -= need
+        used_chunks.append({
+            "document_id": pl.get("document_id"),
+            "chunk_index": pl.get("chunk_index"),
+            "filename": filename,
+            "section": pl.get("section"),
+            "page_range": pl.get("page_range"),
+            "excerpt": snippet,
+            "score": getattr(p, "score", None),
+        })
         if budget <= 0:
             break
 
     if not out:
-        return "----- RAG CONTEXT BEGIN -----\n(No highly relevant passages found.)\n----- RAG CONTEXT END -----"
+        return (
+            "----- RAG CONTEXT BEGIN -----\n(No highly relevant passages found.)\n----- RAG CONTEXT END -----",
+            []
+        )
 
-    return "----- RAG CONTEXT BEGIN -----\n" + "\n\n".join(out) + "\n----- RAG CONTEXT END -----"
+    return (
+        "----- RAG CONTEXT BEGIN -----\n" + "\n\n".join(out) + "\n----- RAG CONTEXT END -----",
+        used_chunks
+    )
 
 def main():
     t0 = time.time()
@@ -233,23 +247,24 @@ def main():
     )
 
     hits = res.points if hasattr(res, "points") else res
-    context = assemble_snippet(hits, question, max_tokens=max_ctx)
+    context, used_chunks = assemble_snippet(hits, question, max_tokens=max_ctx)
 
     citations = []
-    for p in hits:
-        pl = getattr(p, "payload", {}) or {}
+    for chunk in used_chunks:
         citations.append({
-            "document_id": pl.get("document_id"),
-            "filename": pl.get("filename"),
-            "page": pl.get("page_range"),
-            "section": pl.get("section"),
-            "score": getattr(p, "score", None),
+            "document_id": chunk.get("document_id"),
+            "filename": chunk.get("filename"),
+            "page": chunk.get("page_range"),
+            "section": chunk.get("section"),
+            "chunk_index": chunk.get("chunk_index"),
+            "excerpt": chunk.get("excerpt"),
+            "score": chunk.get("score"),
         })
 
     augmented_prompt = (
         f"{context}\n\n"
         "Use the context above when helpful. If something isn't covered, answer normally. "
-        "Cite sources inline using the brackets provided (e.g., 【filename, p. X】)."
+        "Cite sources inline using the brackets provided (e.g., 【filename】)."
         "\n\nUser question:\n" + question
     )
 

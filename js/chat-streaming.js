@@ -199,6 +199,11 @@ function finalizeAssistantStream(finalPayload) {
 
     streamContext.accumulatedText = finalReply;
 
+    var ragCitationsData = (finalPayload && Array.isArray(finalPayload.rag_citations)) ? finalPayload.rag_citations : [];
+    if (streamContext.messageElement && finalPayload && finalPayload.eid) {
+        streamContext.messageElement.attr('data-exchange-id', finalPayload.eid);
+    }
+
     if (streamContext.controls && streamContext.controls.stop) {
         streamContext.controls.stop.remove();
         streamContext.controls.stop = null;

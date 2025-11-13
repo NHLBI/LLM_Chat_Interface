@@ -60,12 +60,15 @@ class RagRetrieveTests(TestCase):
                 self.payload = payload
 
         points = [Point(payload), Point(payload)]
-        snippet = self.module.assemble_snippet(points, 'testing tools', max_tokens=10_000)
+        snippet, used = self.module.assemble_snippet(points, 'testing tools', max_tokens=10_000)
 
         self.assertIn('doc1.pdf', snippet)
         self.assertEqual(1, snippet.count('Second sentence'))
+        self.assertEqual(1, len(used))
+        self.assertEqual(0, used[0]['chunk_index'])
 
     def test_assemble_snippet_fallback(self):
         self.module._token_len = lambda text: len(text)
-        result = self.module.assemble_snippet([], 'question', max_tokens=10)
+        result, used = self.module.assemble_snippet([], 'question', max_tokens=10)
         self.assertIn('No highly relevant passages found.', result)
+        self.assertEqual([], used)

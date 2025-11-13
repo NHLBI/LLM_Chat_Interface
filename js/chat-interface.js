@@ -1007,6 +1007,9 @@ function displayMessages(chatMessages) {
             var avatarSrc = 'images/' + deploymentMeta.image;
             var avatarAlt = deploymentMeta.image_alt;
             assistantMessageElement.prepend('<img src="' + avatarSrc + '" alt="' + avatarAlt + '" class="openai-icon">');
+            if (message.id) {
+                assistantMessageElement.attr('data-exchange-id', message.id);
+            }
             chatContainer.append(assistantMessageElement);
 
             if (message.reply) {

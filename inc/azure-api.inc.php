@@ -113,6 +113,83 @@ function consume_prompt_documents_for_client(): array {
     return array_values($details);
 }
 
+function export_rag_citations_for_client(): array {
+    $citations = $_SESSION['last_rag_citations'] ?? [];
+    if (!is_array($citations)) {
+        return [];
+    }
+    return array_values(array_filter($citations, static function ($entry) {
+        return is_array($entry);
+    }));
+}
+
+function persist_rag_usage_log(int $exchangeId, string $chatId, string $userId): void {
+    global $pdo;
+
+    if (!$pdo instanceof PDO) {
+        return;
+    }
+
+    $citations = export_rag_citations_for_client();
+    if (empty($citations)) {
+        return;
+    }
+
+    $meta = $_SESSION['last_rag_meta'] ?? [];
+    $model = $meta['embedding_model'] ?? null;
+    $topK = isset($meta['top_k']) ? (int)$meta['top_k'] : null;
+    $latency = isset($meta['latency_ms']) ? (int)$meta['latency_ms'] : null;
+
+    try {
+        $stmt = $pdo->prepare('DELETE FROM rag_usage_log WHERE exchange_id = :eid');
+        $stmt->execute(['eid' => $exchangeId]);
+
+        $insert = $pdo->prepare('
+            INSERT INTO rag_usage_log (exchange_id, chat_id, user, query_embedding_model, top_k, latency_ms, citations)
+            VALUES (:exchange_id, :chat_id, :user, :model, :top_k, :latency, :citations)
+        ');
+        $insert->execute([
+            'exchange_id' => $exchangeId,
+            'chat_id'     => $chatId,
+            'user'        => $userId,
+            'model'       => $model,
+            'top_k'       => $topK,
+            'latency'     => $latency,
+            'citations'   => json_encode($citations, JSON_UNESCAPED_UNICODE),
+        ]);
+    } catch (Throwable $e) {
+        error_log('persist_rag_usage_log error: ' . $e->getMessage());
+    }
+}
+
+function fetch_rag_citations(int $exchangeId): array {
+    global $pdo;
+    if (!$pdo instanceof PDO || $exchangeId <= 0) {
+        return [];
+    }
+
+    try {
+        $stmt = $pdo->prepare('SELECT citations FROM rag_usage_log WHERE exchange_id = :eid LIMIT 1');
+        $stmt->execute(['eid' => $exchangeId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row || empty($row['citations'])) {
+            return [];
+        }
+
+        $decoded = json_decode($row['citations'], true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        return array_values(array_filter($decoded, static function ($entry) {
+            return is_array($entry);
+        }));
+    } catch (Throwable $e) {
+        error_log('fetch_rag_citations error: ' . $e->getMessage());
+        return [];
+    }
+}
+
 function stream_emit_event(?array &$streamOptions, string $type, array $payload = []): void {
     if (!is_array($streamOptions)) {
         return;
@@ -834,6 +911,17 @@ function process_api_response(
             $result['prompt_documents'] = $promptDocsForClient;
         }
 
+        $ragCitationsForClient = export_rag_citations_for_client();
+        if (!empty($ragCitationsForClient)) {
+            $result['rag_citations'] = $ragCitationsForClient;
+            persist_rag_usage_log((int)$eid, (string)$chat_id, (string)$summaryUser);
+        } else {
+            $fallback = fetch_rag_citations((int)$eid);
+            if (!empty($fallback)) {
+                $result['rag_citations'] = $fallback;
+            }
+        }
+
         return $result;
     }
 
@@ -1000,6 +1088,18 @@ function process_api_response(
     if (!empty($promptDocsForClient)) {
         $result['prompt_documents'] = $promptDocsForClient;
     }
+
+    $ragCitationsForClient = export_rag_citations_for_client();
+    if (!empty($ragCitationsForClient)) {
+        $result['rag_citations'] = $ragCitationsForClient;
+        persist_rag_usage_log((int)$eid, (string)$chat_id, (string)$summaryUser);
+    } else {
+        $fallback = fetch_rag_citations((int)$eid);
+        if (!empty($fallback)) {
+            $result['rag_citations'] = $fallback;
+        }
+    }
+
     return $result;
 }
 

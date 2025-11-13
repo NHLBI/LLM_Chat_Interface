@@ -224,7 +224,14 @@ try {
         'finish_reason' => $streamState['finish_reason'] ?? null,
         'stopped'       => (bool)$streamState['aborted'],
         'prompt_documents' => $response['prompt_documents'] ?? [],
+        'rag_citations'    => $response['rag_citations'] ?? [],
     ];
+    if (empty($finalPayload['rag_citations']) && !empty($finalPayload['eid'])) {
+        $fallbackCitations = fetch_rag_citations((int)$finalPayload['eid']);
+        if (!empty($fallbackCitations)) {
+            $finalPayload['rag_citations'] = $fallbackCitations;
+        }
+    }
     $sendEvent('final', $finalPayload);
 
     if ($needTitle && !empty($response['message'])) {
