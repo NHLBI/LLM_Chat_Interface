@@ -1857,8 +1857,8 @@ function retrieve_context_messages(
         if ($total_tokens + $needed > $token_budget) {
             break;
         }
-        $formatted[] = ['role' => 'user',      'content' => $msg['prompt']];
         $formatted[] = ['role' => 'assistant', 'content' => $msg['reply']];
+        $formatted[] = ['role' => 'user',      'content' => $msg['prompt']];
         $total_tokens += $needed;
     }
 

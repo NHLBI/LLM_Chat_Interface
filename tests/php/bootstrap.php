@@ -176,7 +176,7 @@ function run_session_status(array $sessionData): array
             session_id($sid);
 
             ob_start();
-            require_once __DIR__ . '/../../session_status.php';
+            require __DIR__ . '/../../session_status.php';
             $output = ob_get_clean();
 
             $data = json_decode($output, true);

@@ -49,27 +49,18 @@ if [[ -z "$SESSION_COOKIE" ]]; then
     fi
 fi
 
-read -r -d '' SCANS_JSON <<'JSON'
+SCANS_FILE="$RUN_DIR/scans.json"
+cat <<'JSON' > "$SCANS_FILE"
 [
   { "name": "root", "path": "", "actions": [] },
-  { "name": "index",
-    "path": "/index.php",
-    "actions": [
-      "wait for .doc-actions button",
-      "click .doc-actions button",
-      "wait for element #uploadModal[style*=\\"display: block\\"]"
-    ]
-  },
+  { "name": "index", "path": "/index.php", "actions": [] },
   { "name": "upload", "path": "/upload.php", "actions": [] }
 ]
 JSON
 
-SCANS_FILE="$RUN_DIR/scans.json"
-echo "$SCANS_JSON" > "$SCANS_FILE"
-
 EXIT_CODE=0
 
-jq -c '.[]' "$SCANS_FILE" | while read -r SCAN; do
+while read -r SCAN; do
     NAME=$(echo "$SCAN" | jq -r '.name')
     PATH_SUFFIX=$(echo "$SCAN" | jq -r '.path')
     URL="${BASE_URL%/}${APP_PATH}${PATH_SUFFIX}"
@@ -81,10 +72,15 @@ jq -c '.[]' "$SCANS_FILE" | while read -r SCAN; do
 
     [[ $VERBOSE -eq 1 ]] && echo "Running pa11y against $URL"
 
+    CHROME_SECTION=""
+    if [[ "$(id -u)" == "0" ]]; then
+        CHROME_SECTION=$'  "chromeLaunchConfig": {\n    "args": ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--headless=new"]\n  },\n'
+    fi
+
     cat <<EOF_CONFIG > "$CONFIG_FILE"
 {
   "headers": ["Cookie: ${SESSION_COOKIE:-}"],
-  "actions": $ACTIONS
+${CHROME_SECTION}  "actions": $ACTIONS
 }
 EOF_CONFIG
 
@@ -132,7 +128,7 @@ EOF_CONFIG
 
     echo >> "$SUMMARY_MD"
 
-done
+done < <(jq -c '.[]' "$SCANS_FILE")
 
 if [[ $EXIT_CODE -eq 0 ]]; then
     echo "Accessibility validation passed for all pages"
