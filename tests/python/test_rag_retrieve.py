@@ -63,6 +63,7 @@ class RagRetrieveTests(TestCase):
         snippet, used = self.module.assemble_snippet(points, 'testing tools', max_tokens=10_000)
 
         self.assertIn('doc1.pdf', snippet)
+        self.assertIn('chunk 0', snippet)
         self.assertEqual(1, snippet.count('Second sentence'))
         self.assertEqual(1, len(used))
         self.assertEqual(0, used[0]['chunk_index'])

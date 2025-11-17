@@ -138,6 +138,13 @@ def assemble_snippet(points, question: str, max_tokens: int):
 
         filename = pl.get("filename") or f"doc-{pl.get('document_id')}"
         cite_bits = []
+        chunk_idx = pl.get("chunk_index")
+        if chunk_idx is not None:
+            try:
+                chunk_label = int(chunk_idx)
+            except (TypeError, ValueError):
+                chunk_label = chunk_idx
+            cite_bits.append(f"chunk {chunk_label}")
         if pl.get("section"):
             cite_bits.append(f"sec. {pl['section']}")
         cite_suffix = ", ".join(cite_bits)

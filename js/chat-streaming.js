@@ -241,6 +241,19 @@ function finalizeAssistantStream(finalPayload) {
         var plainResponse = $('<div>').html(formattedHTML).text();
         addCopyButton(streamContext.messageElement, finalReply);
         addSpeakButton(streamContext.messageElement, plainResponse);
+        if (typeof decorateInlineRagCitations === 'function') {
+            try {
+                var exchangeIdForCitations = null;
+                if (finalPayload && finalPayload.eid) {
+                    exchangeIdForCitations = finalPayload.eid;
+                } else if (streamContext.messageElement) {
+                    exchangeIdForCitations = streamContext.messageElement.attr('data-exchange-id') || null;
+                }
+                decorateInlineRagCitations(formattedElement, ragCitationsData, exchangeIdForCitations);
+            } catch (err) {
+                console.warn('Failed to decorate RAG citations:', err);
+            }
+        }
     } else {
         formattedElement.text('(no reply)');
         streamContext.messageElement.append(formattedElement);

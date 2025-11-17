@@ -589,13 +589,16 @@ function renderMessageAttachments(messageElement, documents) {
     messageElement.append(container);
 }
 
-function createInlineRagCitationElement(labelText, citation, exchangeId) {
+function buildCitationSpanHtml(labelText, citation, exchangeId) {
     var span = document.createElement('span');
     span.className = 'rag-inline-citation';
     span.setAttribute('role', 'button');
     span.setAttribute('tabindex', '0');
     span.textContent = labelText;
-    span.dataset.documentId = citation.document_id || citation.id || '';
+    var docId = citation.document_id || citation.id || '';
+    if (docId) {
+        span.dataset.documentId = docId;
+    }
     if (exchangeId) {
         span.dataset.exchangeId = exchangeId;
     } else if (citation.exchange_id) {
@@ -604,94 +607,166 @@ function createInlineRagCitationElement(labelText, citation, exchangeId) {
     if (citation.chunk_index !== undefined && citation.chunk_index !== null) {
         span.dataset.chunkIndex = citation.chunk_index;
     }
-    return span;
+    var wrapper = document.createElement('div');
+    wrapper.appendChild(span);
+    return wrapper.innerHTML;
 }
 
-function collectInlineCitationNodes(node, bucket) {
-    if (!node) {
-        return;
+function normalizeDocName(value) {
+    if (typeof value !== 'string') {
+        return '';
     }
-    var ELEMENT_NODE = 1;
-    var TEXT_NODE = 3;
+    var trimmed = value.trim();
+    if (!trimmed) {
+        return '';
+    }
+    var clean = trimmed.replace(/^\/*/, '').replace(/\\/g, '/');
+    var segments = clean.split('/');
+    return segments[segments.length - 1].toLowerCase();
+}
 
-    if (node.nodeType === TEXT_NODE) {
-        if (node.nodeValue && node.nodeValue.indexOf('【') !== -1) {
-            bucket.push(node);
+function parseCitationLabel(labelText) {
+    if (typeof labelText !== 'string' || !labelText.length) {
+        return {};
+    }
+    var inner = labelText.trim();
+    if (inner.charAt(0) === '【' && inner.charAt(inner.length - 1) === '】') {
+        inner = inner.slice(1, -1);
+    }
+    inner = inner.trim();
+    if (!inner) {
+        return {};
+    }
+    var parts = inner.split(',');
+    var docName = parts.shift();
+    docName = docName ? docName.trim() : '';
+    var normalizedDoc = normalizeDocName(docName);
+    var chunkIndex = null;
+    parts.forEach(function (part) {
+        if (chunkIndex !== null) {
+            return;
         }
-        return;
+        var match = part.match(/chunk\s+(\d+)/i);
+        if (match) {
+            chunkIndex = parseInt(match[1], 10);
+        }
+    });
+    return {
+        documentName: docName || null,
+        normalizedDocumentName: normalizedDoc || null,
+        chunkIndex: Number.isNaN(chunkIndex) ? null : chunkIndex
+    };
+}
+
+function selectCitationForLabel(labelText, pool) {
+    if (!Array.isArray(pool) || !pool.length) {
+        return null;
     }
-    if (node.nodeType !== ELEMENT_NODE) {
-        return;
+    var parsed = parseCitationLabel(labelText);
+    var candidates = [
+        function exactDocChunk(entry) {
+            if (parsed.normalizedDocumentName && parsed.chunkIndex !== null) {
+                var name = normalizeDocName(entry.filename || entry.name || entry.title || '');
+                var chunk = entry.chunk_index;
+                var chunkNumber = typeof chunk === 'number' ? chunk : parseInt(chunk, 10);
+                if (!Number.isNaN(chunkNumber) && name === parsed.normalizedDocumentName && chunkNumber === parsed.chunkIndex) {
+                    return true;
+                }
+            }
+            return false;
+        },
+        function chunkOnly(entry) {
+            if (parsed.chunkIndex !== null) {
+                var chunk = entry.chunk_index;
+                var chunkNumber = typeof chunk === 'number' ? chunk : parseInt(chunk, 10);
+                if (!Number.isNaN(chunkNumber) && chunkNumber === parsed.chunkIndex) {
+                    return true;
+                }
+            }
+            return false;
+        },
+        function docOnly(entry) {
+            if (parsed.normalizedDocumentName) {
+                var name = normalizeDocName(entry.filename || entry.name || entry.title || '');
+                if (name === parsed.normalizedDocumentName) {
+                    return true;
+                }
+            }
+            return false;
+        },
+        function anyEntry() {
+            return true;
+        }
+    ];
+
+    for (var i = 0; i < candidates.length; i++) {
+        for (var j = 0; j < pool.length; j++) {
+            if (candidates[i](pool[j])) {
+                return pool.splice(j, 1)[0];
+            }
+        }
     }
-    var element = node;
-    if (element.classList && (element.classList.contains('rag-inline-citation') || element.classList.contains('message-attachments'))) {
-        return;
+    return null;
+}
+
+function injectInlineCitationHtml(html, citations, exchangeId) {
+    if (typeof html !== 'string' || !html.length) {
+        return html;
     }
-    var child = node.firstChild;
-    while (child) {
-        collectInlineCitationNodes(child, bucket);
-        child = child.nextSibling;
+    if (!Array.isArray(citations) || !citations.length) {
+        return html;
     }
+    var remaining = citations.slice();
+    return html.replace(/【[^【】]+】/g, function (match) {
+        var citation = selectCitationForLabel(match, remaining);
+        if (!citation) {
+            return match;
+        }
+        return buildCitationSpanHtml(match, citation, exchangeId);
+    });
 }
 
 function applyInlineRagCitationLinks(messageElement, citations, exchangeId) {
     if (!messageElement || !messageElement.length) {
-        return;
+        return false;
     }
     if (!Array.isArray(citations) || !citations.length) {
-        return;
+        return false;
     }
 
-    var queue = citations.slice();
-    var textNodes = [];
-    collectInlineCitationNodes(messageElement[0], textNodes);
-    var replacements = [];
+    var currentHtml = messageElement.html();
+    var updatedHtml = injectInlineCitationHtml(currentHtml, citations, exchangeId);
+    if (updatedHtml !== currentHtml) {
+        messageElement.html(updatedHtml);
+        return true;
+    }
+    return false;
+}
 
-    textNodes.forEach(function (node) {
-        if (!queue.length) {
+function decorateInlineRagCitations(messageElement, citations, exchangeId) {
+    if (!messageElement || !messageElement.length) {
+        return;
+    }
+    var applied = false;
+    if (Array.isArray(citations) && citations.length) {
+        applied = applyInlineRagCitationLinks(messageElement, citations, exchangeId);
+        if (applied) {
             return;
         }
-        var text = node.nodeValue;
-        if (!text || text.indexOf('【') === -1) {
-            return;
-        }
-        var pieces = [];
-        var lastIndex = 0;
-        var start = text.indexOf('【', lastIndex);
-
-        while (start !== -1 && queue.length) {
-            var end = text.indexOf('】', start);
-            if (end === -1) {
-                break;
+    }
+    if (!exchangeId || !window.jQuery) {
+        return;
+    }
+    window.jQuery
+        .getJSON(resolveAppPath('rag_citations.php'), { exchange_id: exchangeId })
+        .done(function (resp) {
+            if (resp && resp.ok && Array.isArray(resp.citations) && resp.citations.length) {
+                applyInlineRagCitationLinks(messageElement, resp.citations, exchangeId);
             }
-            if (start > lastIndex) {
-                pieces.push(document.createTextNode(text.slice(lastIndex, start)));
-            }
-            var label = text.slice(start, end + 1);
-            var citation = queue.shift();
-            pieces.push(createInlineRagCitationElement(label, citation, exchangeId));
-            lastIndex = end + 1;
-            start = text.indexOf('【', lastIndex);
-        }
-
-        if (pieces.length) {
-            if (lastIndex < text.length) {
-                pieces.push(document.createTextNode(text.slice(lastIndex)));
-            }
-            replacements.push({ node: node, fragments: pieces });
-        }
-    });
-
-    replacements.forEach(function (replacement) {
-        var parent = replacement.node.parentNode;
-        if (!parent) {
-            return;
-        }
-        replacement.fragments.forEach(function (fragment) {
-            parent.insertBefore(fragment, replacement.node);
+        })
+        .fail(function () {
+            // silently ignore; citations remain plain text
         });
-        parent.removeChild(replacement.node);
-    });
 }
 
 window.jQuery(document).on('click keypress', '.rag-inline-citation', function (event) {
