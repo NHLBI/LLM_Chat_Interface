@@ -4,9 +4,10 @@ declare(strict_types=1);
 header('Content-Type: application/json');
 
 try {
-    require_once 'bootstrap.php';
-    require_once 'db.php';
-    require_once __DIR__ . '/inc/rag_cleanup.php';
+require_once 'bootstrap.php';
+require_once 'db.php';
+require_once __DIR__ . '/inc/rag_cleanup.php';
+require_once __DIR__ . '/inc/rag_processing_status.php';
 
     if (empty($_SESSION['user_data']['userid'])) {
         throw new RuntimeException('User not authenticated.');
@@ -40,6 +41,7 @@ try {
     }
 
     $pdo = get_connection();
+    $ragPaths = rag_workspace_paths($config ?? null);
 
     $cancelledIds = [];
     foreach ($docIds as $docId) {
@@ -68,6 +70,7 @@ try {
         }
 
         $cancelledIds[] = $docId;
+        rag_processing_status_clear($docId, $ragPaths);
     }
 
     if (empty($cancelledIds)) {

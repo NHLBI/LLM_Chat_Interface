@@ -5,6 +5,7 @@ error_reporting(E_ALL);
 
 // Include necessary libraries
 require_once 'bootstrap.php';
+require_once __DIR__ . '/inc/rag_processing_status.php';
 
 if (!function_exists('smiles_debug_log')) {
     function smiles_debug_log($message) {
@@ -75,13 +76,15 @@ if (!empty($_REQUEST['selected_workflow'])) {
 // === Workspace strictly under web root ===
 $ragPaths     = rag_workspace_paths($config ?? null);
 $workRoot     = $ragPaths['root'];
-$parsedDir    = $ragPaths['parsed'];
-$queueDir     = $ragPaths['queue'];
-$logsDir      = $ragPaths['logs'];
-$completedDir = $ragPaths['completed'];
-$failedDir    = $ragPaths['failed'];
+$parsedDir     = $ragPaths['parsed'];
+$queueDir      = $ragPaths['queue'];
+$logsDir       = $ragPaths['logs'];
+$completedDir  = $ragPaths['completed'];
+$failedDir     = $ragPaths['failed'];
+$statusDir     = $ragPaths['status'] ?? ($logsDir . '/status');
+$uploadStageDir= $ragPaths['uploads'] ?? ($workRoot . '/uploads');
 
-$dirs = [$workRoot, $parsedDir, $queueDir, $logsDir, $completedDir, $failedDir];
+$dirs = [$workRoot, $parsedDir, $queueDir, $logsDir, $completedDir, $failedDir, $statusDir, $uploadStageDir];
 foreach ($dirs as $d) {
     if (!is_dir($d)) {
         @mkdir($d, 0775, true);
@@ -123,6 +126,7 @@ if (isset($_FILES['uploadDocument'])) {
 
     $smilesGenerated = !empty($_POST['smiles_generated']);
     $smilesLabel = isset($_POST['smiles_label']) ? trim((string)$_POST['smiles_label']) : '';
+
 
     for ($i = 0; $i < $fileCount; $i++) {
         if ($_FILES['uploadDocument']['error'][$i] !== UPLOAD_ERR_OK) {
@@ -212,219 +216,100 @@ if (isset($_FILES['uploadDocument'])) {
             continue;
         }
 
-        // ===== DOCS: parse to a file under ./var/rag/parsed =====
-        $txtPath  = $parsedDir . '/rag_' . uniqid('', true) . '.txt';
-        $parseLog = $logsDir   . '/parse_' . time() . '_' . preg_replace('/[^A-Za-z0-9_.-]/', '_', $originalName) . '.log';
+        // ===== DOCS: stage for async parsing/indexing =====
+        $extension = pathinfo($originalName, PATHINFO_EXTENSION);
+        $stagePath = $uploadStageDir . '/rag_' . uniqid('', true);
+        if (!empty($extension)) {
+            $stagePath .= '.' . $extension;
+        }
 
-        // Ensure the upload temp is readable
-        @chmod($tmpName, 0640);
-
-        // Run parser once, streaming stdout directly to disk so large documents don't exhaust PHP memory
-        $parseCmd = sprintf('%s %s %s %s',
-            escapeshellarg($python),
-            escapeshellarg($parser),
-            escapeshellarg($tmpName),
-            escapeshellarg($originalName)
-        );
-        error_log("PARSE CMD: $parseCmd");
-
-        $parseHandle = fopen($txtPath, 'w');
-        if ($parseHandle === false) {
-            error_log("Unable to open parsed output path: {$txtPath}");
-            @unlink($tmpName);
+        $moved = false;
+        if (function_exists('move_uploaded_file')) {
+            $moved = @move_uploaded_file($tmpName, $stagePath);
+        }
+        if (!$moved) {
+            $moved = @rename($tmpName, $stagePath);
+        }
+        if (!$moved) {
+            error_log("Failed to move uploaded document into staging for {$originalName}");
             continue;
         }
+        @chmod($stagePath, 0640);
 
-        $descriptorSpec = [
-            0 => ['pipe', 'r'],
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
-        ];
-
-        $parsePipes = [];
-        $parseProc = proc_open($parseCmd, $descriptorSpec, $parsePipes, __DIR__);
-        if (!is_resource($parseProc)) {
-            fclose($parseHandle);
-            error_log("Failed to start parser process for {$originalName}");
-            @unlink($tmpName);
-            continue;
-        }
-
-        fclose($parsePipes[0]);           // no stdin
-        stream_set_blocking($parsePipes[1], true);
-        stream_set_blocking($parsePipes[2], true);
-
-        $preview     = '';
-        $maxPreview  = 800;
-        $stdout      = $parsePipes[1];
-        while (!feof($stdout)) {
-            $chunk = fread($stdout, 8192);
-            if ($chunk === false) {
-                break;
-            }
-            if ($chunk === '') {
-                continue;
-            }
-            fwrite($parseHandle, $chunk);
-            if (strlen($preview) < $maxPreview) {
-                $preview .= $chunk;
-                if (strlen($preview) > $maxPreview) {
-                    $preview = substr($preview, 0, $maxPreview);
-                }
-            }
-        }
-
-        $stderrOutput = stream_get_contents($parsePipes[2]);
-
-        fclose($stdout);
-        fclose($parsePipes[2]);
-        fclose($parseHandle);
-
-        $rc = proc_close($parseProc);
-        error_log("PARSE RC: $rc");
-        if ($stderrOutput !== false && $stderrOutput !== '') {
-            error_log("PARSE STDERR: " . substr($stderrOutput, 0, 400));
-        }
-        if ($preview !== '') {
-            error_log("PARSE OUT (first 800): " . $preview);
-        }
-
-        if ($rc !== 0) {
-            error_log("Parser failed for {$originalName} rc={$rc}");
-            @unlink($tmpName);
-            continue;
-        }
-
-        if (!is_file($txtPath) || filesize($txtPath) === 0) {
-            error_log("Parser produced no output file for {$originalName}");
-            @unlink($tmpName);
-            continue;
-        }
-
-        // Store parsed text in DB (but avoid loading extremely large payloads fully into memory)
-        $parsedSize      = filesize($txtPath);
-        $maxDbBytes      = 2 * 1024 * 1024; // 2 MB cap for DB storage
-        $parsedText      = '';
-        $tokenLength     = 0;
-        $fullTextAvailable = 1;
-
-        if ($parsedSize === false) {
-            $parsedSize = 0;
-        }
-
-        if ($parsedSize > $maxDbBytes) {
-            $fh = fopen($txtPath, 'r');
-            if ($fh !== false) {
-                $parsedText = stream_get_contents($fh, $maxDbBytes);
-                fclose($fh);
-            }
-            if ($parsedText === false || $parsedText === null) {
-                $parsedText = '';
-            }
-            $parsedText .= "\n\n[Content truncated for preview; full text indexed via RAG.]";
-            $tokenLength = 0;
-            $fullTextAvailable = 0;
-            error_log("Parsed output truncated for database storage (size={$parsedSize} bytes)");
-        } else {
-            $parsedText = @file_get_contents($txtPath);
-            if ($parsedText === false) { $parsedText = ''; }
-            $tokenLength = get_token_count($parsedText, 'cl100k_base');
-        }
-
-        // Create the document row and update file_sha256
-        $document_id = insert_document($user, $chat_id, $originalName, $mimeType, $parsedText, [
+        $document_id = insert_document($user, $chat_id, $originalName, $mimeType, '', [
             'compute_tokens' => false,
-            'token_length'   => $tokenLength,
+            'token_length'   => 0,
         ]);
 
         try {
-            $stmt = $pdo->prepare("UPDATE document SET full_text_available = :flag WHERE id = :id");
-            $stmt->execute([
-                'flag' => $fullTextAvailable ? 1 : 0,
-                'id'   => $document_id,
+            $stmt = $pdo->prepare("UPDATE document SET full_text_available = 0, source = 'parsing', document_token_length = 0 WHERE id = :id");
+            $stmt->execute(['id' => $document_id]);
+        } catch (Throwable $e) {
+            error_log("Failed to initialize async parsing metadata for document_id {$document_id}: " . $e->getMessage());
+        }
+
+        rag_processing_status_write((int)$document_id, $ragPaths, [
+            'status'   => 'running',
+            'stage'    => 'uploading',
+            'progress' => 0,
+            'message'  => 'Uploading document',
+        ]);
+
+        $payload = [
+            'document_id'         => (int)$document_id,
+            'chat_id'             => $chat_id,
+            'user'                => $user,
+            'config_path'         => $config_file,
+            'embedding_model'     => "NHLBI-Chat-workflow-text-embedding-3-large",
+            'source_path'         => $stagePath,
+            'filename'            => $originalName,
+            'mime'                => $mimeType,
+            'cleanup_tmp'         => true,
+            'original_size_bytes' => $originalSize !== false ? (int)$originalSize : null,
+            'queue_timestamp'     => time(),
+        ];
+
+        $jobPath = $queueDir . '/job_' . uniqid('', true) . '.json';
+        $encoded = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+        if ($encoded === false || file_put_contents($jobPath, $encoded) === false) {
+            error_log("Failed to enqueue async parse job for document_id {$document_id}");
+            rag_processing_status_write((int)$document_id, $ragPaths, [
+                'status'   => 'failed',
+                'stage'    => 'uploading',
+                'progress' => 0,
+                'message'  => 'Failed to queue parser job',
             ]);
-        } catch (Throwable $e) {
-            error_log("Failed to set full_text_available for document_id {$document_id}: " . $e->getMessage());
+            @unlink($stagePath);
+            continue;
         }
 
-        try {
-            $file_sha256 = hash_file('sha256', $tmpName);
-            if ($file_sha256) {
-                $stmt = $pdo->prepare("UPDATE document SET file_sha256 = :sha WHERE id = :id");
-                $stmt->execute(['sha' => $file_sha256, 'id' => $document_id]);
-            }
-        } catch (Throwable $e) {
-            error_log("Failed to set file_sha256 for document_id {$document_id}: ".$e->getMessage());
-        }
+        rag_processing_status_write((int)$document_id, $ragPaths, [
+            'status'   => 'queued',
+            'stage'    => 'uploading',
+            'progress' => 10,
+            'message'  => 'Waiting to start parsing',
+        ]);
 
-        $parsedSizeBytes = @filesize($txtPath);
-
-        $ragInlineThreshold = isset($config['rag']['inline_fulltext_tokens'])
-            ? (int)$config['rag']['inline_fulltext_tokens']
-            : 4000;
-
-        $shouldQueueRag = true;
-        if ($fullTextAvailable && $tokenLength > 0 && $tokenLength <= $ragInlineThreshold) {
-            $shouldQueueRag = false;
-        }
-
-        $queued = false;
-        if ($shouldQueueRag) {
-            $payload = [
-                'document_id'     => (int)$document_id,
-                'chat_id'         => $chat_id,
-                'user'            => $user,
-                'embedding_model' => "NHLBI-Chat-workflow-text-embedding-3-large",
-                'config_path'     => $config_file,
-                'file_path'       => $txtPath,
-                'filename'        => $originalName,
-                'mime'            => $mimeType,
-                'cleanup_tmp'     => true,
-                'original_size_bytes' => $originalSize !== false ? (int)$originalSize : null,
-                'parsed_size_bytes'   => $parsedSizeBytes !== false ? (int)$parsedSizeBytes : null,
-                'queue_timestamp'     => time(),
-            ];
-
-            $jobPath = $queueDir . '/job_' . uniqid('', true) . '.json';
-            $encoded = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-
-            if ($encoded === false || file_put_contents($jobPath, $encoded) === false) {
-                error_log("Failed to enqueue RAG job for document_id {$document_id}");
-            } else {
-                error_log("Queued RAG indexing job for document_id {$document_id}: {$jobPath}");
-                $queued = true;
-                $queuedDocuments[] = (int)$document_id;
-            }
-        } else {
-            error_log("Skipped RAG queueing for document_id {$document_id}; inline tokens={$tokenLength}");
-            @unlink($txtPath);
-        }
-
-        $docSource = $shouldQueueRag ? 'rag' : 'inline';
-        try {
-            $stmt = $pdo->prepare("UPDATE document SET source = :source WHERE id = :id");
-            $stmt->execute([
-                'source' => $docSource,
-                'id'     => $document_id,
-            ]);
-        } catch (Throwable $e) {
-            error_log("Failed to set source={$docSource} for document_id {$document_id}: " . $e->getMessage());
-        }
+        $queued = true;
+        $queuedDocuments[] = (int)$document_id;
 
         $uploadedDocuments[] = [
             'id'                => (int)$document_id,
             'name'              => $originalName,
             'type'              => $mimeType,
-            'queued'            => $queued,
-            'inline_only'      => !$queued,
+            'queued'            => true,
+            'inline_only'       => false,
             'original_size'     => $originalSize !== false ? (int)$originalSize : null,
-            'parsed_size'       => $parsedSizeBytes !== false ? (int)$parsedSizeBytes : null,
-            'parsed_path'       => $txtPath,
-            'rag_document_ids'  => $queued ? [(int)$document_id] : [],
+            'parsed_size'       => null,
+            'rag_document_ids'  => [(int)$document_id],
+            'processing_status' => [
+                'stage'    => 'uploading',
+                'status'   => 'queued',
+                'progress' => 10,
+                'message'  => 'Waiting to start parsing',
+            ],
         ];
-
-        // Upload temp file is no longer needed once parsed
-        @unlink($tmpName);
 
         continue;
     }

@@ -13,7 +13,7 @@ Set environment variables:
   OCR_LANG=spa+eng         # any language string valid for tesseract
 """
 
-import os, sys, io, logging, itertools
+import os, sys, io, logging, itertools, json, time
 import pandas as pd
 
 # 3rd-party helpers ----------------------------------------------------
@@ -33,6 +33,74 @@ OCR_LANG = os.getenv("OCR_LANG", "eng")
 
 log = logging.getLogger("nhlbi_parser")
 log.setLevel(logging.INFO)
+
+PROGRESS_FILE = os.getenv("PARSER_STATUS_FILE")
+PARSER_JOB_ID = os.getenv("PARSER_JOB_ID")
+_PROGRESS_STATE = {"stage": None, "percent": -1.0, "last_write": 0.0}
+
+
+def _write_progress(stage, percent, message, status) -> None:
+    if not PROGRESS_FILE:
+        return
+    payload = {
+        "document_id": PARSER_JOB_ID,
+        "stage": stage,
+        "status": status,
+        "progress": None if percent is None else max(0, min(100, int(percent))),
+        "message": message,
+        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    tmp_path = PROGRESS_FILE + ".tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False)
+        os.replace(tmp_path, PROGRESS_FILE)
+    except OSError:
+        pass
+
+
+def report_progress(stage, current, total, message: str = "") -> None:
+    if not PROGRESS_FILE:
+        return
+    percent = None
+    if current is not None and total:
+        if total <= 0:
+            total = 1
+        percent = (current / total) * 100.0
+    now = time.time()
+    state = _PROGRESS_STATE
+    if percent is not None:
+        percent = max(0.0, min(100.0, percent))
+        if state["stage"] == stage and abs(percent - state["percent"]) < 0.5 and (now - state["last_write"]) < 0.5:
+            return
+        state["percent"] = percent
+    else:
+        if state["stage"] == stage and (now - state["last_write"]) < 0.5:
+            return
+    state["stage"] = stage
+    state["last_write"] = now
+    _write_progress(stage, state["percent"], message, "running")
+
+
+def report_stage_message(stage, message: str) -> None:
+    if not PROGRESS_FILE:
+        return
+    _write_progress(stage, _PROGRESS_STATE.get("percent"), message, "running")
+
+
+def report_completion(stage, message: str = "") -> None:
+    if not PROGRESS_FILE:
+        return
+    _PROGRESS_STATE["percent"] = 100.0
+    _PROGRESS_STATE["stage"] = stage
+    _PROGRESS_STATE["last_write"] = time.time()
+    _write_progress(stage, 100.0, message, "complete")
+
+
+def report_failure(stage, message: str) -> None:
+    if not PROGRESS_FILE:
+        return
+    _write_progress(stage, _PROGRESS_STATE.get("percent"), message, "failed")
 
 
 def ocr_image_bytes(image_bytes: bytes, description: str = "") -> str:
@@ -64,6 +132,7 @@ def parse_doc(file_path: str, filename: str) -> str:
         raise ValueError("File is empty")
 
     ext = filename.lower().rsplit(".", 1)[-1]
+    report_stage_message("parsing", f"Detected .{ext} document")
     if ext in {"txt", "md", "json", "xml"}:
         return parse_txt(file_path)
     if ext == "docx":
@@ -74,6 +143,7 @@ def parse_doc(file_path: str, filename: str) -> str:
         return parse_pdf(file_path)
     if ext in {"csv", "xls", "xlsx"}:
         return parse_csv(file_path, filename)
+    report_failure("parsing", f"File type .{ext} not supported")
     raise ValueError("File type not supported")
 
 
@@ -83,6 +153,10 @@ def parse_doc(file_path: str, filename: str) -> str:
 def parse_pdf(file_path: str) -> str:
     doc = fitz.open(file_path)
     out = []
+    total_pages = getattr(doc, "page_count", len(doc)) or len(doc)
+    if total_pages <= 0:
+        total_pages = len(doc) or 1
+    report_stage_message("parsing", f"Parsing PDF ({total_pages} page(s))")
 
     for page_idx, page in enumerate(doc, start=1):
         out.append(f"--- Page {page_idx} ---\n")
@@ -95,8 +169,10 @@ def parse_pdf(file_path: str) -> str:
             ocr_txt = ocr_image_bytes(img_bytes, f"PDF page {page_idx} image {img_idx}")
             if ocr_txt:
                 out.append(f"\n[OCR – Page {page_idx} Image {img_idx}]\n{ocr_txt}\n")
+        report_progress("parsing", page_idx, total_pages, f"PDF page {page_idx}/{total_pages}")
 
     joined = "\n".join(out).strip()
+    report_completion("parsing", "Finished PDF conversion")
     return joined if joined else "The file returned no content"
 
 
@@ -108,7 +184,10 @@ def parse_docx(file_path: str) -> str:
     out = []
 
     # 1. Paragraphs & tables --------------------------------
-    for item in document.iter_inner_content():
+    items = list(document.iter_inner_content())
+    total = len(items) or 1
+    report_stage_message("parsing", f"Parsing DOCX ({total} blocks)")
+    for idx, item in enumerate(items, start=1):
         if isinstance(item, Paragraph):
             out.append(item.text)
         elif isinstance(item, Table):
@@ -117,6 +196,7 @@ def parse_docx(file_path: str) -> str:
                 out.append(cells)
         # newline after every element
         out.append("")
+        report_progress("parsing", idx, total, f"DOCX block {idx}/{total}")
 
     # 2. Inline / header images ------------------------------
     for rel in document.part._rels.values():
@@ -126,6 +206,7 @@ def parse_docx(file_path: str) -> str:
             if ocr_txt:
                 out.append("[OCR – Image]\n" + ocr_txt + "\n")
 
+    report_completion("parsing", "Finished DOCX conversion")
     return "\n".join(out).strip()
 
 
@@ -152,6 +233,10 @@ def _iter_shapes_recursive(shapes):
 def parse_pptx(file_path: str) -> str:
     prs = Presentation(file_path)
     out = []
+    total_slides = len(prs.slides)
+    if total_slides <= 0:
+        total_slides = 1
+    report_stage_message("parsing", f"Parsing PPTX ({total_slides} slide(s))")
 
     for slide_idx, slide in enumerate(prs.slides, start=1):
         slide_chunks = [f"--- Slide {slide_idx} ---"]
@@ -166,6 +251,8 @@ def parse_pptx(file_path: str) -> str:
                     slide_chunks.append(f"[OCR – Slide {slide_idx} Image]\n{ocr_txt}")
 
         out.append("\n".join(slide_chunks))
+        report_progress("parsing", slide_idx, total_slides, f"PPTX slide {slide_idx}/{total_slides}")
+    report_completion("parsing", "Finished PPTX conversion")
     return "\n\n".join(out).strip()
 
 
@@ -173,14 +260,18 @@ def parse_pptx(file_path: str) -> str:
 # Simple ASCII files
 # ==========================================================
 def parse_txt(file_path: str) -> str:
+    report_stage_message("parsing", "Reading plain text content")
     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-        return f.read()
+        data = f.read()
+    report_completion("parsing", "Finished text ingestion")
+    return data
 
 
 # ==========================================================
 # CSV / Excel (unchanged)
 # ==========================================================
 def parse_csv(file_path: str, filename: str) -> str:
+    report_stage_message("parsing", "Reading tabular document")
     ext = os.path.splitext(filename)[1].lower()
     with open(file_path, "rb") as f:
         data = f.read()
@@ -215,6 +306,7 @@ def parse_csv(file_path: str, filename: str) -> str:
         "Depending on the ask, you may need to query the data. Ensure that "
         "all your calculations are correct, showing your thought process when applicable."
     )
+    report_completion("parsing", "Finished tabular conversion")
     return f"{preamble}\n{body}"
 
 
@@ -224,7 +316,11 @@ def parse_csv(file_path: str, filename: str) -> str:
 if __name__ == "__main__":
     if len(sys.argv) != 3:
         sys.stderr.write("Usage: parser_multi.py <file_path> <file_name>\n")
+        report_failure("parsing", "Invalid CLI usage")
         sys.exit(1)
 
-    print(parse_doc(sys.argv[1], sys.argv[2]))
-
+    try:
+        print(parse_doc(sys.argv[1], sys.argv[2]))
+    except Exception as exc:  # pylint: disable=broad-except
+        report_failure("parsing", str(exc))
+        raise

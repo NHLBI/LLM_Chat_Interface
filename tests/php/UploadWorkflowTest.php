@@ -137,20 +137,28 @@ SCRIPT;
             $documentInfo = $payload['uploaded_documents'][0];
             assert_true(($documentInfo['queued'] ?? false) === true, 'Document should be queued for indexing');
             assert_true(($documentInfo['inline_only'] ?? true) === false, 'Queued documents should not be flagged inline_only');
+            assert_equals('uploading', $documentInfo['processing_status']['stage'] ?? null, 'Processing status should start at uploading stage');
 
             $jobFiles = glob($workspaceRoot . '/queue/job_*.json');
             assert_true(!empty($jobFiles), 'Queue should contain a job file');
             $jobPayload = json_decode(file_get_contents($jobFiles[0]), true);
             assert_equals($documentInfo['id'], $jobPayload['document_id'], 'Job should reference uploaded document');
+            assert_true(!empty($jobPayload['source_path']) && is_file($jobPayload['source_path']), 'Job should include staged source path');
+            assert_true(strpos($jobPayload['source_path'], $workspaceRoot . '/uploads/') === 0, 'Source path should reside in rag uploads directory');
+            assert_true(empty($jobPayload['file_path']), 'Job should not yet include parsed file path');
+            assert_equals("NHLBI-Chat-workflow-text-embedding-3-large", $jobPayload['embedding_model'] ?? null, 'Job should record embedding model');
 
             $stmt = $pdo->prepare('SELECT content, document_token_length, full_text_available, source FROM document WHERE id = :id');
             $stmt->execute(['id' => $documentInfo['id']]);
             $docRow = $stmt->fetch(PDO::FETCH_ASSOC);
             assert_true(is_array($docRow), 'Document row should exist');
-            assert_true(strpos($docRow['content'], 'Parsed:Workflow integration paragraph for testing.') === 0, 'Parsed text should match stub output');
-            assert_true((int)$docRow['document_token_length'] > 0, 'Token length should be populated');
-            assert_equals('1', (string)$docRow['full_text_available']);
-            assert_equals('rag', (string)$docRow['source']);
+            assert_equals('', $docRow['content'], 'Inline content should not be stored before parsing completes');
+            assert_equals('0', (string)$docRow['document_token_length'], 'Token length should remain zero before parsing');
+            assert_equals('0', (string)$docRow['full_text_available'], 'Full text should not be available until parsing completes');
+            assert_equals('parsing', (string)$docRow['source']);
+
+            $statusPath = $workspaceRoot . '/status/doc_' . $documentInfo['id'] . '.json';
+            assert_true(is_file($statusPath), 'Processing status file should exist for queued document');
 
             $serializedWorkflow = $_SESSION['selected_workflow'] ?? null;
             assert_equals(

@@ -46,6 +46,8 @@ function rag_workspace_paths(?array $config = null): array
         'logs'      => $root . '/logs',
         'completed' => $root . '/completed',
         'failed'    => $root . '/failed',
+        'status'    => $root . '/status',
+        'uploads'   => $root . '/uploads',
     ];
 }
 

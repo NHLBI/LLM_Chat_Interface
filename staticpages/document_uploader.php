@@ -436,9 +436,17 @@ fetch('upload.php', {
     console.log("Documents queued for background processing:", queuedDocs);
 
     const docNamesForWatcher = queuedDocs.map(doc => doc.name || '');
+    const docStatuses = {};
+    queuedDocs.forEach(doc => {
+      if (!doc || !doc.id || !doc.processing_status) {
+        return;
+      }
+      docStatuses[doc.id] = doc.processing_status;
+    });
     const startWatcher = (estimatedSeconds, estimateMeta) => {
       window.startDocumentProcessingWatch(queuedDocs, {
         docNames: docNamesForWatcher,
+        statuses: docStatuses,
         onReady: workflowCallback,
         estimatedSeconds: estimatedSeconds,
         estimateMeta: estimateMeta || null

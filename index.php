@@ -243,6 +243,9 @@ foreach(array_keys($models) as $m) {
                             <span id="doc-processing-estimate" class="doc-processing-estimate"></span>
                             <span id="doc-processing-timer" class="doc-processing-timer">00:00</span>
                         </div>
+                        <div id="doc-processing-progress" class="doc-processing-progress" aria-hidden="true">
+                            <div id="doc-processing-progress-fill" class="doc-processing-progress-fill"></div>
+                        </div>
                     </div>
                     <button type="button" id="doc-processing-cancel" class="doc-processing-cancel" style="display:none;">Cancel Uploads</button>
                 </div>

@@ -10,6 +10,10 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/get_config.php';
 require_once __DIR__ . '/inc/rag_paths.php';
+require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/inc/rag_processing_status.php';
+
+$pdo = get_connection();
 
 $ragPaths     = rag_workspace_paths($config ?? null);
 $queueDir     = $ragPaths['queue'];
@@ -19,6 +23,7 @@ $logsDir      = $ragPaths['logs'];
 $metricsLog   = $logsDir . '/processing_metrics.log';
 $python       = rag_python_binary($config ?? null);
 $indexer      = rag_indexer_script($config ?? null);
+$parser       = rag_parser_script($config ?? null);
 
 $maxJobs = null;
 foreach ($argv as $arg) {
@@ -30,6 +35,7 @@ foreach ($argv as $arg) {
 foreach ([$queueDir, $completedDir, $failedDir, $logsDir] as $dir) {
     ensureDirectory($dir);
 }
+rag_processing_status_dir($ragPaths);
 
 $jobs = glob($queueDir . '/*.json');
 sort($jobs);
@@ -51,8 +57,90 @@ foreach ($jobs as $jobFile) {
         continue;
     }
 
-    $documentId = $payload['document_id'] ?? 'unknown';
-    $logPath    = sprintf('%s/index_%s_%s.log', $logsDir, $documentId, date('Ymd_His'));
+    $documentId = (int)($payload['document_id'] ?? 0);
+    if ($documentId <= 0) {
+        moveJob($jobFile, $failedDir);
+        continue;
+    }
+
+    $logPath = sprintf('%s/index_%s_%s.log', $logsDir, $documentId, date('Ymd_His'));
+
+    if (!empty($payload['source_path'])) {
+        $parseOutcome = parseAndPersistDocument(
+            $payload,
+            $python,
+            $parser,
+            $ragPaths,
+            $pdo,
+            $config ?? []
+        );
+
+        if (!$parseOutcome['ok']) {
+            rag_processing_status_write($documentId, $ragPaths, [
+                'status'   => 'failed',
+                'stage'    => 'parsing',
+                'progress' => $parseOutcome['progress'] ?? 0,
+                'message'  => $parseOutcome['error'] ?? 'Parsing failed',
+            ]);
+            moveJob($jobFile, $failedDir);
+            $processed++;
+            continue;
+        }
+
+        $payload = $parseOutcome['payload'];
+
+        if ($parseOutcome['should_index'] === false) {
+            rag_processing_status_write($documentId, $ragPaths, [
+                'status'   => 'complete',
+                'stage'    => 'ready',
+                'progress' => 100,
+                'message'  => 'Document ready for chat',
+            ]);
+            rag_processing_status_clear($documentId, $ragPaths);
+            moveJob($jobFile, $completedDir);
+            $processed++;
+            continue;
+        }
+
+        $payload['file_path']         = $parseOutcome['file_path'];
+        $payload['parsed_size_bytes'] = $parseOutcome['parsed_size_bytes'];
+        $payload['cleanup_tmp']       = true;
+
+        if (!rewriteJobPayload($jobFile, $payload)) {
+            rag_processing_status_write($documentId, $ragPaths, [
+                'status'   => 'failed',
+                'stage'    => 'parsing',
+                'progress' => $parseOutcome['progress'] ?? 0,
+                'message'  => 'Unable to persist parser results to job file',
+            ]);
+            moveJob($jobFile, $failedDir);
+            $processed++;
+            continue;
+        }
+
+        rag_processing_status_write($documentId, $ragPaths, [
+            'status'   => 'queued',
+            'stage'    => 'indexing',
+            'progress' => max(60, (int)($parseOutcome['progress'] ?? 60)),
+            'message'  => 'Waiting for RAG indexing',
+        ]);
+    } else {
+        rag_processing_status_write($documentId, $ragPaths, [
+            'status'   => 'running',
+            'stage'    => 'indexing',
+            'progress' => 0,
+            'message'  => 'Indexing document',
+        ]);
+    }
+
+    $indexProgressHint = isset($parseOutcome) ? max(70, (int)($parseOutcome['progress'] ?? 70)) : 70;
+
+    rag_processing_status_write($documentId, $ragPaths, [
+        'status'   => 'running',
+        'stage'    => 'indexing',
+        'progress' => $indexProgressHint,
+        'message'  => 'RAG indexing document',
+    ]);
 
     [$exitCode, $stdout, $stderr] = runIndexer($python, $indexer, $jobFile);
     $combined = trim($stdout . "\n" . $stderr);
@@ -64,12 +152,27 @@ foreach ($jobs as $jobFile) {
 
     if ($exitCode === 0 && is_array($result) && !empty($result['ok'])) {
         echo sprintf("[%s] document_id=%s ok\n", date('c'), $documentId);
+        rag_processing_status_write($documentId, $ragPaths, [
+            'status'   => 'complete',
+            'stage'    => 'ready',
+            'progress' => 100,
+            'message'  => 'Document ready for chat',
+        ]);
+        rag_processing_status_clear($documentId, $ragPaths);
         moveJob($jobFile, $completedDir);
         if (!empty($payload['cleanup_tmp']) && !empty($payload['file_path'])) {
             @unlink($payload['file_path']);
         }
     } else {
         echo sprintf("[%s] document_id=%s failed (rc=%d)\n", date('c'), $documentId, $exitCode);
+        rag_processing_status_write($documentId, $ragPaths, [
+            'status'   => 'failed',
+            'stage'    => 'indexing',
+            'progress' => is_array($result) && isset($result['progress']) ? (int)$result['progress'] : 0,
+            'message'  => is_array($result) && isset($result['error'])
+                ? (string)$result['error']
+                : trim(substr($combined, -400)),
+        ]);
         moveJob($jobFile, $failedDir);
     }
 
@@ -104,6 +207,257 @@ function decodeJob(string $jobFile): ?array
     }
 
     return $decoded;
+}
+
+function rewriteJobPayload(string $jobFile, array $payload): bool
+{
+    $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    if ($json === false) {
+        return false;
+    }
+    return file_put_contents($jobFile, $json) !== false;
+}
+
+function parseAndPersistDocument(
+    array $payload,
+    string $python,
+    string $parser,
+    array $paths,
+    PDO $pdo,
+    array $config
+): array {
+    $documentId = (int)($payload['document_id'] ?? 0);
+    $sourcePath = $payload['source_path'] ?? null;
+    if ($documentId <= 0 || !$sourcePath || !is_file($sourcePath)) {
+        return [
+            'ok'      => false,
+            'error'   => 'Source file missing for parsing',
+            'payload' => $payload,
+        ];
+    }
+
+    rag_processing_status_write($documentId, $paths, [
+        'status'   => 'running',
+        'stage'    => 'parsing',
+        'progress' => 1,
+        'message'  => 'Parsing document',
+    ]);
+
+    $txtPath = $paths['parsed'] . '/rag_' . uniqid('', true) . '.txt';
+    $parseHandle = fopen($txtPath, 'w');
+    if ($parseHandle === false) {
+        return [
+            'ok'      => false,
+            'error'   => 'Unable to create parsed output file',
+            'payload' => $payload,
+        ];
+    }
+
+    $descriptorSpec = [
+        0 => ['pipe', 'r'],
+        1 => ['pipe', 'w'],
+        2 => ['pipe', 'w'],
+    ];
+
+    $env = array_merge($_ENV ?? [], [
+        'PARSER_STATUS_FILE' => rag_processing_status_path($documentId, $paths),
+        'PARSER_JOB_ID'      => (string)$documentId,
+    ]);
+
+    $cmd = sprintf(
+        '%s %s %s %s',
+        escapeshellarg($python),
+        escapeshellarg($parser),
+        escapeshellarg($sourcePath),
+        escapeshellarg($payload['filename'] ?? basename($sourcePath))
+    );
+
+    $pipes = [];
+    $process = proc_open($cmd, $descriptorSpec, $pipes, __DIR__, $env + ['PATH' => getenv('PATH') ?: '']);
+    if (!is_resource($process)) {
+        fclose($parseHandle);
+        return [
+            'ok'      => false,
+            'error'   => 'Unable to start parser process',
+            'payload' => $payload,
+        ];
+    }
+
+    fclose($pipes[0]);
+    stream_set_blocking($pipes[1], true);
+    stream_set_blocking($pipes[2], true);
+
+    while (!feof($pipes[1])) {
+        $chunk = fread($pipes[1], 8192);
+        if ($chunk === false) {
+            break;
+        }
+        if ($chunk === '') {
+            continue;
+        }
+        fwrite($parseHandle, $chunk);
+    }
+
+    $stderr = stream_get_contents($pipes[2]) ?: '';
+
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    fclose($parseHandle);
+
+    $rc = proc_close($process);
+    if ($rc !== 0) {
+        @unlink($txtPath);
+        $message = sprintf('Parser exited with rc=%d %s', $rc, trim(substr($stderr, 0, 400)));
+        error_log($message);
+        if (!empty($payload['cleanup_tmp']) && is_file($sourcePath)) {
+            @unlink($sourcePath);
+        }
+        return [
+            'ok'      => false,
+            'error'   => $message,
+            'payload' => $payload,
+        ];
+    }
+
+    $parsedSize = @filesize($txtPath);
+    if ($parsedSize === false || $parsedSize === 0) {
+        @unlink($txtPath);
+        if (!empty($payload['cleanup_tmp']) && is_file($sourcePath)) {
+            @unlink($sourcePath);
+        }
+        return [
+            'ok'      => false,
+            'error'   => 'Parser returned no output',
+            'payload' => $payload,
+        ];
+    }
+
+    $maxDbBytes = 2 * 1024 * 1024;
+    $fullTextAvailable = 1;
+    $parsedText = '';
+
+    if ($parsedSize > $maxDbBytes) {
+        $fh = fopen($txtPath, 'r');
+        if ($fh !== false) {
+            $parsedText = stream_get_contents($fh, $maxDbBytes);
+            fclose($fh);
+        }
+        if ($parsedText === false || $parsedText === null) {
+            $parsedText = '';
+        }
+        $parsedText .= "\n\n[Content truncated for preview; full text indexed via RAG.]";
+        $fullTextAvailable = 0;
+    } else {
+        $parsedText = @file_get_contents($txtPath);
+        if ($parsedText === false) {
+            $parsedText = '';
+        }
+    }
+
+    if ($fullTextAvailable) {
+        $tokenLength = ($parsedText !== '')
+            ? get_token_count($parsedText, 'cl100k_base')
+            : 0;
+    } else {
+        $tokenLength = token_count_from_file($txtPath);
+    }
+
+    $ragInlineThreshold = isset($config['rag']['inline_fulltext_tokens'])
+        ? (int)$config['rag']['inline_fulltext_tokens']
+        : 4000;
+
+    $shouldIndex = true;
+    if ($fullTextAvailable && $tokenLength > 0 && $tokenLength <= $ragInlineThreshold) {
+        $shouldIndex = false;
+    }
+
+    try {
+        $stmt = $pdo->prepare("
+            UPDATE document
+               SET content = :content,
+                   document_token_length = :tokens,
+                   full_text_available = :full_text,
+                   source = :source
+             WHERE id = :id
+             LIMIT 1
+        ");
+        $stmt->execute([
+            ':content'   => $parsedText,
+            ':tokens'    => $tokenLength,
+            ':full_text' => $fullTextAvailable ? 1 : 0,
+            ':source'    => $shouldIndex ? 'rag' : 'inline',
+            ':id'        => $documentId,
+        ]);
+    } catch (Throwable $e) {
+        error_log('Failed to persist parsed document: ' . $e->getMessage());
+        @unlink($txtPath);
+        if (!empty($payload['cleanup_tmp']) && is_file($sourcePath)) {
+            @unlink($sourcePath);
+        }
+        return [
+            'ok'      => false,
+            'error'   => 'Unable to update document row',
+            'payload' => $payload,
+        ];
+    }
+
+    if (!empty($payload['source_path']) && is_file($payload['source_path'])) {
+        try {
+            $fileSha = hash_file('sha256', $payload['source_path']);
+            if ($fileSha) {
+                $stmt = $pdo->prepare('UPDATE document SET file_sha256 = :sha WHERE id = :id LIMIT 1');
+                $stmt->execute([
+                    ':sha' => $fileSha,
+                    ':id'  => $documentId,
+                ]);
+            }
+        } catch (Throwable $e) {
+            error_log('Failed to update file sha: ' . $e->getMessage());
+        }
+    }
+
+    if (!empty($payload['cleanup_tmp']) && is_file($sourcePath)) {
+        @unlink($sourcePath);
+    }
+    unset($payload['source_path']);
+
+    if (!$shouldIndex) {
+        @unlink($txtPath);
+    }
+
+    if (empty($payload['embedding_model'])) {
+        $payload['embedding_model'] = "NHLBI-Chat-workflow-text-embedding-3-large";
+    }
+
+    return [
+        'ok'                 => true,
+        'payload'            => $payload,
+        'file_path'          => $shouldIndex ? $txtPath : null,
+        'parsed_size_bytes'  => $parsedSize ?: null,
+        'should_index'       => $shouldIndex,
+        'progress'           => $shouldIndex ? 60 : 100,
+    ];
+}
+
+function token_count_from_file(string $path, int $chunkSize = 100000): int
+{
+    $fh = @fopen($path, 'r');
+    if ($fh === false) {
+        return 0;
+    }
+    $total = 0;
+    while (!feof($fh)) {
+        $chunk = fread($fh, $chunkSize);
+        if ($chunk === false) {
+            break;
+        }
+        if ($chunk === '') {
+            continue;
+        }
+        $total += get_token_count($chunk, 'cl100k_base');
+    }
+    fclose($fh);
+    return $total;
 }
 
 function runIndexer(string $python, string $indexer, string $jobFile): array

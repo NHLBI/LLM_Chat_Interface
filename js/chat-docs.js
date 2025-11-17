@@ -6,6 +6,8 @@ var docProcessingFilesEl;
 var docProcessingTimerEl;
 var docProcessingEstimateEl;
 var docProcessingCancelEl;
+var docProcessingProgressEl;
+var docProcessingProgressFillEl;
 
 var PROCESSING_STORAGE_KEY = 'chat_processing_jobs';
 
@@ -13,13 +15,33 @@ var docProcessingState = {
     active: false,
     docIds: [],
     nameMap: {},
+    status: {},
     callbacks: [],
     startTime: null,
     pollInterval: null,
     timerInterval: null,
+    pollInFlight: false,
     estimatedTotalSec: null,
-    estimateMeta: null
+    estimateMeta: null,
+    dynamicEstimateSec: null
 };
+
+function buildDocumentStatusDebugContext() {
+    return {
+        active: docProcessingState.active,
+        docIds: docProcessingState.docIds.slice(),
+        statusSnapshot: Object.assign({}, docProcessingState.status || {}),
+        timestamp: new Date().toISOString()
+    };
+}
+
+function logDocumentStatusFailure(context) {
+    context = context || {};
+    if (!context.timestamp) {
+        context.timestamp = new Date().toISOString();
+    }
+    console.error('Document status request failure', context);
+}
 
 window.isDocumentProcessing = false;
 
@@ -79,9 +101,11 @@ function persistProcessingState() {
     var snapshot = {
         docIds: docProcessingState.docIds.slice(),
         names: Object.assign({}, docProcessingState.nameMap || {}),
+        status: JSON.parse(JSON.stringify(docProcessingState.status || {})),
         startTime: docProcessingState.startTime,
         estimatedSeconds: docProcessingState.estimatedTotalSec,
         estimateMeta: docProcessingState.estimateMeta,
+        dynamicEstimateSec: docProcessingState.dynamicEstimateSec,
         updatedAt: Date.now()
     };
 
@@ -95,6 +119,8 @@ function initializeDocumentProcessingElements() {
     docProcessingTimerEl = $('#doc-processing-timer');
     docProcessingEstimateEl = $('#doc-processing-estimate');
     docProcessingCancelEl = $('#doc-processing-cancel');
+    docProcessingProgressEl = $('#doc-processing-progress');
+    docProcessingProgressFillEl = $('#doc-processing-progress-fill');
 
     if (docProcessingCancelEl && docProcessingCancelEl.length) {
         docProcessingCancelEl.off('click.doc-cancel').on('click.doc-cancel', handleProcessingCancel);
@@ -335,6 +361,12 @@ function removeProcessingDocs(docIds, replaceWithImageIds) {
         }
     });
 
+    Object.keys(docProcessingState.status || {}).forEach(function (key) {
+        if (idSet.has(parseInt(key, 10))) {
+            delete docProcessingState.status[key];
+        }
+    });
+
     persistProcessingState();
     updateProcessingControls();
 }
@@ -354,10 +386,153 @@ function removeProcessingDocsFromStorage(targetChatId, docIds) {
         return !idSet.has(parseInt(id, 10));
     });
 
+    if (stored.status && typeof stored.status === 'object') {
+        Object.keys(stored.status).forEach(function (key) {
+            if (idSet.has(parseInt(key, 10))) {
+                delete stored.status[key];
+            }
+        });
+    }
+
     if (!stored.docIds.length) {
         updateStoredProcessingState(targetChatId, null);
     } else {
         updateStoredProcessingState(targetChatId, stored);
+    }
+}
+
+function getPrimaryProcessingStatus() {
+    if (!docProcessingState.docIds.length) {
+        return null;
+    }
+    var stageOrder = { uploading: 0, parsing: 1, indexing: 2, ready: 3 };
+    var best = null;
+    docProcessingState.docIds.forEach(function (docId) {
+        var status = docProcessingState.status && docProcessingState.status[docId];
+        if (!status) {
+            return;
+        }
+        var stage = (status.stage || '').toLowerCase();
+        var statusFlag = (status.status || '').toLowerCase();
+        var rank;
+        if (statusFlag === 'failed') {
+            rank = -1;
+        } else if (stageOrder.hasOwnProperty(stage)) {
+            rank = stageOrder[stage];
+        } else {
+            rank = 10;
+        }
+        if (!best || rank < best.rank) {
+            best = { docId: docId, status: status, rank: rank };
+        }
+    });
+    return best;
+}
+
+function stageProgressFallback(stage, phase) {
+    switch (stage) {
+        case 'uploading':
+            return 5;
+        case 'parsing':
+            return phase === 'queued' ? 15 : 45;
+        case 'indexing':
+            return phase === 'queued' ? 65 : 85;
+        case 'ready':
+            return 100;
+        default:
+            return null;
+    }
+}
+
+function describeProcessingStage(status, docName, defaultSummary) {
+    var stage = (status.stage || '').toLowerCase();
+    var phase = (status.status || '').toLowerCase();
+    var summary = status.message || defaultSummary;
+    var message = summary || defaultSummary;
+
+    switch (stage) {
+        case 'uploading':
+            message = 'Uploading ' + (docName || 'document');
+            if (!summary) {
+                summary = 'Upload in progress';
+            }
+            break;
+        case 'parsing':
+            if (phase === 'queued') {
+                message = 'Waiting to start parsing';
+            } else if (phase === 'failed') {
+                message = 'Parsing failed';
+            } else {
+                message = 'Parsing ' + (docName || 'document');
+            }
+            summary = status.message || summary || defaultSummary;
+            break;
+        case 'indexing':
+            if (phase === 'queued') {
+                message = 'Waiting for RAG indexing';
+            } else if (phase === 'failed') {
+                message = 'RAG indexing failed';
+            } else {
+                message = 'RAG indexing ' + (docName || 'document');
+            }
+            summary = status.message || summary || defaultSummary;
+            break;
+        case 'ready':
+            message = 'Documents ready';
+            summary = '';
+            break;
+        default:
+            message = summary || defaultSummary;
+            break;
+    }
+
+    var progress = (typeof status.progress === 'number')
+        ? status.progress
+        : stageProgressFallback(stage, phase);
+
+    return {
+        message: message,
+        summary: summary,
+        progress: progress,
+        failed: phase === 'failed'
+    };
+}
+
+function updateProcessingProgress(percent) {
+    if (!docProcessingProgressEl || !docProcessingProgressEl.length || !docProcessingProgressFillEl) {
+        return;
+    }
+    if (!Number.isFinite(percent) || percent < 0) {
+        docProcessingProgressEl.hide();
+        docProcessingProgressFillEl.css('width', '0%');
+        return;
+    }
+    var clamped = Math.max(0, Math.min(100, Math.round(percent)));
+    docProcessingProgressEl.show();
+    docProcessingProgressFillEl.css('width', clamped + '%');
+}
+
+function getActiveEstimateSeconds() {
+    if (Number.isFinite(docProcessingState.dynamicEstimateSec) && docProcessingState.dynamicEstimateSec > 0) {
+        return docProcessingState.dynamicEstimateSec;
+    }
+    if (Number.isFinite(docProcessingState.estimatedTotalSec) && docProcessingState.estimatedTotalSec > 0) {
+        return docProcessingState.estimatedTotalSec;
+    }
+    return null;
+}
+
+function updateDynamicEstimate(progressValue) {
+    if (!docProcessingState.startTime || !Number.isFinite(progressValue) || progressValue <= 5) {
+        docProcessingState.dynamicEstimateSec = null;
+        return;
+    }
+    var elapsedMs = Date.now() - docProcessingState.startTime;
+    var elapsedSec = Math.max(1, Math.round(elapsedMs / 1000));
+    var cappedProgress = Math.min(99.9, Math.max(progressValue, 1));
+    var estimatedTotal = (elapsedSec * 100) / cappedProgress;
+    if (estimatedTotal > elapsedSec) {
+        docProcessingState.dynamicEstimateSec = estimatedTotal;
     }
 }
 
@@ -376,16 +551,39 @@ function renderDocumentProcessingBanner() {
     var names = Object.keys(docProcessingState.nameMap || {}).map(function (key) {
         return docProcessingState.nameMap[key];
     });
-    var summary = formatDocumentNameSummary(names);
+    var primary = getPrimaryProcessingStatus();
+    var defaultSummary = formatDocumentNameSummary(names);
+    var summary = defaultSummary;
+    var message = 'Processing uploaded documents…';
+    var progressValue = null;
+    docProcessingBanner.removeClass('doc-processing-error');
+
+    if (primary && primary.status) {
+        var docName = docProcessingState.nameMap[primary.docId] || 'document';
+        var stageDescriptor = describeProcessingStage(primary.status, docName, defaultSummary);
+        message = stageDescriptor.message || message;
+        summary = stageDescriptor.summary || summary;
+        progressValue = stageDescriptor.progress;
+        if (stageDescriptor.failed) {
+            docProcessingBanner.addClass('doc-processing-error');
+        }
+    }
+
+    docProcessingMessageEl.text(message);
     if (summary) {
         docProcessingFilesEl.text(summary);
     } else {
         docProcessingFilesEl.text(docProcessingState.docIds.length + ' document(s)');
     }
+    updateProcessingProgress(progressValue);
+    if (Number.isFinite(progressValue)) {
+        updateDynamicEstimate(progressValue);
+    }
 
+    var estimateSeconds = getActiveEstimateSeconds();
     var estimateText = '';
-    if (docProcessingState.estimatedTotalSec && docProcessingState.estimatedTotalSec > 0) {
-        estimateText = 'Est. ' + formatDurationHuman(docProcessingState.estimatedTotalSec);
+    if (Number.isFinite(estimateSeconds) && estimateSeconds > 0) {
+        estimateText = 'Est. ' + formatDurationHuman(estimateSeconds);
     }
     docProcessingEstimateEl.text(estimateText);
 
@@ -399,8 +597,9 @@ function updateDocumentProcessingTimer() {
 
     var elapsed = Math.floor((Date.now() - docProcessingState.startTime) / 1000);
     var text = formatElapsedClock(elapsed);
-    if (docProcessingState.estimatedTotalSec && docProcessingState.estimatedTotalSec > 0) {
-        text += ' / ~' + formatDurationHuman(docProcessingState.estimatedTotalSec);
+    var estimateSeconds = getActiveEstimateSeconds();
+    if (Number.isFinite(estimateSeconds) && estimateSeconds > 0) {
+        text += ' / ~' + formatDurationHuman(estimateSeconds);
     }
     docProcessingTimerEl.text(text);
 }
@@ -410,6 +609,11 @@ function pollDocumentProcessingStatus() {
         finishDocumentProcessing();
         return;
     }
+
+    if (docProcessingState.pollInFlight) {
+        return;
+    }
+    docProcessingState.pollInFlight = true;
 
     fetch('document_status.php', {
         method: 'POST',
@@ -423,7 +627,15 @@ function pollDocumentProcessingStatus() {
     })
         .then(function (response) {
             if (!response.ok) {
-                throw new Error('HTTP ' + response.status);
+                var ctx = buildDocumentStatusDebugContext();
+                ctx.httpStatus = response.status;
+                ctx.httpStatusText = response.statusText;
+                ctx.url = response.url;
+                return response.text().then(function (text) {
+                    ctx.responseSnippet = text ? text.slice(0, 400) : '';
+                    logDocumentStatusFailure(ctx);
+                    throw new Error('HTTP ' + response.status);
+                });
             }
             return response.json();
         })
@@ -433,10 +645,21 @@ function pollDocumentProcessingStatus() {
             }
 
             var completedIds = [];
+            var statusUpdated = false;
+            var failedEntries = [];
             data.documents.forEach(function (entry) {
                 var docId = parseInt(entry.document_id, 10);
-                if (!Number.isNaN(docId) && entry.ready) {
+                if (Number.isNaN(docId)) {
+                    return;
+                }
+                if (entry.processing) {
+                    docProcessingState.status[docId] = entry.processing;
+                    statusUpdated = true;
+                }
+                if (entry.ready) {
                     completedIds.push(docId);
+                } else if (entry.processing && entry.processing.status === 'failed') {
+                    failedEntries.push({ id: docId, status: entry.processing });
                 }
             });
 
@@ -451,6 +674,31 @@ function pollDocumentProcessingStatus() {
                 persistProcessingState();
             }
 
+            if (failedEntries.length) {
+                var failedIds = failedEntries.map(function (entry) { return entry.id; });
+                var failureSummaries = failedEntries.map(function (entry) {
+                    return {
+                        id: entry.id,
+                        status: entry.status || {},
+                        name: docProcessingState.nameMap[entry.id] || 'Document'
+                    };
+                });
+                removeProcessingDocs(failedIds, []);
+                failureSummaries.forEach(function (entry) {
+                    var message = entry.status.message || 'Document failed to process.';
+                    var full = entry.name + ': ' + message;
+                    if (typeof window.showToastMessage === 'function') {
+                        window.showToastMessage(full);
+                    } else {
+                        console.warn(full);
+                    }
+                });
+            }
+
+            if (statusUpdated) {
+                persistProcessingState();
+            }
+
             if (docProcessingState.docIds.length === 0 || data.all_ready) {
                 finishDocumentProcessing();
             } else {
@@ -461,11 +709,22 @@ function pollDocumentProcessingStatus() {
             if (error && error.name === 'AbortError') {
                 return;
             }
-            if (error && (error.message === 'Load failed' || error.message === 'NetworkError when attempting to fetch resource.' || error.message === 'Failed to fetch')) {
+            var transientMessages = [
+                'Load failed',
+                'NetworkError when attempting to fetch resource.',
+                'Failed to fetch',
+                'The network connection was lost.'
+            ];
+            if (error && transientMessages.indexOf(error.message) !== -1) {
                 console.warn('Document status poll interrupted:', error.message);
             } else {
-                console.error('Document status check failed:', error);
+                var ctx = buildDocumentStatusDebugContext();
+                ctx.errorMessage = error && error.message ? error.message : String(error);
+                logDocumentStatusFailure(ctx);
             }
+        })
+        .finally(function () {
+            docProcessingState.pollInFlight = false;
         });
 }
 
@@ -505,10 +764,13 @@ function finishDocumentProcessing() {
     docProcessingState.active = false;
     docProcessingState.docIds = [];
     docProcessingState.nameMap = {};
+    docProcessingState.status = {};
     docProcessingState.callbacks = [];
     docProcessingState.startTime = null;
+    docProcessingState.pollInFlight = false;
     docProcessingState.estimatedTotalSec = null;
     docProcessingState.estimateMeta = null;
+    docProcessingState.dynamicEstimateSec = null;
 
     persistProcessingState();
     updateProcessingControls();
@@ -531,6 +793,7 @@ function finishDocumentProcessing() {
 
 function startDocumentProcessingWatch(documents, options) {
     options = options || {};
+    var initialStatuses = (options.statuses && typeof options.statuses === 'object') ? options.statuses : null;
 
     if (!Array.isArray(documents) || documents.length === 0) {
         if (typeof options.onReady === 'function') {
@@ -553,6 +816,7 @@ function startDocumentProcessingWatch(documents, options) {
         docProcessingState.startTime = resumeStart || Date.now();
         docProcessingState.estimatedTotalSec = null;
         docProcessingState.estimateMeta = null;
+        docProcessingState.dynamicEstimateSec = null;
     } else if (!docProcessingState.startTime) {
         docProcessingState.startTime = resumeStart || Date.now();
     } else if (resumeStart && resumeStart < docProcessingState.startTime) {
@@ -571,6 +835,10 @@ function startDocumentProcessingWatch(documents, options) {
         docProcessingState.estimateMeta = options.estimateMeta;
     }
 
+    if (Number.isFinite(options.dynamicEstimateSec) && options.dynamicEstimateSec > 0) {
+        docProcessingState.dynamicEstimateSec = options.dynamicEstimateSec;
+    }
+
     documents.forEach(function (doc) {
         if (!doc) {
             return;
@@ -584,6 +852,15 @@ function startDocumentProcessingWatch(documents, options) {
         }
         if (doc.name) {
             docProcessingState.nameMap[docId] = doc.name;
+        }
+        var seededStatus = null;
+        if (initialStatuses && initialStatuses[docId]) {
+            seededStatus = JSON.parse(JSON.stringify(initialStatuses[docId]));
+        } else if (doc.processing_status) {
+            seededStatus = JSON.parse(JSON.stringify(doc.processing_status));
+        }
+        if (seededStatus) {
+            docProcessingState.status[docId] = seededStatus;
         }
     });
 
@@ -702,7 +979,9 @@ function syncProcessingStateFromServer(chatData) {
             docNames: resumeDocs.map(function (doc) { return doc.name; }),
             startTime: storedState.startTime,
             estimatedSeconds: storedState.estimatedSeconds || null,
-            estimateMeta: storedState.estimateMeta || null
+            estimateMeta: storedState.estimateMeta || null,
+            dynamicEstimateSec: storedState.dynamicEstimateSec || null,
+            statuses: storedState.status || null
         });
     }
 }
