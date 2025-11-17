@@ -228,6 +228,7 @@ function parseAndPersistDocument(
 ): array {
     $documentId = (int)($payload['document_id'] ?? 0);
     $sourcePath = $payload['source_path'] ?? null;
+    $workflowMode = !empty($payload['workflow_mode']);
     if ($documentId <= 0 || !$sourcePath || !is_file($sourcePath)) {
         return [
             'ok'      => false,
@@ -332,11 +333,11 @@ function parseAndPersistDocument(
         ];
     }
 
-    $maxDbBytes = 2 * 1024 * 1024;
+    $maxDbBytes = $workflowMode ? null : (2 * 1024 * 1024);
     $fullTextAvailable = 1;
     $parsedText = '';
 
-    if ($parsedSize > $maxDbBytes) {
+    if ($maxDbBytes !== null && $parsedSize > $maxDbBytes) {
         $fh = fopen($txtPath, 'r');
         if ($fh !== false) {
             $parsedText = stream_get_contents($fh, $maxDbBytes);
@@ -354,10 +355,8 @@ function parseAndPersistDocument(
         }
     }
 
-    if ($fullTextAvailable) {
-        $tokenLength = ($parsedText !== '')
-            ? get_token_count($parsedText, 'cl100k_base')
-            : 0;
+    if ($parsedText !== '' && $fullTextAvailable) {
+        $tokenLength = get_token_count($parsedText, 'cl100k_base');
     } else {
         $tokenLength = token_count_from_file($txtPath);
     }
@@ -366,8 +365,8 @@ function parseAndPersistDocument(
         ? (int)$config['rag']['inline_fulltext_tokens']
         : 4000;
 
-    $shouldIndex = true;
-    if ($fullTextAvailable && $tokenLength > 0 && $tokenLength <= $ragInlineThreshold) {
+    $shouldIndex = !$workflowMode;
+    if ($shouldIndex && $fullTextAvailable && $tokenLength > 0 && $tokenLength <= $ragInlineThreshold) {
         $shouldIndex = false;
     }
 

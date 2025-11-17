@@ -30,6 +30,7 @@ import xlrd
 # ---------- configuration ----------
 OCR_ENABLED = os.getenv("OCR_ENABLED", "1") != "0"
 OCR_LANG = os.getenv("OCR_LANG", "eng")
+PDF_SKIP_IMAGE_OCR_TEXT_LEN = int(os.getenv("PDF_SKIP_IMAGE_OCR_TEXT_LEN", "200"))
 
 log = logging.getLogger("nhlbi_parser")
 log.setLevel(logging.INFO)
@@ -159,10 +160,16 @@ def parse_pdf(file_path: str) -> str:
     report_stage_message("parsing", f"Parsing PDF ({total_pages} page(s))")
 
     for page_idx, page in enumerate(doc, start=1):
+        page_text = page.get_text()
+        text_len = len(page_text.strip())
+        skip_image_ocr = text_len >= PDF_SKIP_IMAGE_OCR_TEXT_LEN
+
         out.append(f"--- Page {page_idx} ---\n")
-        out.append(page.get_text())
+        out.append(page_text)
 
         for img_idx, img in enumerate(page.get_images(full=True), start=1):
+            if skip_image_ocr:
+                continue
             xref = img[0]
             base = doc.extract_image(xref)
             img_bytes = base["image"]

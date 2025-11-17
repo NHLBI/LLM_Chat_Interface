@@ -391,7 +391,7 @@ foreach(array_keys($models) as $m) {
     </div> <!-- end the Content Row -->
 </div> <!-- end the Container-fluid -->
     <div class="waiting-indicator" style="display: none;">
-        <img src="images/Ripple-1s-59px.gif" alt="Loading...">
+        <!-- <img src="images/Ripple-1s-59px.gif" alt="Loading..."> -->
     </div>
 
 <!-- Include Bootstrap JS and its dependencies-->

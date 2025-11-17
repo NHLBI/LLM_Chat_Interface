@@ -72,6 +72,7 @@ if (!empty($_REQUEST['selected_workflow'])) {
         }
     }
 }
+$workflowActive = !empty($_SESSION['selected_workflow']);
 
 // === Workspace strictly under web root ===
 $ragPaths     = rag_workspace_paths($config ?? null);
@@ -267,6 +268,7 @@ if (isset($_FILES['uploadDocument'])) {
             'cleanup_tmp'         => true,
             'original_size_bytes' => $originalSize !== false ? (int)$originalSize : null,
             'queue_timestamp'     => time(),
+            'workflow_mode'       => $workflowActive ? true : false,
         ];
 
         $jobPath = $queueDir . '/job_' . uniqid('', true) . '.json';

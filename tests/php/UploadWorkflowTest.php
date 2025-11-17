@@ -147,6 +147,7 @@ SCRIPT;
             assert_true(strpos($jobPayload['source_path'], $workspaceRoot . '/uploads/') === 0, 'Source path should reside in rag uploads directory');
             assert_true(empty($jobPayload['file_path']), 'Job should not yet include parsed file path');
             assert_equals("NHLBI-Chat-workflow-text-embedding-3-large", $jobPayload['embedding_model'] ?? null, 'Job should record embedding model');
+            assert_true(!empty($jobPayload['workflow_mode']), 'Workflow uploads should flag workflow_mode in job payload');
 
             $stmt = $pdo->prepare('SELECT content, document_token_length, full_text_available, source FROM document WHERE id = :id');
             $stmt->execute(['id' => $documentInfo['id']]);
