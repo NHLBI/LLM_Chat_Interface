@@ -3,8 +3,7 @@
 $_SESSION['splash'] = true;
 $error = '';
 
-$config = $config ?? [];
-$appConfig = isset($config['app']) && is_array($config['app']) ? $config['app'] : [];
+if (empty($splashConfig)) $splashConfig = [];
 
 require_once 'staticpages/disclaimer_text.php';
 
@@ -23,7 +22,7 @@ if (!empty($_SESSION['user_data']['userid']) && (empty($_SESSION['authorized']) 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars($appConfig['app_title'] ?? 'NHLBI Chat', ENT_QUOTES, 'UTF-8'); ?></title>
+    <title><?php echo htmlspecialchars($splashConfig['app_title'], ENT_QUOTES, 'UTF-8'); ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="style.v2.02.css" rel="stylesheet">
 </head>
@@ -32,13 +31,13 @@ if (!empty($_SESSION['user_data']['userid']) && (empty($_SESSION['authorized']) 
         <div class="header row align-items-center">
             <div class="col-sm-4">
             <?php
-                $logo     = htmlspecialchars($appConfig['app_logo'] ?? 'NHLBI_Logo_Vector.svg', ENT_QUOTES, 'UTF-8');
-                $logoAlt  = htmlspecialchars($appConfig['app_logo_alt'] ?? 'NHLBI Chat', ENT_QUOTES, 'UTF-8');
+                $logo     = htmlspecialchars($splashConfig['app_logo'] ?? 'NHLBI_Logo_Vector.svg', ENT_QUOTES, 'UTF-8');
+                $logoAlt  = htmlspecialchars($splashConfig['app_logo_alt'] ?? 'NHLBI Chat', ENT_QUOTES, 'UTF-8');
             ?>
             <img src="images/<?php echo $logo; ?>" class="logo" alt="<?php echo $logoAlt; ?>">
             </div>
             <div class="col-sm-4 text-center">
-                <h1><?php echo htmlspecialchars($appConfig['app_title'] ?? 'NHLBI Chat', ENT_QUOTES, 'UTF-8'); ?></h1>
+                <h1><?php echo htmlspecialchars($splashConfig['app_title'] ?? 'NHLBI Chat', ENT_QUOTES, 'UTF-8'); ?></h1>
             </div>
             <div class="col-sm-4 text-end">
 <?php
@@ -73,7 +72,7 @@ require_once 'staticpages/notification_center.html';
                     <!-- Chat messages will be added here -->
                 </div>
                 <div class="footer">
-                    <?php $disclosure = htmlspecialchars($appConfig['disclosure_link'] ?? '#', ENT_QUOTES, 'UTF-8'); ?>
+                    <?php $disclosure = htmlspecialchars($splashConfig['disclosure_link'] ?? '#', ENT_QUOTES, 'UTF-8'); ?>
                     <p><a title="Open the disclosure information in a new window" href="<?php echo $disclosure; ?>" target="_Blank" title="Vulnerability Disclosure">Vulnerability Disclosure</a></p>
                 </div>
             </div>

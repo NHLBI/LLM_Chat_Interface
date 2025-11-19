@@ -658,11 +658,52 @@ function parseCitationLabel(labelText) {
     };
 }
 
-function selectCitationForLabel(labelText, pool) {
+function buildCitationKey(parsed) {
+    if (!parsed || !parsed.normalizedDocumentName) {
+        return null;
+    }
+    if (parsed.chunkIndex === null || typeof parsed.chunkIndex === 'undefined') {
+        return null;
+    }
+    return parsed.normalizedDocumentName + '|' + String(parsed.chunkIndex);
+}
+
+function createCitationLookup(citations) {
+    var map = Object.create(null);
+    var pool = [];
+    (citations || []).forEach(function (entry) {
+        if (!entry || typeof entry !== 'object') {
+            return;
+        }
+        pool.push(entry);
+        var docName = normalizeDocName(entry.filename || entry.name || entry.title || '');
+        if (!docName) {
+            return;
+        }
+        var chunkValue = entry.chunk_index;
+        if (chunkValue === undefined || chunkValue === null) {
+            return;
+        }
+        var chunkNumber = typeof chunkValue === 'number' ? chunkValue : parseInt(chunkValue, 10);
+        if (Number.isNaN(chunkNumber)) {
+            return;
+        }
+        var key = docName + '|' + chunkNumber;
+        if (!Object.prototype.hasOwnProperty.call(map, key)) {
+            map[key] = entry;
+        }
+    });
+    return {
+        keyed: map,
+        pool: pool
+    };
+}
+
+function selectCitationForLabel(labelText, pool, parsedLabel) {
     if (!Array.isArray(pool) || !pool.length) {
         return null;
     }
-    var parsed = parseCitationLabel(labelText);
+    var parsed = parsedLabel || parseCitationLabel(labelText);
     var candidates = [
         function exactDocChunk(entry) {
             if (parsed.normalizedDocumentName && parsed.chunkIndex !== null) {
@@ -716,13 +757,29 @@ function injectInlineCitationHtml(html, citations, exchangeId) {
     if (!Array.isArray(citations) || !citations.length) {
         return html;
     }
-    var remaining = citations.slice();
+    var lookup = createCitationLookup(citations);
+    var keyed = lookup.keyed || Object.create(null);
+    var remaining = Array.isArray(lookup.pool) ? lookup.pool.slice() : citations.slice();
+    var labelCache = Object.create(null);
     return html.replace(/【[^【】]+】/g, function (match) {
-        var citation = selectCitationForLabel(match, remaining);
+        if (Object.prototype.hasOwnProperty.call(labelCache, match)) {
+            return labelCache[match];
+        }
+        var parsed = parseCitationLabel(match);
+        var labelKey = buildCitationKey(parsed);
+        var citation = null;
+        if (labelKey && Object.prototype.hasOwnProperty.call(keyed, labelKey)) {
+            citation = keyed[labelKey];
+        }
+        if (!citation) {
+            citation = selectCitationForLabel(match, remaining, parsed);
+        }
         if (!citation) {
             return match;
         }
-        return buildCitationSpanHtml(match, citation, exchangeId);
+        var spanHtml = buildCitationSpanHtml(match, citation, exchangeId);
+        labelCache[match] = spanHtml;
+        return spanHtml;
     });
 }
 

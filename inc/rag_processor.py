@@ -9,7 +9,7 @@ import argparse # Use argparse for cleaner argument handling
 import configparser
 
 # === CONFIG ===
-CONFIG_PATH = os.environ.get("CHAT_CONFIG_PATH", "/etc/apps/chatdev_config.ini")
+CONFIG_PATH = os.environ.get("CHAT_CONFIG_PATH", "/etc/apps/chat_config.ini")
 def load_azure_credentials():
     parser = configparser.ConfigParser()
     if not parser.read(CONFIG_PATH):

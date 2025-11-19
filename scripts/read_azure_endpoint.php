@@ -1,6 +1,6 @@
 #!/usr/bin/env php
 <?php
-$path = getenv('CHAT_CONFIG_PATH') ?: '/etc/apps/chatdev_config.ini';
+$path = getenv('CHAT_CONFIG_PATH') ?: '/etc/apps/chat_config.ini';
 $cfg = parse_ini_file($path, true, INI_SCANNER_RAW);
 if ($cfg === false) {
     fwrite(STDERR, "Unable to read $path\n");

@@ -91,7 +91,7 @@ if (file_put_contents($parsedFile, $parsedText) === false) {
     exit(1);
 }
 
-$configPath = getenv('CHAT_CONFIG_PATH') ?: ($config_file ?? '/etc/apps/chatdev_config.ini');
+$configPath = getenv('CHAT_CONFIG_PATH') ?: ($config_file ?? '/etc/apps/chat_config.ini');
 $jobPayload = [
     'document_id'        => $documentId,
     'chat_id'            => $chatId,

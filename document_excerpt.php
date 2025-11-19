@@ -44,7 +44,22 @@ try {
             d.deleted,
             d.timestamp,
             c.user,
-            COALESCE(ri.ready, 0) AS document_ready
+            CASE
+                WHEN d.type LIKE 'image/%' THEN 1
+                WHEN LOWER(d.source) IN ('inline', 'image', 'paste') THEN 1
+                WHEN COALESCE(ri.ready, 0) = 1 THEN 1
+                WHEN ri.document_id IS NULL
+                     AND (
+                         d.full_text_available = 1
+                         OR d.document_token_length > 0
+                         OR (d.content IS NOT NULL AND d.content <> '')
+                     )
+                     AND (d.source IS NULL
+                          OR d.source = ''
+                          OR LOWER(d.source) NOT IN ('parsing', 'uploading'))
+                    THEN 1
+                ELSE 0
+            END AS document_ready
         FROM document d
         INNER JOIN chat c
             ON c.id = d.chat_id

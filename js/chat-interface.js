@@ -1014,10 +1014,21 @@ function displayMessages(chatMessages) {
 
             if (message.reply) {
                 var formattedReply = formatCodeBlocks(message.reply);
-                assistantMessageElement.append(formattedReply);
+                var assistantContent = $('<div class="assistant-content-final"></div>');
+                assistantContent.append(formattedReply);
+                assistantMessageElement.append(assistantContent);
                 addCopyButton(assistantMessageElement, message.reply);
                 var plainReply = $('<div>').html(formattedReply).text();
                 addSpeakButton(assistantMessageElement, plainReply);
+                if (typeof decorateInlineRagCitations === 'function') {
+                    try {
+                        var citationsFromServer = Array.isArray(message.rag_citations) ? message.rag_citations : [];
+                        var exchangeIdForCitations = message.id || assistantMessageElement.attr('data-exchange-id') || null;
+                        decorateInlineRagCitations(assistantContent, citationsFromServer, exchangeIdForCitations);
+                    } catch (err) {
+                        console.warn('Unable to decorate inline citations for history reply:', err);
+                    }
+                }
             }
         }
 

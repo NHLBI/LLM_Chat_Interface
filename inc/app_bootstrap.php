@@ -59,6 +59,7 @@ class AppBootstrap
     private function guardSession(): int
     {
         if (!waitForUserSession()) {
+            $splashConfig = (empty($this->config['app'])) ? [] : $this->config['app'];
             require_once __DIR__ . '/../splash.php';
             exit;
         }

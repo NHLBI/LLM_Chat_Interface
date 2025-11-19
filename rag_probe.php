@@ -9,7 +9,7 @@ $payload = [
   'user'     => 'wyrickrv',
   'top_k'    => 8,
   'max_context_tokens' => 2000,
-  'config_path' => '/etc/apps/chatdev_config.ini',
+  'config_path' => '/etc/apps/chat_config.ini',
 ];
 $tmp = tempnam(sys_get_temp_dir(), 'ragq_').'.json';
 file_put_contents($tmp, json_encode($payload));

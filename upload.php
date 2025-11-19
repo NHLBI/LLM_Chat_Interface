@@ -29,7 +29,7 @@ if (!function_exists('isAjaxRequest')) {
 // Ensure $user and $config_file are available
 $user = $_SESSION['user_data']['userid'] ?? '';
 if (!isset($config_file) || !$config_file) {
-    $config_file = '/etc/apps/chatdev_config.ini';
+    $config_file = '/etc/apps/chat_config.ini';
 }
 
 // Get the chat_id if present
