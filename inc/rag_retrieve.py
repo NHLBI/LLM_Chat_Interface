@@ -4,7 +4,7 @@
 import os, sys, json, time, re, configparser, requests, pymysql, warnings
 from typing import Dict, Any, List
 from qdrant_client import QdrantClient
-from qdrant_client.http.models import Filter, FieldCondition, MatchValue
+from qdrant_client.http.models import Filter, FieldCondition, MatchValue, MatchAny
 import tiktoken
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -233,16 +233,124 @@ def main():
         print(json.dumps({"error":"missing question/chat_id/user"})); sys.exit(1)
 
     load_ini(ini_path)
+    mode = inp.get("mode")
+    client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=15.0)
+    flt_base = [
+        FieldCondition(key="user_id",  match=MatchValue(value=user)),
+        FieldCondition(key="chat_id",  match=MatchValue(value=chat_id)),
+        FieldCondition(key="deleted",  match=MatchValue(value=False)),
+    ]
+
+    if mode == "full_document_chunks" and inp.get("document_ids"):
+        doc_ids = [int(d) for d in inp.get("document_ids", []) if d is not None]
+        max_chunks = int(inp.get("max_chunks", 99999))
+        if len(doc_ids) == 1:
+            doc_match = MatchValue(value=doc_ids[0])
+        else:
+            doc_match = MatchAny(any=doc_ids)
+        flt = Filter(must=flt_base + [FieldCondition(key="document_id", match=doc_match)])
+
+        points = []
+        offset = None
+        while True:
+            res = client.scroll(
+                collection_name=QDRANT_COLLECTION,
+                scroll_filter=flt,
+                limit=64,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            batch_points, offset = res[0], res[1]
+            points.extend(batch_points)
+            if offset is None or len(points) >= max_chunks:
+                break
+
+        points = points[:max_chunks]
+        points.sort(key=lambda p: ((p.payload or {}).get("document_id"), (p.payload or {}).get("chunk_index")))
+
+        context_lines = []
+        used_chunks = []
+        budget = max_ctx
+        for p in points:
+            pl = p.payload or {}
+            text = pl.get("chunk_text") or ""
+            if not text:
+                continue
+            fname = pl.get("filename") or f"doc-{pl.get('document_id')}"
+            chunk_idx = pl.get("chunk_index")
+            cite_bits = []
+            if chunk_idx is not None:
+                cite_bits.append(f"chunk {chunk_idx}")
+            if pl.get("section"):
+                cite_bits.append(f"sec. {pl['section']}")
+            cite_suffix = ", ".join(cite_bits)
+            cite_tag = f"【{fname}"
+            if cite_suffix:
+                cite_tag += f", {cite_suffix}"
+            cite_tag += "】"
+
+            block = f"{cite_tag} {_post_clean(text)}"
+            need = _token_len(block)
+            if need > budget and budget > 0:
+                continue
+            context_lines.append(block)
+            budget = max(0, budget - need)
+            used_chunks.append({
+                "document_id": pl.get("document_id"),
+                "chunk_index": chunk_idx,
+                "filename": fname,
+                "section": pl.get("section"),
+                "page_range": pl.get("page_range"),
+                "excerpt": text,
+                "content": block,
+                "tokens": need,
+                "score": getattr(p, "score", None),
+            })
+            if budget <= 0:
+                break
+
+        if not context_lines:
+            context = "----- RAG CONTEXT BEGIN -----\n(No passages returned.)\n----- RAG CONTEXT END -----"
+        else:
+            context = "----- RAG CONTEXT BEGIN -----\n" + "\n\n".join(context_lines) + "\n----- RAG CONTEXT END -----"
+
+        citations = []
+        for chunk in used_chunks:
+            citations.append({
+                "document_id": chunk.get("document_id"),
+                "filename": chunk.get("filename"),
+                "page": chunk.get("page_range"),
+                "section": chunk.get("section"),
+                "chunk_index": chunk.get("chunk_index"),
+                "excerpt": chunk.get("excerpt"),
+                "score": chunk.get("score"),
+            })
+
+        augmented_prompt = (
+            f"{context}\n\n"
+            "Use the context above when helpful. If something isn't covered, answer normally. "
+            "Cite sources inline using the brackets provided (e.g., 【filename】)."
+            "\n\nUser question:\n" + question
+        )
+
+        out = {
+            "ok": True,
+            "augmented_prompt": augmented_prompt,
+            "citations": citations,
+            "chunks": used_chunks,
+            "retrieved": len(points),
+            "latency_ms": int((time.time()-t0)*1000),
+            "embedding_model_used": AZURE['deployment'] if AZURE["key"] else OPENAI["model"],
+            "collection": QDRANT_COLLECTION,
+            "mode": "full_document_chunks"
+        }
+        print(json.dumps(out))
+        return
+
     vec = embed_query(question)
 
-    client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=15.0)
-    flt = Filter(
-        must=[
-            FieldCondition(key="user_id",  match=MatchValue(value=user)),
-            FieldCondition(key="chat_id",  match=MatchValue(value=chat_id)),
-            FieldCondition(key="deleted",  match=MatchValue(value=False)),
-        ]
-    )
+    flt = Filter(must=flt_base)
 
     res = client.query_points(
         collection_name=QDRANT_COLLECTION,

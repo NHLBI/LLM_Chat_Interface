@@ -47,6 +47,15 @@ $chatIdInput = $payload['chat_id'] ?? '';
 $deployment = $payload['deployment'] ?? ($_SESSION['deployment'] ?? '');
 $exchangeType = $payload['exchange_type'] ?? 'chat';
 $customConfigRaw = $payload['custom_config'] ?? null;
+$ragModeRaw = $payload['rag_mode'] ?? ($_SESSION['rag_mode'] ?? null);
+$skipRagRaw = $payload['skip_rag'] ?? $payload['skipRag'] ?? false;
+$skipRag = false;
+if (is_string($skipRagRaw)) {
+    $skipRag = filter_var($skipRagRaw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+    $skipRag = ($skipRag === null) ? ($skipRagRaw === '1') : $skipRag;
+} else {
+    $skipRag = (bool)$skipRagRaw;
+}
 
 $customConfig = [];
 if (is_array($customConfigRaw)) {
@@ -58,6 +67,9 @@ if (is_array($customConfigRaw)) {
     }
 }
 $customConfig['exchange_type'] = $exchangeType;
+if (is_string($ragModeRaw)) {
+    $customConfig['rag_mode'] = $ragModeRaw;
+}
 
 $decodedMessage = base64_decode($messageInput, true);
 if ($decodedMessage === false) {
@@ -226,6 +238,7 @@ try {
         'prompt_documents' => $response['prompt_documents'] ?? [],
         'rag_citations'    => $response['rag_citations'] ?? [],
     ];
+
     if (empty($finalPayload['rag_citations']) && !empty($finalPayload['eid'])) {
         $fallbackCitations = fetch_rag_citations((int)$finalPayload['eid']);
         if (!empty($fallbackCitations)) {

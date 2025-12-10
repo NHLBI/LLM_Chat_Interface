@@ -16,6 +16,13 @@ foreach(array_keys($models) as $m) {
 
 #echo "<pre>".print_r($_SESSION,1)."</pre>"; #die();
 
+$asset_version = $config['app']['asset_version'] ?? '';
+if ($asset_version === '') {
+    $asset_version = filemtime(__FILE__);
+}
+$asset_version = htmlspecialchars((string)$asset_version, ENT_QUOTES, 'UTF-8');
+$rag_mode_default = isset($_SESSION['rag_mode']) && $_SESSION['rag_mode'] === 'disable' ? 'disable' : 'use';
+
 ?><!DOCTYPE html>
 <html lang="en">
 <head>
@@ -23,7 +30,7 @@ foreach(array_keys($models) as $m) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo $config['app']['app_title']; ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="style.v2.02.css" rel="stylesheet">
+    <link href="style.v2.02.css?v=<?php echo $asset_version; ?>" rel="stylesheet">
     <!-- Highlight.js CSS -->
     <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css">
 
@@ -58,6 +65,7 @@ foreach(array_keys($models) as $m) {
     <!-- Application-specific variables passed from PHP -->
     <script>
         var application_path = "<?php echo $application_path; ?>";
+        var assetVersion = "<?php echo $asset_version; ?>";
         var deployments = <?php echo json_encode($deployments_json); ?>;
         var sessionTimeout = <?php echo $sessionTimeout * 1000; ?>; // Convert seconds to milliseconds
         var deployment = "<?php echo $deployment; ?>";
@@ -69,6 +77,13 @@ foreach(array_keys($models) as $m) {
         var reasoning_effort = "<?php echo $_SESSION['reasoning_effort']  ?? ''; ?>";
         var verbosity = "<?php echo $_SESSION['verbosity']  ?? ''; ?>";
         var context_limit = "<?php echo $context_limit; ?>";
+        var rag_disable_threshold = <?php
+            $ragThreshold = $config['app']['rag_disable_threshold']
+                ?? $config['rag_disable_threshold']
+                ?? ($config['rag']['disable_threshold'] ?? 0.85);
+            $ragThreshold = is_numeric($ragThreshold) ? (float)$ragThreshold : 0.85;
+            echo json_encode($ragThreshold);
+        ?>; // ratio of available doc budget that forces RAG use
         var chatContainer;
         var currentChat;
 
@@ -313,7 +328,10 @@ foreach(array_keys($models) as $m) {
                     </select>
                 </form>
 
+
 <?php } ?>
+
+
 <?php if ($config[$deployment]['host'] !== 'dall-e') { ?>
 
                 <!-- File Upload Form -->
@@ -336,7 +354,7 @@ foreach(array_keys($models) as $m) {
     onchange="document.getElementById('reasoning_effort_select').submit();">
     <?php
       $efforts = ['minimal','low','medium','high']; // per Azure docs
-      $curr = $_SESSION['reasoning_effort'] ?? 'medium';
+      $curr = $_SESSION['reasoning_effort'] ?? 'low';
       foreach ($efforts as $e) {
           $sel = ($e === $curr) ? 'selected="selected"' : '';
           echo '<option value="'.$e.'" '.$sel.'>'.ucfirst($e).'</option>'."\n";
@@ -356,7 +374,7 @@ foreach(array_keys($models) as $m) {
     onchange="document.getElementById('verbosity_select').submit();">
     <?php
       $verbosities = ['low','medium','high']; // per Azure docs
-      $curr = $_SESSION['verbosity'] ?? 'medium';
+      $curr = $_SESSION['verbosity'] ?? 'low';
       foreach ($verbosities as $v) {
           $sel = ($v === $curr) ? 'selected="selected"' : '';
           echo '<option value="'.$v.'" '.$sel.'>'.ucfirst($v).'</option>'."\n";
@@ -366,6 +384,27 @@ foreach(array_keys($models) as $m) {
 </form>
 <?php } ?>
 
+                <form id="rag_mode_form" action="" method="post" style="display:inline-block; margin-top:10px;">
+                    <div id="skip-rag-container" class="form-check" style="display:none; vertical-align: middle; align-items:center; padding-left: 0.75EM;">
+                        <input type="hidden" name="rag_mode" id="rag_mode_value" value="<?php echo ($rag_mode_default === 'disable') ? 'disable' : 'use'; ?>">
+                        <label class="form-check-label" for="rag_mode_checkbox" style="margin-right:6px;"
+                               title="Retrieval-Augmented Generation: retrieve pre-filtered sections of your uploaded document(s) as ordered chunks and pass them to the model.">Use RAG</label>
+                        <input type="checkbox"
+                               id="rag_mode_checkbox"
+                               value="use"
+                               <?php echo ($rag_mode_default === 'use') ? 'checked' : ''; ?>
+                               aria-label="Use Retrieval-Augmented Generation">
+                        <span id="rag_policy_message" style="margin-left:8px; font-size: 12px; color: #ffc107; display:none;">
+                            RAG enforced
+                            <button type="button"
+                                    id="rag_policy_toggle"
+                                    aria-expanded="false"
+                                    title="Show/hide RAG policy details"
+                                    style="margin-left:4px; font-size:11px; padding:0 4px; background:transparent; border:1px solid #ffc107; color:#ffc107; border-radius:3px; cursor:pointer;">▶</button>
+                            <span id="rag_policy_detail" style="display:none; margin-left:6px;"></span>
+                        </span>
+                    </div>
+                </form>
 
 
 
@@ -407,19 +446,19 @@ foreach(array_keys($models) as $m) {
 </script>
 
     <!-- Include Session Handler JS -->
-    <script src="session_handler.js"></script>
+    <script src="session_handler.js?v=<?php echo $asset_version; ?>"></script>
 
 <!-- Include application-specific scripts -->
-<script src="js/utilities.js"></script>
-<script src="js/manage_chats.js"></script>
-<script src="js/popup.js"></script>
-<script src="js/ui.js"></script>
-<script src="js/listeners.js"></script>
-<script src="js/chat-base.js"></script>
-<script src="js/chat-docs.js"></script>
-<script src="js/chat-tts.js"></script>
-<script src="js/chat-streaming.js"></script>
-    <script src="js/chat-interface.js"></script>
+<script src="js/utilities.js?v=<?php echo $asset_version; ?>"></script>
+<script src="js/manage_chats.js?v=<?php echo $asset_version; ?>"></script>
+<script src="js/popup.js?v=<?php echo $asset_version; ?>"></script>
+<script src="js/ui.js?v=<?php echo $asset_version; ?>"></script>
+<script src="js/listeners.js?v=<?php echo $asset_version; ?>"></script>
+<script src="js/chat-base.js?v=<?php echo $asset_version; ?>"></script>
+<script src="js/chat-docs.js?v=<?php echo $asset_version; ?>"></script>
+<script src="js/chat-tts.js?v=<?php echo $asset_version; ?>"></script>
+<script src="js/chat-streaming.js?v=<?php echo $asset_version; ?>"></script>
+    <script src="js/chat-interface.js?v=<?php echo $asset_version; ?>"></script>
 <script>
 function printChat() {
     // Prevent the default form submission behavior

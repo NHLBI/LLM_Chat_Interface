@@ -426,7 +426,8 @@ function chat_summary_generate(string $chatId, string $user, string $deploymentK
 
     $collected = array_reverse($collected);
 
-    if (session_status() !== PHP_SESSION_ACTIVE) {
+    // Avoid reopening/altering the session once output has begun; summaries run in-process.
+    if (session_status() !== PHP_SESSION_ACTIVE && !headers_sent()) {
         session_save_path(sys_get_temp_dir());
         session_start();
     }

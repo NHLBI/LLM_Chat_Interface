@@ -5,6 +5,12 @@ $error = '';
 
 if (empty($splashConfig)) $splashConfig = [];
 
+$asset_version = $splashConfig['asset_version'] ?? '';
+if ($asset_version === '') {
+    $asset_version = filemtime(__FILE__);
+}
+$asset_version = htmlspecialchars((string)$asset_version, ENT_QUOTES, 'UTF-8');
+
 require_once 'staticpages/disclaimer_text.php';
 
 #file_put_contents("mylog.log", "\$_SESSION in Splash.php BEFORE changes = ".print_r($_SESSION,1)."\n\n\n", FILE_APPEND);
@@ -24,7 +30,7 @@ if (!empty($_SESSION['user_data']['userid']) && (empty($_SESSION['authorized']) 
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars($splashConfig['app_title'], ENT_QUOTES, 'UTF-8'); ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="style.v2.02.css" rel="stylesheet">
+    <link href="style.v2.02.css?v=<?php echo $asset_version; ?>" rel="stylesheet">
 </head>
 <body>
     <div class="container">

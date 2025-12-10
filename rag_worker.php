@@ -333,33 +333,17 @@ function parseAndPersistDocument(
         ];
     }
 
-    $maxDbBytes = $workflowMode ? null : (2 * 1024 * 1024);
+    // Persist the full parsed text in document.content for all modes.
+    $maxDbBytes = null;
     $fullTextAvailable = 1;
-    $parsedText = '';
-
-    if ($maxDbBytes !== null && $parsedSize > $maxDbBytes) {
-        $fh = fopen($txtPath, 'r');
-        if ($fh !== false) {
-            $parsedText = stream_get_contents($fh, $maxDbBytes);
-            fclose($fh);
-        }
-        if ($parsedText === false || $parsedText === null) {
-            $parsedText = '';
-        }
-        $parsedText .= "\n\n[Content truncated for preview; full text indexed via RAG.]";
-        $fullTextAvailable = 0;
-    } else {
-        $parsedText = @file_get_contents($txtPath);
-        if ($parsedText === false) {
-            $parsedText = '';
-        }
+    $parsedText = @file_get_contents($txtPath);
+    if ($parsedText === false) {
+        $parsedText = '';
     }
 
-    if ($parsedText !== '' && $fullTextAvailable) {
-        $tokenLength = get_token_count($parsedText, 'cl100k_base');
-    } else {
-        $tokenLength = token_count_from_file($txtPath);
-    }
+    $tokenLength = ($parsedText !== '')
+        ? get_token_count($parsedText, 'cl100k_base')
+        : token_count_from_file($txtPath);
 
     $ragInlineThreshold = isset($config['rag']['inline_fulltext_tokens'])
         ? (int)$config['rag']['inline_fulltext_tokens']

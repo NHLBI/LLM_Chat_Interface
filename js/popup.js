@@ -695,6 +695,13 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
 
                     window.chatDocumentsByChatId[chat.id] = docMapForChat;
 
+                    if (isCurrentChat && typeof window.updateSkipRagToggleVisibility === 'function') {
+                        window.updateSkipRagToggleVisibility(chat.id);
+                    }
+                    if (typeof window.enforceRagPolicy === 'function') {
+                        window.enforceRagPolicy('doc-refresh');
+                    }
+
                     if (totalDocs > 0) {
                         const inlineLabel = inlineTokenTotal > 0 ? `${prettyTokens(inlineTokenTotal)} inline` : null;
                         const ragLabel = (ragTokenTotal > 0 && inlineTokenTotal === 0) ? `${prettyTokens(ragTokenTotal)} via RAG` : null;
@@ -771,6 +778,10 @@ function fetchAndUpdateChatTitles(searchString, clearSearch) {
                 // Then append the docList (if any) below it.
                 if (docList) {
                     $('.chat-titles-container').append(docList);
+                }
+
+                if (isCurrentChat && typeof window.updateSkipRagToggleVisibility === 'function') {
+                    window.updateSkipRagToggleVisibility(chat.id);
                 }
             });
 

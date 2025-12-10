@@ -58,7 +58,7 @@ function call_rag_script($user_question) {
     return $json_result;
 }
 
-function run_rag($question, $chat_id, $user, $config_path, $timeoutSec = 20, array $documentIds = null) {
+function run_rag($question, $chat_id, $user, $config_path, $timeoutSec = 20, array $documentIds = null, array $options = []) {
     $payload = [
         'question' => $question,
         'chat_id'  => $chat_id,
@@ -69,6 +69,15 @@ function run_rag($question, $chat_id, $user, $config_path, $timeoutSec = 20, arr
     ];
     if (!empty($documentIds)) {
         $payload['document_ids'] = array_values(array_unique(array_map('intval', $documentIds)));
+    }
+    if (!empty($options['mode']) && $options['mode'] === 'full_document_chunks') {
+        $payload['mode'] = 'full_document_chunks';
+        if (isset($options['max_chunks'])) {
+            $payload['max_chunks'] = (int)$options['max_chunks'];
+        }
+        if (isset($options['max_context_tokens'])) {
+            $payload['max_context_tokens'] = (int)$options['max_context_tokens'];
+        }
     }
     $tmp = tempnam(sys_get_temp_dir(), 'ragq_').'.json';
     file_put_contents($tmp, json_encode($payload));

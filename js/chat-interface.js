@@ -433,6 +433,10 @@ async function uploadSmilesImage(dataUrl, smilesToken, canonicalLabel) {
         window.chatDocumentsByChatId[effectiveChatId][docId] = docRecord;
     }
 
+    if (typeof enforceRagPolicy === 'function') {
+        enforceRagPolicy('doc-upload');
+    }
+
     if (typeof fetchAndUpdateChatTitles === 'function') {
         try {
             var currentSearch = $('#search-input').length ? $('#search-input').val() : '';
@@ -638,6 +642,194 @@ function collectCurrentPromptDocuments() {
     return snapshot;
 }
 
+function hasRagReadyDocuments(chatId) {
+    if (!chatId || !window.chatDocumentsByChatId || !window.chatDocumentsByChatId[chatId]) {
+        return false;
+    }
+    var docs = window.chatDocumentsByChatId[chatId];
+    var keys = Object.keys(docs);
+    for (var i = 0; i < keys.length; i++) {
+        var doc = docs[keys[i]];
+        if (!doc) {
+            continue;
+        }
+        var source = ((doc.document_source || doc.source || '') + '').toLowerCase();
+        var ready = doc.document_ready === true || doc.document_ready === 1 || doc.document_ready === '1';
+        var deleted = doc.document_deleted === true || doc.document_deleted === 1 || doc.document_deleted === '1';
+        var enabled = !(doc.enabled === false || doc.enabled === 0 || doc.enabled === '0');
+        var isImage = ((doc.document_type || '') + '').toLowerCase().indexOf('image/') === 0;
+        if (ready && !deleted && enabled && source === 'rag' && !isImage) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function updateSkipRagToggleVisibility(targetChatId) {
+    var container = $('#skip-rag-container');
+    var checkboxEl = $('#rag_mode_checkbox');
+    if (!container.length) {
+        return;
+    }
+
+    // Hide entirely during workflow mode
+    if (window.workflowUiActive) {
+        container.hide();
+        return;
+    }
+
+    // Always show the RAG checkbox; keep it enabled as an invitation to use RAG.
+    container.css('display', 'inline-flex');
+
+    if (checkboxEl.length) {
+        checkboxEl.prop('disabled', false);
+    }
+}
+window.updateSkipRagToggleVisibility = updateSkipRagToggleVisibility;
+
+function getEnabledDocumentTokens(targetChatId) {
+    var total = 0;
+    if (!window.chatDocumentsByChatId) {
+        return total;
+    }
+    var docs = window.chatDocumentsByChatId[targetChatId || chatId];
+    if (!docs) {
+        return total;
+    }
+
+    Object.keys(docs).forEach(function (key) {
+        var doc = docs[key];
+        if (!doc || typeof doc !== 'object') {
+            return;
+        }
+        var isDeleted = doc.document_deleted === true || doc.document_deleted === 1 || doc.document_deleted === '1';
+        if (isDeleted) {
+            return;
+        }
+        var enabled = !(doc.enabled === false || doc.enabled === 0 || doc.enabled === '0');
+        if (!enabled) {
+            return;
+        }
+        var docType = ((doc.document_type || '') + '').toLowerCase();
+        if (docType.indexOf('image/') === 0) {
+            return;
+        }
+        var tokensRaw = doc.document_token_length;
+        if (!Number.isFinite(tokensRaw)) {
+            tokensRaw = parseInt(tokensRaw, 10);
+        }
+        if (Number.isFinite(tokensRaw) && tokensRaw > 0) {
+            total += tokensRaw;
+        }
+    });
+
+    return total;
+}
+
+function getContextLimitTokens() {
+    var ctx = window.context_limit;
+    if (!Number.isFinite(ctx)) {
+        ctx = parseInt(ctx, 10);
+    }
+    return Number.isFinite(ctx) ? ctx : 0;
+}
+
+function enforceRagPolicy(trigger) {
+    var checkbox = $('#rag_mode_checkbox');
+    var hidden = $('#rag_mode_value');
+    var message = $('#rag_policy_message');
+    var detail = $('#rag_policy_detail');
+    var toggle = $('#rag_policy_toggle');
+    if (!checkbox.length || !hidden.length) {
+        return;
+    }
+
+    var ctxLimit = getContextLimitTokens();
+    var ratio = window.rag_disable_threshold;
+    if (!Number.isFinite(ratio)) {
+        ratio = parseFloat(ratio);
+    }
+    if (!Number.isFinite(ratio)) {
+        ratio = 0.85;
+    }
+    var totalTokens = getEnabledDocumentTokens();
+    var thresholdTokens = ctxLimit > 0 ? ctxLimit * ratio : 0;
+    var overThreshold = ctxLimit > 0 && totalTokens > thresholdTokens;
+
+    var previousMode = checkbox.is(':checked') ? 'use' : 'disable';
+    var userRequested = checkbox.data('userRequestedMode') || previousMode;
+    var desiredMode = userRequested;
+    if (overThreshold) {
+        desiredMode = 'use';
+    }
+
+    if (desiredMode !== previousMode) {
+        checkbox.prop('checked', desiredMode === 'use');
+    }
+
+    var currentHidden = hidden.val();
+    if (desiredMode !== currentHidden) {
+        hidden.val(desiredMode);
+    }
+
+    if (message && message.length) {
+        if (overThreshold) {
+            var ratioPct = Math.round(ratio * 100);
+            var tokensText = (typeof prettyTokens === 'function')
+                ? prettyTokens(totalTokens)
+                : (totalTokens + ' tokens');
+            var ctxText = (typeof prettyTokens === 'function')
+                ? prettyTokens(ctxLimit)
+                : (ctxLimit + ' tokens');
+            message.show();
+            if (detail && detail.length) {
+                detail.text('Enabled documents ≈ ' + tokensText + ' exceed ' + ratioPct + '% of model context (' + ctxText + ').');
+                detail.hide(); // default collapsed
+            }
+            if (toggle && toggle.length) {
+                toggle.show();
+                toggle.attr('aria-expanded', 'false');
+                toggle.text('▶');
+            }
+        } else {
+            message.hide();
+            if (detail && detail.length) {
+                detail.hide();
+            }
+            if (toggle && toggle.length) {
+                toggle.hide();
+            }
+        }
+    }
+
+    if (overThreshold) {
+        checkbox.attr('aria-checked', 'true');
+    } else {
+        checkbox.removeAttr('aria-checked');
+    }
+
+}
+window.enforceRagPolicy = enforceRagPolicy;
+
+$(document).on('click', '#rag_policy_toggle', function (e) {
+    e.preventDefault();
+    var detail = $('#rag_policy_detail');
+    var toggle = $('#rag_policy_toggle');
+    if (!detail.length || !toggle.length) {
+        return;
+    }
+    var isVisible = detail.is(':visible');
+    if (isVisible) {
+        detail.hide();
+        toggle.attr('aria-expanded', 'false');
+        toggle.text('▶');
+    } else {
+        detail.show();
+        toggle.attr('aria-expanded', 'true');
+        toggle.text('◀');
+    }
+});
+
 function applyWorkflowUiState(isWorkflow) {
     var messageForm = document.getElementById('messageForm');
     var modelSelect = document.getElementById('modelSelectButton');
@@ -699,6 +891,30 @@ function initChatInterface() {
 
     userMessageInput.focus();
     loadMessages();
+
+    var ragCheckbox = $('#rag_mode_checkbox');
+    if (ragCheckbox.length) {
+        ragCheckbox.data('userRequestedMode', ragCheckbox.is(':checked') ? 'use' : 'disable');
+        ragCheckbox.on('change', function () {
+            $(this).data('userRequestedMode', this.checked ? 'use' : 'disable');
+            $('#rag_mode_value').val(this.checked ? 'use' : 'disable');
+            enforceRagPolicy('user-toggle');
+            var overThreshold = $('#rag_policy_message').is(':visible');
+            if (!overThreshold) {
+                var form = $('#rag_mode_form');
+                if (form && form.length) {
+                    form.get(0).submit();
+                }
+            }
+        });
+    }
+
+    if (typeof enforceRagPolicy === 'function') {
+        if (typeof window.updateSkipRagToggleVisibility === 'function') {
+            window.updateSkipRagToggleVisibility(chatId);
+        }
+        enforceRagPolicy('init');
+    }
 
     userMessageInput.on('input', function () {
         if (isApplyingPromptHistory) {
@@ -815,13 +1031,18 @@ async function handleMessageSubmit(event) {
         renderMessageAttachments(userPromptElement, promptDocsSnapshot);
     }
 
+    var ragModeCheckbox = $('#rag_mode_checkbox');
+    var ragModeValue = $('#rag_mode_value');
+    var ragMode = (ragModeValue.val && ragModeValue.val()) ? ragModeValue.val() : (ragModeCheckbox.is(':checked') ? 'use' : 'disable');
+
     var requestPayload = {
         encodedMessage: messageContent,
         rawMessage: sanitizedMessageContent,
         exchangeType: exchangeType,
         customConfig: customConfigVal,
         promptDocuments: promptDocsSnapshot,
-        userMessageElement: userPromptElement
+        userMessageElement: userPromptElement,
+        ragMode: ragMode
     };
 
     startAssistantStream(requestPayload);

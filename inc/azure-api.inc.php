@@ -318,6 +318,30 @@ function truncate_document_for_budget(string $content, int $tokenBudget, ?int $k
     ];
 }
 
+function estimate_messages_tokens(array $messages): int {
+    $total = 0;
+    foreach ($messages as $msg) {
+        if (!is_array($msg) || !isset($msg['content'])) {
+            continue;
+        }
+        $content = $msg['content'];
+        if (is_string($content)) {
+            $total += estimate_tokens($content);
+            continue;
+        }
+        if (is_array($content)) {
+            foreach ($content as $part) {
+                if (is_array($part) && isset($part['text'])) {
+                    $total += estimate_tokens((string)$part['text']);
+                } elseif (is_string($part)) {
+                    $total += estimate_tokens($part);
+                }
+            }
+        }
+    }
+    return $total;
+}
+
 /**
  * Build an excerpt for an oversized paste by combining leading context and,
  * where helpful, a trailing snippet.
@@ -388,8 +412,8 @@ function maybe_promote_oversize_prompt(string $message, string $chat_id, string 
         return $result;
     }
 
-    $reserve = isset($config['rag']['oversize_min_reserve_tokens'])
-        ? (int)$config['rag']['oversize_min_reserve_tokens']
+    $reserve = isset($config['app']['oversize_min_reserve_tokens'])
+        ? (int)$config['app']['oversize_min_reserve_tokens']
         : 8192;
     $reserve = max(1024, $reserve);
 
@@ -435,8 +459,8 @@ function maybe_promote_oversize_prompt(string $message, string $chat_id, string 
             throw new RuntimeException('Failed to persist oversized paste to ' . $parsedPath);
         }
 
-        $maxDbBytes = isset($config['rag']['paste_preview_max_bytes'])
-            ? (int)$config['rag']['paste_preview_max_bytes']
+        $maxDbBytes = isset($config['app']['paste_preview_max_bytes'])
+            ? (int)$config['app']['paste_preview_max_bytes']
             : (2 * 1024 * 1024);
         if ($maxDbBytes <= 0) {
             $maxDbBytes = 2 * 1024 * 1024;
@@ -488,8 +512,8 @@ function maybe_promote_oversize_prompt(string $message, string $chat_id, string 
             error_log('Failed to enqueue RAG job for oversize paste document_id ' . $documentId);
         }
 
-        $excerptBudget = isset($config['rag']['oversize_excerpt_tokens'])
-            ? (int)$config['rag']['oversize_excerpt_tokens']
+        $excerptBudget = isset($config['app']['oversize_excerpt_tokens'])
+            ? (int)$config['app']['oversize_excerpt_tokens']
             : 1200;
         $excerpt = build_oversize_excerpt($message, $excerptBudget, $tokenCount);
 
@@ -593,7 +617,8 @@ function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config
             $message,
             $replyText,
             $workflowId,
-            null
+            null,
+            $useRagFlag
         );
 
         return [
@@ -609,10 +634,14 @@ function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config
     #print("this is message: ".print_r($message,1)); die();
     #print("this is custom stuff: ".print_r($custom_config,1)); die();
     if ($custom_config['exchange_type'] == 'chat') {
-        $msg = get_chat_thread($message, $chat_id, $user, $active_config);
+        $msg = get_chat_thread($message, $chat_id, $user, $active_config, $custom_config);
     
     } elseif ($custom_config['exchange_type'] == 'workflow') {
-        $active_config = load_configuration($config['azure']['workflow_default']);
+        if (!empty($custom_config['config']) && !empty($custom_config['config']['workflow-default'])) {
+            $active_config = $custom_config['config']['workflow-default'];
+        } else {
+            $active_config = load_configuration($config['azure']['workflow_default']);
+        }
         $arr = get_workflow_thread($message, $chat_id, $user, $active_config, $custom_config);
         $active_config = $arr[0];
         $msg = $arr[1];
@@ -651,7 +680,7 @@ function get_gpt_response($message, $chat_id, $user, $deployment, $custom_config
  * @param array $active_config The active deployment configuration.
  * @return array The messages array to be sent to the API.
  */
-function get_chat_thread($message, $chat_id, $user, $active_config) {
+function get_chat_thread($message, $chat_id, $user, $active_config, array $custom_config = []) {
 
     azure_debug_log('    -    ASSISTANTLOG - 2 -', $message);
 
@@ -660,7 +689,7 @@ function get_chat_thread($message, $chat_id, $user, $active_config) {
         
     } else {
         // Handle Chat Completion Requests
-        return handle_chat_request($message, $chat_id, $user, $active_config);
+        return handle_chat_request($message, $chat_id, $user, $active_config, $custom_config);
     }
 }
 
@@ -880,7 +909,7 @@ function process_api_response(
         }
 
         $answer_text = trim_trailing_ellipsis($answer_text);
-        $eid = create_exchange($uiDeployment, $chat_id, $storedPrompt, $answer_text, $wfId, null, json_encode($links));
+        $eid = create_exchange($uiDeployment, $chat_id, $storedPrompt, $answer_text, $wfId, null, $useRagFlag);
         if (is_array($oversizeMeta) && !empty($oversizeMeta['document_id'])) {
             try {
                 attach_document_to_exchange($eid, (int)$oversizeMeta['document_id'], true);
@@ -1014,7 +1043,8 @@ function process_api_response(
             $user_prompt,
             '',          // no text body for image gen
             $wfId,
-            $imageName
+            $imageName,
+            $useRagFlag
         );
 
         /* Return canonical success object ----------------------------------- */
@@ -1059,7 +1089,7 @@ function process_api_response(
     $answer_text = $data['choices'][0]['message']['content'] ?? 'No response text found.';
     $answer_text = strip_stream_stop_sentinel($answer_text);
     $answer_text = trim_trailing_ellipsis($answer_text);
-    $eid = create_exchange($uiDeployment, $chat_id, $storedPrompt, $answer_text, $wfId);
+    $eid = create_exchange($uiDeployment, $chat_id, $storedPrompt, $answer_text, $wfId, null, $useRagFlag);
     if (is_array($oversizeMeta) && !empty($oversizeMeta['document_id'])) {
         try {
             attach_document_to_exchange($eid, (int)$oversizeMeta['document_id'], true);
@@ -1112,7 +1142,7 @@ function process_api_response(
  * @param array $active_config The active deployment configuration.
  * @return array The messages array for Chat Completion.
  */
-function handle_chat_request($message, $chat_id, $user, $active_config) {
+function handle_chat_request($message, $chat_id, $user, $active_config, array $custom_config = []) {
     global $config_file;
     azure_debug_log('    -    ASSISTANTLOG - 5 -', $message);
 
@@ -1128,8 +1158,59 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
         unset($GLOBALS['oversize_prompt_context']);
     }
 
+    global $config;
+
+    $ragDisableThreshold = 0.85;
+    if (isset($config['app']['rag_disable_threshold']) && is_numeric($config['app']['rag_disable_threshold'])) {
+        $ragDisableThreshold = (float)$config['app']['rag_disable_threshold'];
+    }
+
+    $ragMode = isset($custom_config['rag_mode']) ? (string)$custom_config['rag_mode'] : ($_SESSION['rag_mode'] ?? 'use');
+    if ($ragMode !== 'disable') {
+        $ragMode = 'use';
+    }
+    $ragModeOriginal = $ragMode;
+    $useRagFlag = ($ragMode === 'use') ? 1 : 0;
+
     // 2) gather document inventory
     $docs = get_chat_documents($user, $chat_id);
+    $ragFullDocMode = false;
+
+    $systemTokens = estimate_messages_tokens($system_message);
+    $historyReserve = 2048;
+    $availableDocBudget = max(
+        0,
+        (int)$active_config['context_limit'] - estimate_tokens($message) - $systemTokens - $historyReserve
+    );
+
+    $enabledDocTokens = 0;
+    foreach ($docs as $docMeta) {
+        $docEnabledMeta = true;
+        if (isset($docMeta['document_enabled'])) {
+            $docEnabledMeta = (int)$docMeta['document_enabled'] === 1 || $docMeta['document_enabled'] === true;
+        } elseif (isset($docMeta['enabled'])) {
+            $docEnabledMeta = (int)$docMeta['enabled'] === 1 || $docMeta['enabled'] === true;
+        }
+        if (!$docEnabledMeta) {
+            continue;
+        }
+        $tokensMeta = (int)($docMeta['document_token_length'] ?? 0);
+        if ($tokensMeta <= 0 && !empty($docMeta['document_content'])) {
+            $tokensMeta = estimate_tokens((string)$docMeta['document_content']);
+        }
+        $enabledDocTokens += max(0, $tokensMeta);
+    }
+
+    $inlineDocThresholdRatio = $ragDisableThreshold;
+    $forceInlineDocs = ($enabledDocTokens > 0 && $availableDocBudget > 0 && $enabledDocTokens <= ($availableDocBudget * $inlineDocThresholdRatio));
+
+    $ragOverrideReason = null;
+    $disableThreshold = $availableDocBudget * $ragDisableThreshold;
+    if ($ragMode === 'disable' && $enabledDocTokens > $disableThreshold) {
+        $ragMode = 'use';
+        $ragOverrideReason = 'docs_exceed_disable_threshold';
+        $useRagFlag = 1;
+    }
 
     // 3) decide whether to inject full documents or rely on RAG
     $document_messages = [];
@@ -1246,6 +1327,13 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
             continue;
         }
 
+        if ($ragFullDocMode && !$isImage) {
+            $decision['mode'] = 'rag_full';
+            $decision['reason'] = 'full_doc_chunks';
+            $decisions[] = $decision;
+            continue;
+        }
+
         if ($isImage) {
             if ($docContent !== '') {
                 $imageAttachments[] = [
@@ -1266,16 +1354,29 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
         }
 
         if (in_array($docSource, ['rag', 'paste'], true)) {
-            if ($docReady) {
+            if ($docReady && $ragMode === 'use') {
                 $docsNeedingRag[] = $docId;
+                if ($forceInlineDocs && !$isImage) {
+                    $decision['mode'] = 'rag_full';
+                    $decision['reason'] = 'full_doc_chunks';
+                    $decisions[] = $decision;
+                    continue;
+                }
+            }
+            if ($forceInlineDocs && $fullAvailable && !$isImage) {
+                $docSource = 'inline';
+                $decision['reason'] = 'inline_for_context';
+            } elseif ($docReady) {
                 $decision['mode'] = 'rag';
                 $decision['reason'] = 'rag_source';
+                $decisions[] = $decision;
+                continue;
             } else {
                 $decision['mode'] = 'pending_index';
                 $decision['reason'] = 'rag_source_pending';
+                $decisions[] = $decision;
+                continue;
             }
-            $decisions[] = $decision;
-            continue;
         }
 
         if ($fullAvailable) {
@@ -1313,10 +1414,13 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
                 }
             }
 
-            if ($docReady) {
+            if ($docReady && !$forceInlineDocs) {
                 $docsNeedingRag[] = $docId;
                 $decision['mode'] = 'rag';
                 $decision['reason'] = 'token_budget';
+            } elseif ($docReady && $forceInlineDocs) {
+                $decision['mode'] = 'inline';
+                $decision['reason'] = 'inline_for_context';
             } else {
                 $decision['mode'] = 'pending_index';
                 $decision['reason'] = ($availableForBody <= 0) ? 'no_budget' : 'awaiting_index';
@@ -1326,10 +1430,19 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
             continue;
         }
 
-        if ($docReady) {
+        if ($docReady && !$forceInlineDocs) {
             $docsNeedingRag[] = $docId;
             $decision['mode'] = 'rag';
             $decision['reason'] = 'no_fulltext';
+        } elseif ($docReady && $forceInlineDocs) {
+            if ($ragMode === 'use') {
+                $docsNeedingRag[] = $docId;
+                $decision['mode'] = 'rag_full';
+                $decision['reason'] = 'full_doc_chunks';
+            } else {
+                $decision['mode'] = 'inline';
+                $decision['reason'] = 'inline_for_context';
+            }
         } else {
             $decision['mode'] = 'pending_index';
             $decision['reason'] = 'awaiting_index';
@@ -1345,26 +1458,87 @@ function handle_chat_request($message, $chat_id, $user, $active_config) {
         'remaining_budget'=> $docTokenBudget,
         'documents'       => $decisions,
         'rag_document_ids'=> $docsNeedingRag,
+        'rag_opted_out'   => ($ragMode === 'disable') ? 1 : 0,
+        'rag_overridden'  => (int)($ragOverrideReason !== null),
+        'rag_override_reason' => $ragOverrideReason,
     ];
     $GLOBALS['last_prompt_documents_details'] = $promptDocumentsForClient;
 
-    $shouldRunRag = !empty($docsNeedingRag);
+    $shouldRunRag = $ragMode === 'use' && !empty($docsNeedingRag);
+    $ragFullDocMode = $shouldRunRag && $forceInlineDocs;
+
     if ($shouldRunRag) {
         $userForIndex = $_SESSION['user_data']['userid'] ?? $user;
-        $ragResponse = run_rag($message, $chat_id, $userForIndex, $config_file, 20, $docsNeedingRag);
+        $ragOptions = [];
+        if ($ragFullDocMode) {
+            $ragOptions['mode'] = 'full_document_chunks';
+            $ragOptions['max_chunks'] = 99999;
+            $ragOptions['max_context_tokens'] = max(0, $initialDocBudget);
+        }
+        $ragResponse = run_rag($message, $chat_id, $userForIndex, $config_file, 20, $docsNeedingRag, $ragOptions);
 
         error_log("RAG CMD: {$ragResponse['cmd']}");
         error_log("RAG RC: {$ragResponse['rc']}");
         error_log("RAG STDOUT (first 800): " . substr($ragResponse['stdout'], 0, 800));
         error_log("RAG STDERR (first 800): " . substr($ragResponse['stderr'] ?? '', 0, 800));
+        error_log("RAG MODE: " . ($ragOptions['mode'] ?? 'rag') . " docs=" . json_encode($docsNeedingRag));
 
-        if ($ragResponse['rc'] === 0 && is_array($ragResponse['json']) && !empty($ragResponse['json']['ok']) && !empty($ragResponse['json']['augmented_prompt'])) {
-            $message = $ragResponse['json']['augmented_prompt'];
+        if ($ragResponse['rc'] === 0 && is_array($ragResponse['json']) && !empty($ragResponse['json']['ok'])) {
+            if ($ragFullDocMode) {
+                $chunkLines = [];
+                $chunks = $ragResponse['json']['chunks'] ?? [];
+                if (is_array($chunks) && !empty($chunks)) {
+                    foreach ($chunks as $chunk) {
+                        $line = '';
+                        if (!empty($chunk['content'])) {
+                            $line = (string)$chunk['content'];
+                        } else {
+                            $fname = $chunk['filename'] ?? ($chunk['document_id'] ? ('doc-' . $chunk['document_id']) : 'document');
+                            $bits = [];
+                            if (isset($chunk['chunk_index'])) {
+                                $bits[] = 'chunk ' . $chunk['chunk_index'];
+                            }
+                            if (!empty($chunk['section'])) {
+                                $bits[] = 'sec. ' . $chunk['section'];
+                            }
+                            $cite = '【' . $fname;
+                            if (!empty($bits)) {
+                                $cite .= ', ' . implode(', ', $bits);
+                            }
+                            $cite .= '】';
+                            $line = trim($cite . ' ' . ($chunk['excerpt'] ?? ''));
+                        }
+                        $line = trim((string)$line);
+                        if ($line === '') {
+                            continue;
+                        }
+                        $chunkLines[] = $line;
+                    }
+                }
+
+                if (!empty($chunkLines)) {
+                    $block = "----- RAG CONTEXT BEGIN -----\n" . implode("\n\n", $chunkLines) . "\n----- RAG CONTEXT END -----";
+                    $document_messages[] = [
+                        'role'    => 'system',
+                        'content' => $block
+                    ];
+                    $docTokenBudget = max(0, $docTokenBudget - estimate_tokens($block));
+                } elseif (!empty($ragResponse['json']['augmented_prompt'])) {
+                    $document_messages[] = [
+                        'role'    => 'system',
+                        'content' => $ragResponse['json']['augmented_prompt']
+                    ];
+                    $docTokenBudget = max(0, $docTokenBudget - estimate_tokens($ragResponse['json']['augmented_prompt']));
+                }
+            } elseif (!$ragFullDocMode && !empty($ragResponse['json']['augmented_prompt'])) {
+                $message = $ragResponse['json']['augmented_prompt'];
+            }
             $_SESSION['last_rag_citations'] = $ragResponse['json']['citations'] ?? [];
             $_SESSION['last_rag_meta'] = [
                 'top_k'           => $ragResponse['payload']['top_k'] ?? null,
                 'latency_ms'      => $ragResponse['json']['latency_ms'] ?? null,
                 'embedding_model' => $ragResponse['json']['embedding_model_used'] ?? ($ragResponse['json']['embedding_model'] ?? null),
+                'mode'            => $ragFullDocMode ? 'full_document_chunks' : 'rag',
             ];
         } else {
             error_log("RAG retrieve failed; falling back to raw message");

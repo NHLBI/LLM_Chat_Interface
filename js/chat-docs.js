@@ -88,6 +88,71 @@ function updateStoredProcessingState(chatId, state) {
     writeProcessingStorage(store);
 }
 
+function buildStoredProcessingSnapshot(documents, options) {
+    options = options || {};
+    var docIds = [];
+    var nameMap = {};
+    var statusMap = {};
+
+    if (Array.isArray(documents)) {
+        documents.forEach(function (doc, index) {
+            if (!doc) {
+                return;
+            }
+            var idRaw = doc.id || doc.document_id;
+            var id = parseInt(idRaw, 10);
+            if (!Number.isFinite(id) || id <= 0) {
+                return;
+            }
+            if (docIds.indexOf(id) === -1) {
+                docIds.push(id);
+            }
+
+            var overrideName = Array.isArray(options.docNames) ? options.docNames[index] : null;
+            var docName = overrideName || doc.name || '';
+            if (docName) {
+                nameMap[String(id)] = docName;
+            }
+
+            var seededStatus = null;
+            if (options.statuses && options.statuses[id]) {
+                seededStatus = options.statuses[id];
+            } else if (doc.processing_status) {
+                seededStatus = doc.processing_status;
+            }
+            if (seededStatus) {
+                statusMap[id] = JSON.parse(JSON.stringify(seededStatus));
+            }
+        });
+    }
+
+    if (!docIds.length) {
+        return null;
+    }
+
+    return {
+        docIds: docIds,
+        names: nameMap,
+        status: statusMap,
+        startTime: Number.isFinite(options.startTime) ? options.startTime : Date.now(),
+        estimatedSeconds: Number.isFinite(options.estimatedSeconds) ? options.estimatedSeconds : null,
+        estimateMeta: options.estimateMeta || null,
+        dynamicEstimateSec: Number.isFinite(options.dynamicEstimateSec) ? options.dynamicEstimateSec : null,
+        updatedAt: Date.now()
+    };
+}
+
+function seedProcessingStorageForChat(targetChatId, documents, options) {
+    if (!targetChatId) {
+        return;
+    }
+    var snapshot = buildStoredProcessingSnapshot(documents, options || {});
+    if (!snapshot) {
+        return;
+    }
+    updateStoredProcessingState(targetChatId, snapshot);
+}
+
 function persistProcessingState() {
     if (!chatId) {
         return;
@@ -991,3 +1056,4 @@ window.notifyDocumentProcessingInProgress = notifyDocumentProcessingInProgress;
 window.syncProcessingStateFromServer = syncProcessingStateFromServer;
 window.cancelProcessingDocuments = cancelProcessingDocuments;
 window.isDocumentProcessingForChat = isDocumentProcessingForChat;
+window.seedProcessingStorageForChat = seedProcessingStorageForChat;

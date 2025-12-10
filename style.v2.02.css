@@ -580,6 +580,10 @@ code {
     margin: 5px auto;
 }
 
+.form-check-input {
+    
+}
+
 /* Container for the textarea and submit button */
 .input-container {
     position: relative;

@@ -122,17 +122,43 @@ foreach ($models as $m => $modelconfig) {
  * Fetch all (non‑deleted) documents and split into image vs other counts.
  */
 function loadDocumentCounts() {
-    //console.log("THIS IS THE CHAT ID IN model_text.php: "+chatId)
-    fetch(`/${application_path}/get_uploaded_images.php?chat_id=${chatId}&images_only=false`)
-        .then(res => res.json())
+    if (!chatId) {
+        console.warn('No chatId available; skipping document count fetch');
+        window.imageDocumentsCount = 0;
+        window.documentsLength    = 0;
+        updateModelButtonStates();
+        return;
+    }
+
+    var basePath = '';
+    if (typeof application_path === 'string' && application_path.length) {
+        basePath = '/' + application_path.replace(/^\/+|\/+$/g, '');
+    }
+    var url = `${basePath}/get_uploaded_images.php?chat_id=${encodeURIComponent(chatId)}&images_only=false`;
+    console.info('[ModelModal] fetching documents', { url: url, chatId: chatId, basePath: basePath });
+
+    fetch(url)
+        .then(res => {
+            if (!res.ok) {
+                throw new Error('HTTP ' + res.status);
+            }
+            return res.json();
+        })
         .then(docs => {
-            window.imageDocumentsCount = docs.filter(doc => doc.document_type.includes('image')).length;
+            if (!Array.isArray(docs)) {
+                throw new Error('Unexpected payload');
+            }
+            window.imageDocumentsCount = docs.filter(doc => (doc.document_type || '').includes('image')).length;
             window.documentsLength    = docs.length - window.imageDocumentsCount;
             updateModelButtonStates();
-            console.log(`Images: ${window.imageDocumentsCount}, Other docs: ${window.documentsLength}`);
+            console.info('[ModelModal] document counts', {
+                images: window.imageDocumentsCount,
+                other: window.documentsLength,
+                total: docs.length
+            });
         })
         .catch(err => {
-            console.error('Error fetching documents:', err);
+            console.error('[ModelModal] Error fetching documents:', err);
             window.imageDocumentsCount = 0;
             window.documentsLength    = 0;
             updateModelButtonStates();
@@ -211,4 +237,3 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 </script>
-

@@ -166,6 +166,13 @@ class AppBootstrap
                 ? $chatRow['temperature']
                 : ($_SESSION['temperature'] ?? '0.7');
 
+            if (isset($chatRow['use_rag']) || isset($chatRow['use_RAG'])) {
+                $useRagDb = $chatRow['use_rag'] ?? $chatRow['use_RAG'];
+                $_SESSION['rag_mode'] = ((int)$useRagDb === 0) ? 'disable' : 'use';
+            } else {
+                $_SESSION['rag_mode'] = $_SESSION['rag_mode'] ?? 'use';
+            }
+
             $allowedEffort = ['minimal', 'low', 'medium', 'high'];
             $allowedVerb   = ['low', 'medium', 'high'];
 
@@ -202,10 +209,22 @@ class AppBootstrap
             }
         }
 
+        if (isset($_POST['rag_mode'])) {
+            $val = ($_POST['rag_mode'] === 'disable') ? 'disable' : 'use';
+            $_SESSION['rag_mode'] = $val;
+            if (!empty($chatId)) {
+                update_use_rag($user, $chatId, $val === 'use');
+            }
+        }
+
         if (!isset($_SESSION['temperature'])
             || (float)$_SESSION['temperature'] < 0
             || (float)$_SESSION['temperature'] > 2) {
             $_SESSION['temperature'] = 0.7;
+        }
+
+        if (!isset($_SESSION['rag_mode']) || ($_SESSION['rag_mode'] !== 'use' && $_SESSION['rag_mode'] !== 'disable')) {
+            $_SESSION['rag_mode'] = 'use';
         }
 
         if (isset($_POST['reasoning_effort'])) {

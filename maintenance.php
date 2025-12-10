@@ -1,5 +1,14 @@
 <?php
 
+$asset_version = '';
+if (isset($config['app']['asset_version'])) {
+    $asset_version = $config['app']['asset_version'];
+}
+if ($asset_version === '') {
+    $asset_version = filemtime(__FILE__);
+}
+$asset_version = htmlspecialchars((string)$asset_version, ENT_QUOTES, 'UTF-8');
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -8,7 +17,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Maintenance Mode</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="style.v1.03.2.css" rel="stylesheet">
+    <link href="style.v1.03.2.css?v=<?php echo $asset_version; ?>" rel="stylesheet">
     <style>
         body {
             display: flex;
@@ -54,4 +63,3 @@
     </div>
 </body>
 </html>
-

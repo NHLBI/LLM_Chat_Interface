@@ -814,6 +814,14 @@ function decorateInlineRagCitations(messageElement, citations, exchangeId) {
     if (!exchangeId || !window.jQuery) {
         return;
     }
+    window.ragCitationsUnavailable = window.ragCitationsUnavailable || false;
+    window.ragCitationsNotFound = window.ragCitationsNotFound || {};
+    if (window.ragCitationsUnavailable) {
+        return;
+    }
+    if (window.ragCitationsNotFound[exchangeId]) {
+        return;
+    }
     window.jQuery
         .getJSON(resolveAppPath('rag_citations.php'), { exchange_id: exchangeId })
         .done(function (resp) {
@@ -821,7 +829,10 @@ function decorateInlineRagCitations(messageElement, citations, exchangeId) {
                 applyInlineRagCitationLinks(messageElement, resp.citations, exchangeId);
             }
         })
-        .fail(function () {
+        .fail(function (xhr) {
+            if (xhr && xhr.status === 404) {
+                window.ragCitationsNotFound[exchangeId] = true;
+            }
             // silently ignore; citations remain plain text
         });
 }

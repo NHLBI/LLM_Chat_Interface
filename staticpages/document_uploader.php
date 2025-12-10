@@ -350,23 +350,99 @@ fetch('upload.php', {
 .then(result => {
   console.log("Upload successful. Received result:", result);
 
-  // 1) If it's a brand-new chat, just redirect
+  const uploadedDocs = Array.isArray(result.uploaded_documents) ? result.uploaded_documents : [];
+  const queuedDocs   = uploadedDocs.filter(doc => doc && doc.queued);
+  const processingDocs = Array.isArray(result.processing_documents)
+    ? result.processing_documents.filter(doc => doc && (doc.queued || doc.processing_status))
+    : [];
+  const docsNeedingProcessing = queuedDocs.length ? queuedDocs : processingDocs;
+
+  const docNames = uploadedFiles.map(file => file.name);
+  console.log("Docs just uploaded:", docNames);
+
+  // 1) If it's a brand-new chat, preserve progress then redirect
   if (result.new_chat) {
     console.log(
       "Result indicates new_chat. Redirecting with chat_id:", 
       result.chat_id
     );
-    window.location.href = 
-      "/" + application_path + "/" + encodeURIComponent(result.chat_id);
-    console.log("--------- submitUploadForm() END (redirect new_chat) ---------");
+
+    const redirectToNewChat = () => {
+      window.location.href = 
+        "/" + application_path + "/" + encodeURIComponent(result.chat_id);
+      console.log("--------- submitUploadForm() END (redirect new_chat) ---------");
+    };
+
+    if (docsNeedingProcessing.length && typeof window.seedProcessingStorageForChat === 'function') {
+      const docNamesForWatcher = docsNeedingProcessing.map(doc => doc && doc.name ? doc.name : '');
+      const docStatuses = {};
+      docsNeedingProcessing.forEach(doc => {
+        if (!doc || !doc.id || !doc.processing_status) {
+          return;
+        }
+        docStatuses[doc.id] = doc.processing_status;
+      });
+
+      const seedProcessingState = (estimatedSeconds, estimateMeta) => {
+        window.seedProcessingStorageForChat(result.chat_id, docsNeedingProcessing, {
+          docNames: docNamesForWatcher,
+          statuses: docStatuses,
+          estimatedSeconds: estimatedSeconds,
+          estimateMeta: estimateMeta || null
+        });
+      };
+
+      const estimatePayload = {
+        documents: docsNeedingProcessing.map(doc => ({
+          id: doc.id,
+          mime: doc.type || '',
+          original_size: doc.original_size ?? null,
+          parsed_size: doc.parsed_size ?? null
+        }))
+      };
+
+      fetch('document_estimate.php', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify(estimatePayload)
+      })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('Estimate request failed with status ' + response.status);
+          }
+          return response.json();
+        })
+        .then(data => {
+          const estimated = Number(data.total_estimate_sec);
+          const estimateMeta = {
+            source: data.estimate_source || null,
+            total_data_points: data.total_data_points || null
+          };
+          if (Array.isArray(data.documents)) {
+            estimateMeta.per_doc = data.documents;
+          }
+          if (!Number.isFinite(estimated) || estimated <= 0) {
+            seedProcessingState(null, estimateMeta);
+          } else {
+            seedProcessingState(estimated, estimateMeta);
+          }
+        })
+        .catch(error => {
+          console.warn('Falling back to default processing estimate (pre-redirect):', error);
+          seedProcessingState(null, null);
+        })
+        .finally(() => {
+          redirectToNewChat();
+        });
+      return;
+    }
+
+    redirectToNewChat();
     return;
   }
-
-  const docNames = uploadedFiles.map(file => file.name);
-  console.log("Docs just uploaded:", docNames);
-
-  const uploadedDocs = Array.isArray(result.uploaded_documents) ? result.uploaded_documents : [];
-  const queuedDocs   = uploadedDocs.filter(doc => doc && doc.queued);
 
   if (typeof window.showToastMessage === 'function') {
     uploadedDocs.forEach(doc => {

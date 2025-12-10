@@ -345,7 +345,8 @@ function startAssistantStream(request) {
         chat_id: chatId,
         deployment: typeof deployment !== 'undefined' ? deployment : '',
         exchange_type: request.exchangeType,
-        custom_config: request.customConfig
+        custom_config: request.customConfig,
+        rag_mode: request.ragMode || 'use'
     };
 
     var streamUi = createStreamingAssistantMessage(deployment, request);

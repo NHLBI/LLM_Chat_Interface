@@ -67,16 +67,7 @@ try {
     }
 
     $citations = fetch_rag_citations($exchangeId);
-    if (empty($citations)) {
-        http_response_code(404);
-        echo json_encode([
-            'ok'      => false,
-            'error'   => 'not_found',
-            'message' => 'No citation metadata is available for this exchange.',
-        ]);
-        exit;
-    }
-
+    // Return 200 with an empty array to avoid noisy 404s in the client when no citations exist.
     echo json_encode([
         'ok'         => true,
         'citations'  => $citations,

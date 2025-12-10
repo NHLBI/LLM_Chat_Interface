@@ -154,6 +154,7 @@ The repository includes several repeatable checks that should run before deployi
 - Execute the full validation bundle: `./scripts/run_validation.sh`.
   - Runs `php -l` across the codebase, PHP integration tests, Python bytecode compilation, parser/RAG unit tests, and linting.
   - Exports a summary to the console and exits non-zero on failure.
+- When using Codex, request escalated DB access at the start of each session so PHP integration tests can connect to MariaDB (sandboxing blocks DB sockets by default).
 
 ### RAG ingestion smoke test
 
