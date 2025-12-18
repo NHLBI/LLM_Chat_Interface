@@ -260,6 +260,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const configDescriptionRaw = button.getAttribute('data-config-description');
       const prompt = button.dataset.prompt;
       const action = button.dataset.action;
+      const deploymentKey = button.getAttribute('data-deployment') || '';
       
       // Parse the comma-separated values into an object.
       let workflowConfig = {};
@@ -280,8 +281,12 @@ document.addEventListener('DOMContentLoaded', function() {
         configDescription: configDescriptionRaw, // raw string if needed elsewhere
         config: workflowConfig,                // the parsed object
         prompt: prompt,
-        action: action
+        action: action,
+        deployment: deploymentKey || undefined
       };
+      if (deploymentKey) {
+        workflowConfig['workflow-deployment'] = deploymentKey;
+      }
       console.log("Selected workflow:", window.selectedWorkflow);
 
       // **** New lines Start ****

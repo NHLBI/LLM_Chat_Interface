@@ -6,6 +6,21 @@ declare(strict_types=1);
  * CLI worker that processes queued RAG indexing jobs.
  *
  * Usage: php rag_worker.php [--max-jobs=N]
+ *
+ * High-level flow:
+ * 1) Discover queue/*.json (one job per document) and process in order.
+ * 2) If a job has a source_path, run the Python parser and persist parsed text
+ *    into the document row; small docs are marked inline and skip indexing.
+ * 3) For RAG-sized docs, run the Python indexer; record status/progress in
+ *    var/rag/status/doc_<id>.json so document_status.php can poll.
+ * 4) Move jobs to completed/failed and log metrics under var/rag/logs/.
+ *
+ * Important assumptions:
+ * - Concurrency: this script expects a single active worker per app. There is
+ *   no job-claim/lock; running multiple instances risks double-processing.
+ * - File system: queue/completed/failed/logs/status live under var/rag/.
+ * - Resilience: per-doc logging is isolated; one failed job should not block
+ *   the loop because failures move to failed/ and the loop continues.
  */
 
 require_once __DIR__ . '/get_config.php';
@@ -51,6 +66,7 @@ foreach ($jobs as $jobFile) {
         break;
     }
 
+    // Decode and validate the job payload before doing any work.
     $payload = decodeJob($jobFile);
     if ($payload === null) {
         moveJob($jobFile, $failedDir);
@@ -65,6 +81,8 @@ foreach ($jobs as $jobFile) {
 
     $logPath = sprintf('%s/index_%s_%s.log', $logsDir, $documentId, date('Ymd_His'));
 
+    // If we still have a source file, parse it first; otherwise we assume we're
+    // resuming at the indexing step.
     if (!empty($payload['source_path'])) {
         $parseOutcome = parseAndPersistDocument(
             $payload,

@@ -2,6 +2,34 @@
 
 var activeAssistantStream = null;
 
+function resolveDeploymentMeta(deploymentKey) {
+    if (typeof deployments === 'undefined' || !deploymentKey || !deployments[deploymentKey]) {
+        return null;
+    }
+    return deployments[deploymentKey];
+}
+
+function getAvatarForDeployment(deploymentKey) {
+    var meta = resolveDeploymentMeta(deploymentKey);
+    var avatarSrc = meta && meta.image ? 'images/' + meta.image : 'images/openai_logo.svg';
+    var avatarAlt = meta && meta.image_alt ? meta.image_alt : 'Assistant avatar';
+    return { src: avatarSrc, alt: avatarAlt };
+}
+
+function updateAssistantAvatar($messageEl, deploymentKey) {
+    if (!$messageEl || !$messageEl.length || !deploymentKey) {
+        return;
+    }
+    var avatar = getAvatarForDeployment(deploymentKey);
+    var $img = $messageEl.find('img.openai-icon').first();
+    if ($img.length) {
+        $img.attr('src', avatar.src);
+        $img.attr('alt', avatar.alt);
+    } else {
+        $messageEl.prepend('<img src="' + avatar.src + '" alt="' + avatar.alt + '" class="openai-icon">');
+    }
+}
+
 function normalizeStreamingPreview(text) {
     if (typeof text !== 'string' || text.length === 0) {
         return text;
@@ -79,12 +107,10 @@ function renderStreamingPreviewHtml(text) {
 
 function createStreamingAssistantMessage(deploymentKey, options) {
     options = options || {};
-    var deploymentMeta = (typeof deployments !== 'undefined' && deploymentKey && deployments[deploymentKey]) ? deployments[deploymentKey] : null;
-    var avatarSrc = deploymentMeta && deploymentMeta.image ? 'images/' + deploymentMeta.image : 'images/openai_logo.svg';
-    var avatarAlt = deploymentMeta && deploymentMeta.image_alt ? deploymentMeta.image_alt : 'Assistant avatar';
+    var avatar = getAvatarForDeployment(deploymentKey);
 
     var messageElement = $('<div class="message assistant-message streaming"></div>');
-    messageElement.prepend('<img src="' + avatarSrc + '" alt="' + avatarAlt + '" class="openai-icon">');
+    messageElement.prepend('<img src="' + avatar.src + '" alt="' + avatar.alt + '" class="openai-icon">');
 
     //var contentElement = $('<div class="assistant-stream__content"></div>');
     var contentElement = $('<div class=""></div>');
@@ -349,7 +375,37 @@ function startAssistantStream(request) {
         rag_mode: request.ragMode || 'use'
     };
 
-    var streamUi = createStreamingAssistantMessage(deployment, request);
+    var customConfigParsed = null;
+    if (request.customConfig && typeof request.customConfig === 'string') {
+        try {
+            customConfigParsed = JSON.parse(request.customConfig);
+        } catch (err) {
+            customConfigParsed = null;
+        }
+    } else if (request.customConfig && typeof request.customConfig === 'object') {
+        customConfigParsed = request.customConfig;
+    }
+
+    var initialDeployment = request.initialDeployment || null;
+    if (request.exchangeType === 'workflow') {
+        if (!initialDeployment && customConfigParsed && typeof customConfigParsed.deployment === 'string' && customConfigParsed.deployment !== '') {
+            initialDeployment = customConfigParsed.deployment;
+        }
+        if (!initialDeployment && customConfigParsed && customConfigParsed.config && typeof customConfigParsed.config['workflow-deployment'] === 'string') {
+            initialDeployment = customConfigParsed.config['workflow-deployment'];
+        }
+        if (!initialDeployment && customConfigParsed && customConfigParsed.config && typeof customConfigParsed.config['workflow-default'] === 'string') {
+            initialDeployment = customConfigParsed.config['workflow-default'];
+        }
+        if (!initialDeployment && typeof window !== 'undefined' && window.selectedWorkflow && typeof window.selectedWorkflow.deployment === 'string' && window.selectedWorkflow.deployment !== '') {
+            initialDeployment = window.selectedWorkflow.deployment;
+        }
+    }
+    if (!initialDeployment && typeof deployment !== 'undefined') {
+        initialDeployment = deployment;
+    }
+
+    var streamUi = createStreamingAssistantMessage(initialDeployment, request);
 
     var controller = new AbortController();
     activeAssistantStream = {
@@ -544,6 +600,9 @@ function handleAssistantStreamEvent(event) {
     if (event.type === 'final') {
         if (event.data && Array.isArray(event.data.prompt_documents)) {
             activeAssistantStream.promptDocuments = event.data.prompt_documents;
+        }
+        if (event.data && event.data.deployment && activeAssistantStream.messageElement) {
+            updateAssistantAvatar(activeAssistantStream.messageElement, event.data.deployment);
         }
         finalizeAssistantStream(event.data || {});
         return;

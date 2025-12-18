@@ -1,9 +1,9 @@
 /*M!999999\- enable the sandbox mode */ 
--- MariaDB dump 10.19  Distrib 10.5.27-MariaDB, for Linux (x86_64)
+-- MariaDB dump 10.19  Distrib 10.5.29-MariaDB, for Linux (x86_64)
 --
 -- Host: localhost    Database: osi_chat_dev
 -- ------------------------------------------------------
--- Server version	10.5.27-MariaDB
+-- Server version	10.5.29-MariaDB
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -22,7 +22,7 @@
 
 DROP TABLE IF EXISTS `chat`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `chat` (
   `id` varchar(32) NOT NULL,
   `user` varchar(255) DEFAULT NULL,
@@ -52,7 +52,7 @@ CREATE TABLE `chat` (
 
 DROP TABLE IF EXISTS `document`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `document` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `chat_id` varchar(32) NOT NULL,
@@ -75,7 +75,7 @@ CREATE TABLE `document` (
   KEY `idx_doc_content_sha` (`content_sha256`),
   KEY `idx_doc_file_sha` (`file_sha256`),
   CONSTRAINT `fk_exchange_chat_docs` FOREIGN KEY (`chat_id`) REFERENCES `chat` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=54506 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=54717 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -84,7 +84,7 @@ CREATE TABLE `document` (
 
 DROP TABLE IF EXISTS `exchange`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `exchange` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `chat_id` varchar(32) NOT NULL,
@@ -107,7 +107,7 @@ CREATE TABLE `exchange` (
   PRIMARY KEY (`id`),
   KEY `fk_exchange_chat` (`chat_id`),
   CONSTRAINT `fk_exchange_chat` FOREIGN KEY (`chat_id`) REFERENCES `chat` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=100090 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=100306 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -116,7 +116,7 @@ CREATE TABLE `exchange` (
 
 DROP TABLE IF EXISTS `exchange_document`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `exchange_document` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `exchange_id` int(11) NOT NULL,
@@ -125,7 +125,7 @@ CREATE TABLE `exchange_document` (
   PRIMARY KEY (`id`),
   KEY `exchange_id` (`exchange_id`),
   KEY `document_id` (`document_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=5766 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=5967 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -134,7 +134,7 @@ CREATE TABLE `exchange_document` (
 
 DROP TABLE IF EXISTS `rag_index`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `rag_index` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `document_id` int(11) NOT NULL,
@@ -156,7 +156,7 @@ CREATE TABLE `rag_index` (
   KEY `idx_rag_index_user_chat` (`user`,`chat_id`),
   KEY `idx_rag_index_sha` (`content_sha256`),
   CONSTRAINT `fk_rag_index_document` FOREIGN KEY (`document_id`) REFERENCES `document` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=352 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=421 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -165,7 +165,7 @@ CREATE TABLE `rag_index` (
 
 DROP TABLE IF EXISTS `rag_usage_log`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `rag_usage_log` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `exchange_id` int(11) NOT NULL,
@@ -181,7 +181,7 @@ CREATE TABLE `rag_usage_log` (
   KEY `idx_rag_usage_chat` (`chat_id`),
   KEY `idx_rag_usage_user` (`user`),
   CONSTRAINT `fk_rag_usage_exchange` FOREIGN KEY (`exchange_id`) REFERENCES `exchange` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=63 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=142 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -190,7 +190,7 @@ CREATE TABLE `rag_usage_log` (
 
 DROP TABLE IF EXISTS `workflow`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `workflow` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `title` varchar(255) DEFAULT NULL,
@@ -212,13 +212,13 @@ CREATE TABLE `workflow` (
 
 DROP TABLE IF EXISTS `workflow_config`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `workflow_config` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `config_label` varchar(48) DEFAULT NULL,
   `description` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=14 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -227,7 +227,7 @@ CREATE TABLE `workflow_config` (
 
 DROP TABLE IF EXISTS `workflow_config_join`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `workflow_config_join` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `workflow_id` int(11) NOT NULL,
@@ -235,7 +235,7 @@ CREATE TABLE `workflow_config_join` (
   PRIMARY KEY (`id`),
   KEY `workflow_id` (`workflow_id`),
   KEY `workflow_config_id` (`workflow_config_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -244,7 +244,7 @@ CREATE TABLE `workflow_config_join` (
 
 DROP TABLE IF EXISTS `workflow_exchange`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `workflow_exchange` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `workflow_id` int(11) NOT NULL,
@@ -253,7 +253,7 @@ CREATE TABLE `workflow_exchange` (
   UNIQUE KEY `exchange_id` (`exchange_id`),
   KEY `workflow_id` (`workflow_id`),
   CONSTRAINT `fk_workflow_exchange` FOREIGN KEY (`exchange_id`) REFERENCES `exchange` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=163 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=184 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -265,4 +265,4 @@ CREATE TABLE `workflow_exchange` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2025-11-13 12:52:48
+-- Dump completed on 2025-12-18 10:29:54

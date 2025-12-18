@@ -1035,6 +1035,27 @@ async function handleMessageSubmit(event) {
     var ragModeValue = $('#rag_mode_value');
     var ragMode = (ragModeValue.val && ragModeValue.val()) ? ragModeValue.val() : (ragModeCheckbox.is(':checked') ? 'use' : 'disable');
 
+    var parsedCustomConfig = null;
+    if (customConfigVal) {
+        try {
+            parsedCustomConfig = JSON.parse(customConfigVal);
+        } catch (err) {
+            parsedCustomConfig = null;
+        }
+    }
+    var workflowDeployment = null;
+    if (exchangeType === 'workflow') {
+        if (parsedCustomConfig && typeof parsedCustomConfig.deployment === 'string' && parsedCustomConfig.deployment !== '') {
+            workflowDeployment = parsedCustomConfig.deployment;
+        } else if (parsedCustomConfig && parsedCustomConfig.config && typeof parsedCustomConfig.config['workflow-deployment'] === 'string') {
+            workflowDeployment = parsedCustomConfig.config['workflow-deployment'];
+        } else if (parsedCustomConfig && parsedCustomConfig.config && typeof parsedCustomConfig.config['workflow-default'] === 'string') {
+            workflowDeployment = parsedCustomConfig.config['workflow-default'];
+        } else if (window.selectedWorkflow && typeof window.selectedWorkflow.deployment === 'string' && window.selectedWorkflow.deployment !== '') {
+            workflowDeployment = window.selectedWorkflow.deployment;
+        }
+    }
+
     var requestPayload = {
         encodedMessage: messageContent,
         rawMessage: sanitizedMessageContent,
@@ -1042,7 +1063,8 @@ async function handleMessageSubmit(event) {
         customConfig: customConfigVal,
         promptDocuments: promptDocsSnapshot,
         userMessageElement: userPromptElement,
-        ragMode: ragMode
+        ragMode: ragMode,
+        initialDeployment: workflowDeployment || null
     };
 
     startAssistantStream(requestPayload);

@@ -32,11 +32,30 @@ For questions or suggestions on new workflows, please contact <a href="mailto:NH
 
     <div class="canned-options">
       <?php foreach($workflows as $workflow): ?>
+        <?php
+          // Ensure we have a deployment hint available on the button for client-side icon selection.
+          $workflowDeployment = '';
+          if (!empty($workflow['deployment'])) {
+              $workflowDeployment = $workflow['deployment'];
+          } elseif (!empty($workflow['id']) && function_exists('get_workflow_data')) {
+              try {
+                  $wfMeta = get_workflow_data($workflow['id']);
+                  if (!empty($wfMeta['deployment'])) {
+                      $workflowDeployment = $wfMeta['deployment'];
+                  }
+              } catch (Throwable $e) {
+                  // ignore; best-effort only
+              }
+          }
+        ?>
         <button type="button" 
                 class="canned-option" 
                 data-workflow-id="<?php echo htmlspecialchars($workflow['id']); ?>" 
                 data-prompt="<?php echo htmlspecialchars($workflow['description']); ?>" 
                 data-action="summarize"
+                <?php if (!empty($workflowDeployment)): ?>
+                data-deployment="<?php echo htmlspecialchars($workflowDeployment); ?>"
+                <?php endif; ?>
                 data-config-label="<?php echo htmlspecialchars($workflow['config_label']); ?>"
                 data-config-description="<?php echo htmlspecialchars($workflow['config_description']); ?>"
                 >
