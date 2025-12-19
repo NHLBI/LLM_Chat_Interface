@@ -2,6 +2,8 @@
 
 # RAG TOOLS
 
+require_once __DIR__ . '/rag_paths.php';
+
 /**
  * Helper function to call the Python RAG script.
  *
@@ -12,11 +14,15 @@ function call_rag_script($user_question) {
     global $config; // Access global config for paths
 
     // --- Retrieve Paths from Config (Ensure these are set!) ---
-    $python_executable = dirname(__DIR__).'/rag310/bin/python3';
+    $python_executable = rag_python_binary($config ?? null);
     $script_path = __DIR__.'/rag_processor.py';
+    $pythonConfigured = rag_python_configured_value($config ?? null);
 
     if (!$script_path || !file_exists($script_path)) {
         return ['error' => 'RAG script path not configured or not found. Path: ' . $script_path];
+    }
+    if ($pythonConfigured !== null && !is_executable($python_executable)) {
+        return ['error' => 'Configured RAG python not executable: ' . $python_executable];
     }
     if (!is_executable($python_executable) && !preg_match('/^python[3]?$/', $python_executable)) {
          // Basic check if it's not 'python'/'python3' and not executable directly
@@ -59,6 +65,7 @@ function call_rag_script($user_question) {
 }
 
 function run_rag($question, $chat_id, $user, $config_path, $timeoutSec = 20, array $documentIds = null, array $options = []) {
+    global $config;
     $payload = [
         'question' => $question,
         'chat_id'  => $chat_id,
@@ -82,10 +89,23 @@ function run_rag($question, $chat_id, $user, $config_path, $timeoutSec = 20, arr
     $tmp = tempnam(sys_get_temp_dir(), 'ragq_').'.json';
     file_put_contents($tmp, json_encode($payload));
 
-    $python  = dirname(__DIR__).'/rag310/bin/python3';
+    $python  = rag_python_binary($config ?? null);
+    $pythonConfigured = rag_python_configured_value($config ?? null);
     $script  = __DIR__.'/rag_retrieve.py';
     $timeout = '/usr/bin/timeout';
     $errFile = sys_get_temp_dir().'/rag_retrieve_'.getmypid().'.err';
+
+    if ($pythonConfigured !== null && !is_executable($python)) {
+        @unlink($tmp);
+        return [
+            'rc'      => 1,
+            'cmd'     => '',
+            'stdout'  => '',
+            'stderr'  => 'Configured RAG python not executable: ' . $python,
+            'json'    => null,
+            'payload' => $payload,
+        ];
+    }
 
     $cmd = escapeshellarg($timeout).' '.((int)$timeoutSec).' '
          . escapeshellarg($python).' '.escapeshellarg($script)

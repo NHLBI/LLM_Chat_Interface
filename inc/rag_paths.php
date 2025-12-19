@@ -53,6 +53,17 @@ function rag_workspace_paths(?array $config = null): array
 
 function rag_python_binary(?array $config = null): string
 {
+    $configured = rag_python_configured_value($config);
+
+    if ($configured) {
+        return $configured;
+    }
+
+    return rag_app_root() . '/rag310/bin/python3';
+}
+
+function rag_python_configured_value(?array $config = null): ?string
+{
     $configured = null;
     if ($config && !empty($config['rag']['python'])) {
         $configured = $config['rag']['python'];
@@ -65,11 +76,11 @@ function rag_python_binary(?array $config = null): string
         }
     }
 
-    if ($configured) {
-        return $configured;
+    if (!$configured) {
+        return null;
     }
 
-    return rag_app_root() . '/rag310/bin/python3';
+    return $configured;
 }
 
 function rag_indexer_script(?array $config = null): string

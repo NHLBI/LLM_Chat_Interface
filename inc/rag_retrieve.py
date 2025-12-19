@@ -4,7 +4,11 @@
 import os, sys, json, time, re, configparser, requests, pymysql, warnings
 from typing import Dict, Any, List
 from qdrant_client import QdrantClient
-from qdrant_client.http.models import Filter, FieldCondition, MatchValue, MatchAny
+try:
+    from qdrant_client.http.models import Filter, FieldCondition, MatchValue, MatchAny
+except ImportError:
+    from qdrant_client.http.models import Filter, FieldCondition, MatchValue
+    MatchAny = None
 import tiktoken
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -246,9 +250,16 @@ def main():
         max_chunks = int(inp.get("max_chunks", 99999))
         if len(doc_ids) == 1:
             doc_match = MatchValue(value=doc_ids[0])
-        else:
+            flt = Filter(must=flt_base + [FieldCondition(key="document_id", match=doc_match)])
+        elif MatchAny is not None:
             doc_match = MatchAny(any=doc_ids)
-        flt = Filter(must=flt_base + [FieldCondition(key="document_id", match=doc_match)])
+            flt = Filter(must=flt_base + [FieldCondition(key="document_id", match=doc_match)])
+        else:
+            doc_conditions = [
+                FieldCondition(key="document_id", match=MatchValue(value=doc_id))
+                for doc_id in doc_ids
+            ]
+            flt = Filter(must=flt_base, should=doc_conditions)
 
         points = []
         offset = None

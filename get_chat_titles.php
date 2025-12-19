@@ -10,11 +10,11 @@ try {
     $user = $_SESSION['user_data']['userid'];
 
     // Fetch search input
-    if ($_GET['clearSearch']) {
+    if (!empty($_GET['clearSearch'])) {
         $_GET['search'] = '';
         $_SESSION['search_term'] = '';
     }
-    $search = (!empty($_GET['search'])) ? trim($_GET['search']) : '';
+    $search = (!empty($_GET['search'])) ? trim((string)$_GET['search']) : '';
     $_SESSION['search_term'] = $search; // Update session with new search term
     $chats = get_all_chats($user, $search); // Query database
 
@@ -24,5 +24,3 @@ try {
     http_response_code(400); // Bad Request
     echo json_encode(['error' => $e->getMessage()]);
 }
-?>
-

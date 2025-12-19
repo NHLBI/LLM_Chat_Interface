@@ -8,6 +8,14 @@ PYTHON_TEST_DIR="${ROOT_DIR}/tests/python"
 
 export PYTHONPATH="${ROOT_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 
+PYTHON_BIN="$(
+  php -r 'require_once "get_config.php"; require_once "inc/rag_paths.php"; echo rag_python_binary($config ?? null);'
+)"
+if [[ -z "${PYTHON_BIN}" || ! -x "${PYTHON_BIN}" ]]; then
+  printf '\n[ERROR] RAG python interpreter not found or not executable: %s\n' "${PYTHON_BIN}"
+  exit 1
+fi
+
 cd "${ROOT_DIR}"
 
 printf '\n==> PHP syntax lint\n'
@@ -46,9 +54,9 @@ else
 fi
 
 printf '\n==> Python bytecode compilation (inc/)\n'
-python3 -m compileall inc
+"${PYTHON_BIN}" -m compileall inc
 
 printf '\n==> Python unit tests\n'
-python3 -m unittest discover -s "$PYTHON_TEST_DIR" -p 'test_*.py'
+"${PYTHON_BIN}" -m unittest discover -s "$PYTHON_TEST_DIR" -p 'test_*.py'
 
 printf '\nAll validation checks passed.\n'

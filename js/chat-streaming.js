@@ -431,15 +431,25 @@ function startAssistantStream(request) {
 
     $('.waiting-indicator').show();
 
-    fetch('sse.php', {
+    var sseDebug = (typeof window !== 'undefined' && window.SSE_DEBUG) ? true : false;
+    var sseUrl = 'sse.php' + (sseDebug ? '?debug_sse=1' : '');
+    if (sseDebug && console && console.info) {
+        console.info('[sse debug] payload', payload);
+    }
+
+    fetch(sseUrl, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'X-Requested-With': 'XMLHttpRequest'
         },
+        credentials: 'same-origin',
         body: JSON.stringify(payload),
         signal: controller.signal
     }).then(function (response) {
+        if (response.status === 401 || response.redirected) {
+            throw new Error('session_expired');
+        }
         if (!response.ok) {
             return response.text().catch(function () {
                 return '';
@@ -448,12 +458,24 @@ function startAssistantStream(request) {
                 throw new Error('HTTP ' + response.status + suffix);
             });
         }
+        if (sseDebug && console && console.info) {
+            console.info('[sse debug] response status', response.status);
+        }
         if (!response.body) {
             throw new Error('Streaming not supported by this browser.');
         }
         return readAssistantStream(response.body.getReader());
     }).catch(function (err) {
         if (err.name === 'AbortError') {
+            return;
+        }
+        if (err && err.message === 'session_expired') {
+            failAssistantStream('Session expired. Please refresh and sign in again.');
+            if (typeof logoutUser === 'function') {
+                logoutUser();
+            } else {
+                window.location.href = 'logout.php';
+            }
             return;
         }
         console.error('stream error', err);

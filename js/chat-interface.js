@@ -665,9 +665,38 @@ function hasRagReadyDocuments(chatId) {
     return false;
 }
 
+function hasAnyNonImageDocuments(targetChatId) {
+    var docs = window.chatDocumentsByChatId && (window.chatDocumentsByChatId[targetChatId || chatId] || null);
+    if (!docs) {
+        return false;
+    }
+    var keys = Object.keys(docs);
+    for (var i = 0; i < keys.length; i++) {
+        var doc = docs[keys[i]];
+        if (!doc) {
+            continue;
+        }
+        var deleted = doc.document_deleted === true || doc.document_deleted === 1 || doc.document_deleted === '1';
+        if (deleted) {
+            continue;
+        }
+        var enabled = !(doc.enabled === false || doc.enabled === 0 || doc.enabled === '0');
+        if (!enabled) {
+            continue;
+        }
+        var docType = ((doc.document_type || '') + '').toLowerCase();
+        if (docType.indexOf('image/') === 0) {
+            continue;
+        }
+        return true;
+    }
+    return false;
+}
+
 function updateSkipRagToggleVisibility(targetChatId) {
     var container = $('#skip-rag-container');
     var checkboxEl = $('#rag_mode_checkbox');
+    var hiddenInput = $('#rag_mode_value');
     if (!container.length) {
         return;
     }
@@ -678,7 +707,18 @@ function updateSkipRagToggleVisibility(targetChatId) {
         return;
     }
 
-    // Always show the RAG checkbox; keep it enabled as an invitation to use RAG.
+    var hasDocs = hasAnyNonImageDocuments(targetChatId);
+    if (!hasDocs) {
+        container.hide();
+        if (checkboxEl.length) {
+            checkboxEl.prop('checked', false);
+        }
+        if (hiddenInput.length) {
+            hiddenInput.val('disable');
+        }
+        return;
+    }
+
     container.css('display', 'inline-flex');
 
     if (checkboxEl.length) {

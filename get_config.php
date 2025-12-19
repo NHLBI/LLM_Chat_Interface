@@ -12,46 +12,45 @@
  *   /etc/apps/chatprod_config.ini  (environment = prod, default)
  */
 
-$explicit_path = getenv('CHAT_CONFIG_PATH');
-if ($explicit_path === false || $explicit_path === '') {
-    if (defined('CHAT_CONFIG_PATH') && CHAT_CONFIG_PATH !== '') {
-        $explicit_path = CHAT_CONFIG_PATH;
-    }
-}
+# 1.  Default to production
+$environment = '';
 
-if ($explicit_path !== false && $explicit_path !== '') {
-    $config_file = $explicit_path;
-    $environment = 'custom';
+# 2.  If we're in a web context, key off REQUEST_URI
+if (!empty($_SERVER['REQUEST_URI'])) {
+    $uri = $_SERVER['REQUEST_URI'];
+    if (strpos($uri, 'chatdev')  !== false) {
+        $environment = 'dev';
+    } elseif (strpos($uri, 'chattest') !== false) {
+        $environment = 'test';
+    }
+
+# 3.  Otherwise (CLI / cron), look at the directory path of this file
 } else {
-    # 1.  Default to production
-    $environment = '';
-
-    # 2.  If we're in a web context, key off REQUEST_URI
-    if (!empty($_SERVER['REQUEST_URI'])) {
-        $uri = $_SERVER['REQUEST_URI'];
-        if (strpos($uri, 'chatdev')  !== false) {
-            $environment = 'dev';
-        } elseif (strpos($uri, 'chattest') !== false) {
-            $environment = 'test';
-        }
-
-    # 3.  Otherwise (CLI / cron), look at the directory path of this file
-    } else {
-        $dir = __DIR__;                                 // e.g. /var/www/ai.nhlbi.nih.gov/chatdev
-        if (strpos($dir, 'chatdev')  !== false) {
-            $environment = 'dev';
-        } elseif (strpos($dir, 'chattest') !== false) {
-            $environment = 'test';
-        }
+    $dir = __DIR__;                                 // e.g. /var/www/ai.nhlbi.nih.gov/chatdev
+    if (strpos($dir, 'chatdev')  !== false) {
+        $environment = 'dev';
+    } elseif (strpos($dir, 'chattest') !== false) {
+        $environment = 'test';
     }
-
-    # 4.  Load the appropriate INI file
-    $config_file = "/etc/apps/chat{$environment}_config.ini";
 }
+
+# 4.  Load the appropriate INI file first
+$config_file = "/etc/apps/chat{$environment}_config.ini";
 
 if (!is_readable($config_file)) {
-    throw new RuntimeException("Config file not found for environment '{$environment}': {$config_file}");
+    $explicit_path = getenv('CHAT_CONFIG_PATH');
+    if ($explicit_path === false || $explicit_path === '') {
+        if (defined('CHAT_CONFIG_PATH') && CHAT_CONFIG_PATH !== '') {
+            $explicit_path = CHAT_CONFIG_PATH;
+        }
+    }
+
+    if ($explicit_path !== false && $explicit_path !== '') {
+        $config_file = $explicit_path;
+        $environment = 'custom';
+    } else {
+        throw new RuntimeException("Config file not found for environment '{$environment}': {$config_file}");
+    }
 }
 
 $config = parse_ini_file($config_file, true);
-

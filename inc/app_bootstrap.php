@@ -59,9 +59,8 @@ class AppBootstrap
     private function guardSession(): int
     {
         if (!waitForUserSession()) {
-            $splashConfig = (empty($this->config['app'])) ? [] : $this->config['app'];
-            require_once __DIR__ . '/../splash.php';
-            exit;
+            $this->apiUnauthorized('missing_user_session');
+            $this->renderSplash();
         }
 
         if (empty($_SESSION['splash'])) {
@@ -70,14 +69,15 @@ class AppBootstrap
 
         if ((!empty($_SESSION['user_data']['userid']) && ($_SESSION['authorized'] ?? false) !== true)
             || empty($_SESSION['splash'])) {
-            require_once __DIR__ . '/../splash.php';
-            exit;
+            $this->apiUnauthorized('not_authorized');
+            $this->renderSplash();
         }
 
         $timeout = (int)($this->config['session']['timeout'] ?? 0);
         if ($timeout > 0 && isset($_SESSION['LAST_ACTIVITY'])
             && (time() - $_SESSION['LAST_ACTIVITY'] > $timeout)) {
             logout();
+            $this->apiUnauthorized('expired');
         }
         $_SESSION['LAST_ACTIVITY'] = time();
 
@@ -91,11 +91,45 @@ class AppBootstrap
                 $_SESSION['LAST_REGEN'] = time();
             }
         } else {
+            $this->apiUnauthorized('not_authenticated');
             header('Location: auth_redirect.php');
             exit;
         }
 
         return $timeout;
+    }
+
+    private function renderSplash(): void
+    {
+        $splashConfig = (empty($this->config['app'])) ? [] : $this->config['app'];
+        require_once __DIR__ . '/../splash.php';
+        exit;
+    }
+
+    private function isApiRequest(): bool
+    {
+        if (!empty($_SERVER['HTTP_X_REQUESTED_WITH'])) {
+            return true;
+        }
+
+        $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
+        return stripos($accept, 'application/json') !== false
+            || stripos($accept, 'text/event-stream') !== false;
+    }
+
+    private function apiUnauthorized(string $reason): void
+    {
+        if (!$this->isApiRequest()) {
+            return;
+        }
+
+        http_response_code(401);
+        header('Content-Type: application/json');
+        echo json_encode([
+            'error'  => 'unauthorized',
+            'reason' => $reason,
+        ]);
+        exit;
     }
 
     private function resolveUser(): string

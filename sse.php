@@ -5,6 +5,14 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/inc/streaming.inc.php';
 require_once __DIR__ . '/inc/azure-api.inc.php';
 
+// Capture fatal errors for debugging SSE 500s.
+register_shutdown_function(function () {
+    $err = error_get_last();
+    if ($err && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+        error_log('sse.php shutdown fatal: ' . json_encode($err, JSON_UNESCAPED_UNICODE));
+    }
+});
+
 if (!defined('HARDCODED_DEPLOYMENT')) {
     define('HARDCODED_DEPLOYMENT', 'azure-gpt4.1-mini');
 }
@@ -16,14 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-if (empty($_SESSION['user_data']['userid']) || empty($_SESSION['authorized'])) {
-    http_response_code(401);
-    header('Content-Type: application/json');
-    echo json_encode([
-        'error' => 'Session expired. Please refresh and sign in again.'
-    ]);
-    exit;
-}
+$debugSse = !empty($_GET['debug_sse']);
 
 $input = file_get_contents('php://input');
 $payload = [];
@@ -40,6 +41,52 @@ if ($contentType && stripos($contentType, 'application/json') !== false) {
 
 if (!is_array($payload)) {
     $payload = [];
+}
+
+$sessionUserId = $_SESSION['user_data']['userid'] ?? null;
+$sessionAuthorized = $_SESSION['authorized'] ?? null;
+
+if ($debugSse) {
+    header('Content-Type: application/json');
+    try {
+        $headers = function_exists('getallheaders') ? getallheaders() : [];
+        echo json_encode([
+            'debug'        => 'sse_pre_auth',
+            'config_file'  => $config_file ?? 'unknown',
+            'session_id'   => session_id(),
+            'authorized'   => $sessionAuthorized,
+            'user'         => $sessionUserId,
+            'remote_addr'  => $_SERVER['REMOTE_ADDR'] ?? '',
+            'user_agent'   => $_SERVER['HTTP_USER_AGENT'] ?? '',
+            'request_uri'  => $_SERVER['REQUEST_URI'] ?? '',
+            'payload'      => $payload,
+            'raw_body'     => $input,
+            'headers'      => $headers,
+        ], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['error' => 'sse_debug_failed', 'message' => $e->getMessage()]);
+    }
+    exit;
+}
+
+if (empty($sessionUserId) || empty($sessionAuthorized)) {
+    $logContext = [
+        'uri'          => $_SERVER['REQUEST_URI'] ?? '',
+        'config'       => $config_file ?? 'unknown',
+        'session_id'   => session_id(),
+        'authorized'   => $sessionAuthorized,
+        'user'         => $sessionUserId,
+        'remote_addr'  => $_SERVER['REMOTE_ADDR'] ?? '',
+        'user_agent'   => $_SERVER['HTTP_USER_AGENT'] ?? '',
+    ];
+    error_log('sse.php unauthorized session: ' . json_encode($logContext, JSON_UNESCAPED_UNICODE));
+    http_response_code(401);
+    header('Content-Type: application/json');
+    echo json_encode([
+        'error' => 'Session expired. Please refresh and sign in again.'
+    ]);
+    exit;
 }
 
 $messageInput = $payload['message'] ?? '';

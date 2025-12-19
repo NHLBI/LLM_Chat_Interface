@@ -39,6 +39,12 @@ $metricsLog   = $logsDir . '/processing_metrics.log';
 $python       = rag_python_binary($config ?? null);
 $indexer      = rag_indexer_script($config ?? null);
 $parser       = rag_parser_script($config ?? null);
+$pythonConfigured = rag_python_configured_value($config ?? null);
+
+if ($pythonConfigured !== null && !is_executable($python)) {
+    fwrite(STDERR, "Configured RAG python not executable: {$python}\n");
+    exit(1);
+}
 
 $maxJobs = null;
 foreach ($argv as $arg) {
