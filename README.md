@@ -164,6 +164,23 @@ The repository includes several repeatable checks that should run before deployi
   - `--keep` to retain the queued document and generated vectors for inspection.
 - The script exercises the worker loop, verifies `rag_index.ready = 1`, and cleans up temporary rows unless `--keep` is provided.
 
+### Qdrant snapshot export (collection backup/migration)
+
+Use Qdrant collection snapshots to migrate vectors without exposing the service externally.
+
+1. Create a snapshot for the collection (replace `<QDRANT_API_KEY>` as needed):
+   ```bash
+   curl -X POST 'http://127.0.0.1:6333/collections/nhlbi/snapshots' \
+     -H 'api-key: <QDRANT_API_KEY>'
+   ```
+2. Download the snapshot by name:
+   ```bash
+   curl -L \
+     -H 'api-key: <QDRANT_API_KEY>' \
+     'http://127.0.0.1:6333/collections/nhlbi/snapshots/<snapshot_name>' \
+     -o <snapshot_name>
+   ```
+
 ### Accessibility (Section 508) scan
 
 1. Install prerequisites (once per host):

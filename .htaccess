@@ -1,5 +1,7 @@
 # Deny direct access to internal directories and logs
 RedirectMatch 404 ^/(logs|docs|tests|var(?:/|$)|playwright-report|test-results)/
+# Deny hidden files/directories (dotfiles), but allow ACME challenge paths.
+RedirectMatch 404 (?i)^/(?!\.well-known(?:/|$))(?:.*\/)?\.[^/]+(?:/|$)
 
 # If PHP is served via Apache module, ensure existing rewrites remain intact.
 # (Add additional rewrite rules below as needed.)

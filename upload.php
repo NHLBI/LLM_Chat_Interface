@@ -61,7 +61,8 @@ if (!empty($_REQUEST['selected_workflow'])) {
         $configLabels = explode(',', $workflow['configLabel']);
         $configDescriptions = explode(',', $workflow['configDescription']);
         for ($i = 0; $i < count($configLabels); $i++) {
-            $workflow_config[$configLabels[$i]] = $configDescriptions[$i];
+            $decoded = isset($configDescriptions[$i]) ? base64_decode($configDescriptions[$i], true) : '';
+            $workflow_config[$configLabels[$i]] = ($decoded !== false) ? $decoded : ($configDescriptions[$i] ?? '');
         }
     }
 

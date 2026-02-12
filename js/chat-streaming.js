@@ -257,7 +257,20 @@ function finalizeAssistantStream(finalPayload) {
     }
 
     var formattedElement = $('<div class="assistant-content-final"></div>');
-    if (finalReply && finalReply.trim() !== '') {
+    var imageGenName = finalPayload && finalPayload.image_gen_name ? finalPayload.image_gen_name : null;
+    if (imageGenName) {
+        var genImg = $('<img>')
+            .attr('class', 'image-message')
+            .attr('src', '../image_gen/small/' + imageGenName)
+            .attr('alt', 'Generated Image')
+            .on('load', debounceScroll);
+
+        streamContext.messageElement.append(genImg);
+        addDownloadButton(streamContext.messageElement, '../image_gen/fullsize/' + imageGenName);
+        if (controlsWrapper) {
+            streamContext.messageElement.append(controlsWrapper);
+        }
+    } else if (finalReply && finalReply.trim() !== '') {
         var formattedHTML = formatCodeBlocks(finalReply);
         formattedElement.append(formattedHTML);
         streamContext.messageElement.append(formattedElement);

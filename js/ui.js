@@ -269,7 +269,15 @@ document.addEventListener('DOMContentLoaded', function() {
         const descArray = configDescriptionRaw.split(',');
         for (let i = 0; i < labelsArray.length; i++) {
           let key = labelsArray[i].trim();
-          let value = descArray[i] ? descArray[i].trim() : "";
+          let value = "";
+          if (descArray[i]) {
+            try {
+              value = atob(descArray[i].trim());
+            } catch (e) {
+              console.warn("Invalid base64 config description; using raw value.");
+              value = descArray[i].trim();
+            }
+          }
           workflowConfig[key] = value;
         }
       }
@@ -411,7 +419,8 @@ function openUploadModal() {
     
     // Update the instruction message if available.
     if (window.selectedWorkflow.config["modal-upload-instruction"]) {
-      document.getElementById('uploadModalMessage').textContent = window.selectedWorkflow.config["modal-upload-instruction"];
+      // Allow stored HTML (e.g., <br>, <b>) to render in the modal.
+      document.getElementById('uploadModalMessage').innerHTML = window.selectedWorkflow.config["modal-upload-instruction"];
     } else {
       const remaining = maxUploads - (window.documentsLength || 0);
       document.getElementById('uploadModalMessage').textContent = remaining === 1 

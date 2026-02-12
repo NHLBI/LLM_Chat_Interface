@@ -280,6 +280,7 @@ try {
         'eid'           => $response['eid'] ?? null,
         'reply'         => $response['message'] ?? '',
         'deployment'    => $response['deployment'] ?? null,
+        'image_gen_name' => $response['image_gen_name'] ?? null,
         'finish_reason' => $streamState['finish_reason'] ?? null,
         'stopped'       => (bool)$streamState['aborted'],
         'prompt_documents' => $response['prompt_documents'] ?? [],
